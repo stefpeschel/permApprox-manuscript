@@ -8,7 +8,7 @@ output:
     toc_float: true
 always_allow_html: true
 params:
-  name: "02_micro_diff_abund_breastf" # change if you rename file
+  name: "02_micro_diff_abund" # change if you rename file
 ---
 
 ```{r here, message=FALSE}
@@ -39,7 +39,6 @@ In this notebook, we compare two breast feeding groups: 'EBF' (exclusive breast 
 ## Global options and packages
 
 ```{r packages, message=FALSE, warning=FALSE}
-#remotes::install_github("stefpeschel/permApprox", ref = "develop")
 library(conflicted)
 library(phyloseq)
 library(ggplot2)
@@ -56,10 +55,11 @@ library(patchwork)
 library(dacomp)
 
 # p-value approximation with permApprox
+#remotes::install_github("stefpeschel/permApprox")
 library(permApprox)
 
 conflicted::conflicts_prefer(dplyr::count, dplyr::filter, dplyr::select, 
-                             stats::var, dplyr::setdiff)
+                             stats::var, dplyr::setdiff, dplyr::slice)
 ```
 
 ```{r directories}
@@ -1035,6 +1035,7 @@ if (!file.exists(fname_pApp_unconstr) || refit_permApprox) {
   papprox_unconstr_ftr <- readRDS(fname_pApp_unconstr)
 }
 
+summary(papprox_unconstr_ftr)
 ```
 
 ### permApprox – constrained GPD (SLLS)
@@ -1075,6 +1076,8 @@ if (!file.exists(fname_pApp_constr) || refit_permApprox) {
 } else {
   papprox_constr_ftr <- readRDS(fname_pApp_constr)
 }
+
+summary(papprox_constr_ftr)
 ```
 
 ### Combine dacomp and permApprox results
@@ -1198,6 +1201,7 @@ if (!file.exists(fname_pApp_unconstr) || refit_permApprox) {
   papprox_unconstr <- readRDS(fname_pApp_unconstr)
 }
 
+summary(papprox_unconstr)
 ```
 
 ### permApprox – constrained GPD (SLLS)
@@ -1238,6 +1242,8 @@ if (!file.exists(fname_pApp_constr) || refit_permApprox) {
 } else {
   papprox_constr <- readRDS(fname_pApp_constr)
 }
+
+summary(papprox_constr)
 ```
 
 ### Combine dacomp and permApprox results

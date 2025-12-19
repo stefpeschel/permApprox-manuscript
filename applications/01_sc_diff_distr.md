@@ -1,11 +1,7 @@
 Differential distribution analysis of single-cell gene expression using
 `waddR` and `permApprox`
 ================
-Compiled at 2025-12-19 10:58:13 UTC
-
-``` r
-here::i_am(paste0(params$name, ".Rmd"), uuid = "3f0a7f60-7a25-4421-89f9-e2d5fe4071a7")
-```
+Compiled at 2025-12-19 14:30:34 UTC
 
 ## Description
 
@@ -64,9 +60,9 @@ both data sets have the same number of cells.
 
     ## [1] 1000  569
 
-    ##            used  (Mb) gc trigger  (Mb)  max used  (Mb)
-    ## Ncells  8312881 444.0   13458290 718.8  13239818 707.1
-    ## Vcells 18777091 143.3  117892617 899.5 127426454 972.2
+    ##             used   (Mb) gc trigger   (Mb)   max used   (Mb)
+    ## Ncells  12238890  653.7   20534180 1096.7   20534180 1096.7
+    ## Vcells 358452640 2734.8 1048999605 8003.3 1048990186 8003.2
 
 ## Exploratory Analysis
 
@@ -86,11 +82,6 @@ distributions between conditions.
 ![](figures/01_sc_diff_distr/app_ddistr_sc_hist_top6-1.png)<!-- -->
 
 ### Quantile plot
-
-    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
-    ## ℹ Please use `linewidth` instead.
-    ## This warning is displayed once every 8 hours.
-    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was generated.
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_quantf_top6-1.png)<!-- -->
 
@@ -217,10 +208,194 @@ with the 1000 permuations later.
 
 ### permApprox - unconstrained
 
+    ## Summary of permApprox result
+    ## ----------------------------
+    ## Number of tests             : 1000
+    ## Approximation method        : GPD tail approximation
+    ## Approximation threshold     : p-values <   1
+    ## Multiple testing adjustment : BH
+    ## 
+    ## Fit status counts:
+    ##   Successful fits          : 985
+    ##   GOF rejections           : 0
+    ##   Fit failed               : 0
+    ##   No threshold found       : 5
+    ##   Discrete distributions   : 0
+    ##   Not selected for fitting : 10
+    ## 
+    ## GPD parameter summary (successful fits)
+    ## --------------------------------------
+    ##   shape:
+    ##     min = -0.171, median = 0.0359, mean = 0.0323, max = 0.23
+    ##   scale:
+    ##     min = 0.000922, median = 0.00251, mean = 0.00368, max = 0.149
+    ##   n_exceed:
+    ##     min =  140, median =  250, mean =  248, max =  250
+    ## 
+    ## Goodness-of-fit p-values (all fitted tests)
+    ## ------------------------------------------
+    ##   GOF p-values:
+    ##     min = 0.0504, median = 0.536, mean = 0.526, max = 0.999
+    ## 
+    ## P-value summary
+    ## ---------------
+    ## Empirical p-values:
+    ##   empirical:
+    ##     min = 0.000999, median = 0.000999, mean = 0.00855, max = 0.903
+    ## 
+    ## Final p-values (unadjusted):
+    ##   unadjusted:
+    ##     min = 0, median = 0.0000000000082, mean = 0.00753, max = 0.903
+    ## 
+    ## Final p-values (adjusted, BH):
+    ##   adjusted:
+    ##     min = 0, median = 0.0000000000164, mean = 0.00761, max = 0.903
+    ##   Rejections at alpha = 0.05: 967
+
+    ## Summary of permApprox result
+    ## ----------------------------
+    ## Number of tests             : 1000
+    ## Approximation method        : GPD tail approximation
+    ## Approximation threshold     : p-values <   1
+    ## Multiple testing adjustment : BH
+    ## 
+    ## Fit status counts:
+    ##   Successful fits          : 986
+    ##   GOF rejections           : 0
+    ##   Fit failed               : 0
+    ##   No threshold found       : 3
+    ##   Discrete distributions   : 0
+    ##   Not selected for fitting : 11
+    ## 
+    ## GPD parameter summary (successful fits)
+    ## --------------------------------------
+    ##   shape:
+    ##     min = -0.133, median = 0.0416, mean = 0.0401, max = 0.115
+    ##   scale:
+    ##     min = 0.000886, median = 0.0025, mean = 0.00369, max = 0.134
+    ##   n_exceed:
+    ##     min =  760, median = 2500, mean = 2492, max = 2500
+    ## 
+    ## Goodness-of-fit p-values (all fitted tests)
+    ## ------------------------------------------
+    ##   GOF p-values:
+    ##     min = 0.0516, median = 0.54, mean = 0.537, max = 0.998
+    ## 
+    ## P-value summary
+    ## ---------------
+    ## Empirical p-values:
+    ##   empirical:
+    ##     min = 0.0001, median = 0.0001, mean = 0.0076, max = 0.902
+    ## 
+    ## Final p-values (unadjusted):
+    ##   unadjusted:
+    ##     min = 0, median = 0.000000000000971, mean = 0.0075, max = 0.902
+    ## 
+    ## Final p-values (adjusted, BH):
+    ##   adjusted:
+    ##     min = 0, median = 0.00000000000194, mean = 0.00758, max = 0.902
+    ##   Rejections at alpha = 0.05: 968
+
 ### permApprox - constrained
 
 We use the `permApprox` package to approximate p-values from permutation
 distributions of `waddR` test statistics.
+
+    ## Final tuning parameter:
+
+    ## [1] 29.75402
+
+    ## Summary of permApprox result
+    ## ----------------------------
+    ## Number of tests             : 1000
+    ## Approximation method        : GPD tail approximation
+    ## Approximation threshold     : p-values <   1
+    ## Multiple testing adjustment : BH
+    ## 
+    ## Fit status counts:
+    ##   Successful fits          : 976
+    ##   GOF rejections           : 9
+    ##   Fit failed               : 0
+    ##   No threshold found       : 5
+    ##   Discrete distributions   : 0
+    ##   Not selected for fitting : 10
+    ## 
+    ## GPD parameter summary (successful fits)
+    ## --------------------------------------
+    ##   shape:
+    ##     min = -0.0614, median = 0.0365, mean = 0.0441, max = 0.23
+    ##   scale:
+    ##     min = 0.000922, median = 0.00247, mean = 0.00365, max = 0.149
+    ##   n_exceed:
+    ##     min =  140, median =  250, mean =  248, max =  250
+    ## 
+    ## Goodness-of-fit p-values (all fitted tests)
+    ## ------------------------------------------
+    ##   GOF p-values:
+    ##     min = 0.0168, median = 0.512, mean = 0.507, max = 0.999
+    ## 
+    ## P-value summary
+    ## ---------------
+    ## Empirical p-values:
+    ##   empirical:
+    ##     min = 0.000999, median = 0.000999, mean = 0.00855, max = 0.903
+    ## 
+    ## Final p-values (unadjusted):
+    ##   unadjusted:
+    ##     min = 0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000273, median = 0.0000000000197, mean = 0.00754, max = 0.903
+    ## 
+    ## Final p-values (adjusted, BH):
+    ##   adjusted:
+    ##     min = 0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000272, median = 0.0000000000395, mean = 0.00762, max = 0.903
+    ##   Rejections at alpha = 0.05: 967
+
+    ## Final tuning parameter:
+
+    ## [1] 8.296875
+
+    ## Summary of permApprox result
+    ## ----------------------------
+    ## Number of tests             : 1000
+    ## Approximation method        : GPD tail approximation
+    ## Approximation threshold     : p-values <   1
+    ## Multiple testing adjustment : BH
+    ## 
+    ## Fit status counts:
+    ##   Successful fits          : 982
+    ##   GOF rejections           : 4
+    ##   Fit failed               : 0
+    ##   No threshold found       : 3
+    ##   Discrete distributions   : 0
+    ##   Not selected for fitting : 11
+    ## 
+    ## GPD parameter summary (successful fits)
+    ## --------------------------------------
+    ##   shape:
+    ##     min = -0.0412, median = 0.0417, mean = 0.0408, max = 0.115
+    ##   scale:
+    ##     min = 0.000886, median = 0.0025, mean = 0.00368, max = 0.134
+    ##   n_exceed:
+    ##     min = 1640, median = 2500, mean = 2494, max = 2500
+    ## 
+    ## Goodness-of-fit p-values (all fitted tests)
+    ## ------------------------------------------
+    ##   GOF p-values:
+    ##     min = 0.0000000251, median = 0.536, mean = 0.535, max = 0.998
+    ## 
+    ## P-value summary
+    ## ---------------
+    ## Empirical p-values:
+    ##   empirical:
+    ##     min = 0.0001, median = 0.0001, mean = 0.0076, max = 0.902
+    ## 
+    ## Final p-values (unadjusted):
+    ##   unadjusted:
+    ##     min = 0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028, median = 0.00000000000125, mean = 0.0075, max = 0.902
+    ## 
+    ## Final p-values (adjusted, BH):
+    ##   adjusted:
+    ##     min = 0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000278, median = 0.0000000000025, mean = 0.00758, max = 0.902
+    ##   Rejections at alpha = 0.05: 968
 
 ## Combine results
 
@@ -230,15 +405,7 @@ distributions of `waddR` test statistics.
 
 #### B = 1000
 
-    ## Warning: Duplicated `override.aes` is ignored.
-
-    ## Warning: Removed 21 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_wad_pau_pac_1k-1.png)<!-- -->
-
-    ## Warning: Duplicated `override.aes` is ignored.
-
-    ## Warning: Removed 21 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_wad_pau_pac_1k_ann-1.png)<!-- -->
 
@@ -397,12 +564,6 @@ waddR + permApprox(C) (B = 1k)
 
 #### B = 10000
 
-    ## Warning: Duplicated `override.aes` is ignored.
-
-    ## Warning: Removed 24 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 1 row containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_wad_pau_pac_10k-1.png)<!-- -->
 
 <table class="table" style="color: black; width: auto !important; ">
@@ -560,71 +721,32 @@ waddR + permApprox(C) (B = 10k)
 
 ### P-values with annotations
 
-    ## Warning: Removed 13 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 4 rows containing missing values or values outside the scale range (`geom_point()`).
-    ## Removed 4 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_ts_wad_pac_1k-1.png)<!-- -->
 
 ### P-values vs. ranked tests
 
 #### 1,000 vs. 10,000 permutations
 
-    ## Warning: Removed 84 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 57 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_wad1k_wad10k_all-1.png)<!-- -->
 
 Since the Empirical p-values with B = 100k are constant from approx
 index 130 on, we plot only up to this test in the following.
 
-    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_wad1k_wad10k-1.png)<!-- -->
-
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pau1k_pau10k_all-1.png)<!-- -->
 
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pau1k_pau10k-1.png)<!-- -->
 
-    ## Warning: Removed 14 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 20 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pac1k_pac10k_all-1.png)<!-- -->
-
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pac1k_pac10k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 1,000)
 
-    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-    ## Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_wad_pau_pac_1k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 10,000)
-
-    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-    ## Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_wad_pau_pac_10k-1.png)<!-- -->
 
@@ -632,39 +754,17 @@ index 130 on, we plot only up to this test in the following.
 
 #### 1,000 vs. 10,000 permutations
 
-    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_emp_wad1k_wad10k-1.png)<!-- -->
 
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_emp_pau1k_pau10k-1.png)<!-- -->
-
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_emp_pac1k_pac10k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 1,000)
 
-    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-    ## Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_wad_pau_pac_1k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 10,000)
-
-    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-    ## Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_wad_pau_pac_10k-1.png)<!-- -->
 
@@ -697,8 +797,6 @@ index 130 on, we plot only up to this test in the following.
 
 #### Quantile plots
 
-    ## Warning in scale_y_log10(): log-10 transformation introduced infinite values.
-
 ![](figures/01_sc_diff_distr/app_ddistr_sc_zero_pvals_quant_ts-1.png)<!-- -->
 
 #### Permutation histograms (B = 1000)
@@ -719,8 +817,6 @@ p-values.
 ![](figures/01_sc_diff_distr/app_ddistr_sc_sig_pvals_hist_ts-1.png)<!-- -->
 
 #### Quantile plots
-
-    ## Warning in scale_y_log10(): log-10 transformation introduced infinite values.
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_sig_pvals_quant_ts-1.png)<!-- -->
 
@@ -760,16 +856,16 @@ These files have been written to the target directory,
     ## # A tibble: 17 × 4
     ##    path                                            type         size modification_time  
     ##    <fs::path>                                      <fct> <fs::bytes> <dttm>             
-    ##  1 permapprox_results_ts_constr_10k.rds            file       17.67M 2025-12-02 21:04:47
-    ##  2 permapprox_results_ts_constr_1k.rds             file        1.81M 2025-12-02 20:17:56
+    ##  1 permapprox_results_ts_constr_10k.rds            file       17.67M 2025-12-19 13:23:07
+    ##  2 permapprox_results_ts_constr_1k.rds             file        1.81M 2025-12-19 13:18:18
     ##  3 permapprox_results_ts_emp_100k.rds              file        4.17K 2025-12-01 08:56:41
     ##  4 permapprox_results_ts_emp_10k.rds               file        3.38K 2025-12-01 08:56:41
     ##  5 permapprox_results_ts_emp_1k.rds                file        2.56K 2025-12-01 08:56:41
     ##  6 permapprox_results_ts_emp_50k.rds               file        3.96K 2025-12-01 08:56:41
-    ##  7 permapprox_results_ts_unconstr_10k.rds          file       17.72M 2025-12-02 21:01:47
-    ##  8 permapprox_results_ts_unconstr_1k.rds           file        1.81M 2025-12-02 20:16:11
-    ##  9 permApprox_waddr_TS_top_effects_BH_sc_table.tex file        3.73K 2025-12-19 11:00:29
-    ## 10 permApprox_waddr_TS_top_effects_sc_table.tex    file        3.68K 2025-12-19 11:00:29
+    ##  7 permapprox_results_ts_unconstr_10k.rds          file       17.72M 2025-12-19 13:16:44
+    ##  8 permapprox_results_ts_unconstr_1k.rds           file        1.81M 2025-12-19 13:07:54
+    ##  9 permApprox_waddr_TS_top_effects_BH_sc_table.tex file        3.73K 2025-12-19 14:31:57
+    ## 10 permApprox_waddr_TS_top_effects_sc_table.tex    file        3.68K 2025-12-19 14:31:57
     ## 11 waddr_results_os.rds                            file        7.32M 2025-07-22 13:20:56
     ## 12 waddr_results_os_same_n.rds                     file        7.32M 2025-07-22 14:29:32
     ## 13 waddr_results_ts.rds                            file        7.32M 2025-07-22 10:12:12

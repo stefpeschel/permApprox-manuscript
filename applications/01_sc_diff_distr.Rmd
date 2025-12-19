@@ -25,8 +25,6 @@ knitr::opts_chunk$set(fig.width = 10,
 
 
 ```{r packages, message=FALSE, warning=FALSE}
-#remotes::install_github("stefpeschel/permApprox", ref = "develop")
-
 # Load packages
 library("conflicted")
 
@@ -48,7 +46,7 @@ library(furrr)
 library(progressr)
 library(kableExtra)
 
-#remotes::install_github("stefpeschel/permApprox@develop")
+#remotes::install_github("stefpeschel/permApprox")
 library(permApprox)
 
 conflicts_prefer(dplyr::count, dplyr::filter, dplyr::setdiff, dplyr::select,
@@ -601,6 +599,7 @@ if (!file.exists(fname_ts_unconstr1k)) {
   papprox_ts_unconstr_1k <- readRDS(fname_ts_unconstr1k)
 }
 
+summary(papprox_ts_unconstr_1k)
 ```
 
 
@@ -625,6 +624,8 @@ papprox_ts_unconstr_10k <- perm_approx(
 } else {
   papprox_ts_unconstr_10k <- readRDS(fname_ts_unconstr10k)
 }
+
+summary(papprox_ts_unconstr_10k)
 ```
 
 ### permApprox - constrained
@@ -671,6 +672,11 @@ if (!file.exists(fname_ts_constr1k)) {
 } else {
   papprox_ts_constr_1k <- readRDS(fname_ts_constr1k)
 }
+
+cat("Final tuning parameter:")
+papprox_ts_constr_1k$fit_result$eps_tune
+cat("\n")
+summary(papprox_ts_constr_1k)
 ```
 
 
@@ -694,6 +700,11 @@ if (!file.exists(fname_ts_constr10k)) {
 } else {
   papprox_ts_constr_10k <- readRDS(fname_ts_constr10k)
 }
+
+cat("Final tuning parameter:")
+papprox_ts_constr_10k$fit_result$eps_tune
+cat("\n")
+summary(papprox_ts_constr_10k)
 ```
 
 ## Combine results
