@@ -1,0 +1,941 @@
+---
+title: "Two-sample t-test - Try different epsilon factors"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "02_eps_trials" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "8e44924a-ef1f-49be-8525-758bc60311e2")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 200,
+  fig.path = paste0('figures/', params$name, "/expl_trials_"),
+  echo = FALSE
+)
+```
+
+
+In **permApprox**, permutation $p$-values are obtained by fitting a GPD to the tail of permutation test statistics. When the fitted shape is negative ($\hat\xi<0$), the GPD has a finite upper support. To **avoid zero or overly small $p$-values**, we impose the constraint that the **evaluation point** lies inside the support by requiring
+
+$$
+t_{\text{obs}}+\varepsilon \;<\; s_{\text{GPD}},
+$$
+
+where $\varepsilon>0$ is a small, data-dependent buffer.
+
+In this script we compare the **unconstrained fit** (no $\varepsilon$, baseline) to **constrained GPD fitting** with $\varepsilon = c\,|t_{\text{obs}}|$ (fixed factor benchmark).
+
+We also examine **where** to apply the constraint in a multiple-testing setting:
+(a) **per-test** (each statistic gets its own constraint) versus
+(b) **global** (constraint with respect to the **maximum** observed statistic).
+
+```{r packages, message=FALSE, warning=FALSE}
+# Load packages
+library("conflicted")
+
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(future)
+library(future.apply)
+library(kableExtra)
+library(furrr)
+library(patchwork)
+
+# library(permApprox)
+
+# For permApprox:
+library(fdrtool)
+library(fitdistrplus)
+library(future)
+library(future.apply)
+library(goftest)
+library(limma)
+library(progressr)
+
+conflicts_prefer(dplyr::select, dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Data Simulation
+
+```{r}
+## Data Simulation with manual t-statistic computation
+set.seed(42)
+
+n_tests <- 1000    # number of independent tests
+n_per_group <- 100 # sample size per group
+B <- 1000          # permutations
+
+# Effect sizes by block
+effect_blocks <- c(0, 0.5, 1, 1.5, 2)
+delta_vec <- rep(effect_blocks, each = n_tests / length(effect_blocks))
+
+# Colors for p-value plots
+color_values <- c(
+      "0"   = "gold",
+      "0.5" = "#ffb347", # light orange
+      "1"   = "#ff8c00", # orange
+      "1.5" = "#e55b00", # deep orange
+      "2"   = "red"
+    )
+```
+
+We simulate two groups from normal distributions with increasing effect sizes (difference in means).
+
+The parameters are set as follows:
+
+* Sample size per group: `r n_per_group`  
+* Number of tests: `r n_tests`  
+* Effect sizes (difference in mean): `r paste(effect_blocks, collapse = " ")`  
+* Standard deviation: 1  
+* Tests per effect size: `r paste0("d=", effect_blocks, ": ",table(delta_vec), collapse = ", ")`
+
+The observed $t$-statistic is calculated as
+
+$$
+t_{\text{obs}} = \frac{\bar{x}_1 - \bar{x}_2}
+{\sqrt{\frac{s_1^2 + s_2^2}{n}}}
+$$
+
+where  
+- $\bar{x}_1$ and $\bar{x}_2$ are the sample means,  
+- $s_1^2$ and $s_2^2$ are the sample variances, and  
+- $n$ is the sample size in each group.
+
+
+```{r, eval=FALSE}
+# Storage
+obs_stats <- numeric(n_tests)
+perm_stats <- matrix(NA, nrow = B, ncol = n_tests)
+pval_ttest <- numeric(n_tests)
+
+for (g in seq_len(n_tests)) {
+  delta <- delta_vec[g]
+  
+  # Simulate data for this effect size
+  x1 <- rnorm(n_per_group, mean = 0, sd = 1)
+  x2 <- rnorm(n_per_group, mean = delta, sd = 1)
+  
+  # Observed t-statistic (manual)
+  obs_stats[g] <- (mean(x1) - mean(x2)) /
+    sqrt((var(x1) + var(x2)) / n_per_group)
+  
+  # Permutation setup
+  x_comb <- c(x1, x2)
+  n_comb <- length(x_comb)
+  
+  # Generate permutation indices
+  perm_idx_mat <- matrix(nrow = 0, ncol = n_per_group)
+  while (nrow(perm_idx_mat) < B) {
+    new_rows <- replicate(B, sample(n_comb, n_per_group), simplify = "matrix")
+    perm_idx_mat <- unique(rbind(perm_idx_mat, t(new_rows)))
+  }
+  perm_idx_mat <- perm_idx_mat[1:B, , drop = FALSE]
+  
+  # Permutation t-statistics (manual)
+  perm_stats[, g] <- apply(perm_idx_mat, 1, function(idx) {
+    x1_perm <- x_comb[idx]
+    x2_perm <- x_comb[-idx]
+    (mean(x1_perm) - mean(x2_perm)) /
+      sqrt((var(x1_perm) + var(x2_perm)) / n_per_group)
+  })
+  
+  # Classical t-test p-value (two-sided)
+  df_t <- 2 * n_per_group - 2
+  pval_ttest[g] <- 2 * pt(abs(obs_stats[g]), df = df_t, lower.tail = FALSE)
+}
+
+saveRDS(obs_stats, 
+        file = path_target(paste0("obs_t_stats_n", n_per_group, ".rds")))
+saveRDS(perm_stats, 
+        file = path_target(paste0("perm_t_stats_n", n_per_group, ".rds")))
+saveRDS(pval_ttest, 
+        file = path_target(paste0("pval_ttest_n", n_per_group, ".rds")))
+```
+
+```{r}
+# Load simulated data
+obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_per_group, ".rds")))
+perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, ".rds")))
+pval_ttest <- readRDS(path_target(paste0("pval_ttest_n", n_per_group, ".rds")))
+```
+
+```{r}
+# Turn delta vector into factor
+delta_vec <- delta_vec %>% factor(levels = effect_blocks)
+```
+
+## Histograms
+
+```{r histograms}
+# Pick 6 example tests to visualize (some from each effect size)
+set.seed(42)
+example_ids <- c(
+  sample(which(delta_vec == 0), 1),
+  sample(which(delta_vec == 0.5), 1),
+  sample(which(delta_vec == 1), 1),
+  sample(which(delta_vec == 1.5), 1),
+  sample(which(delta_vec == 2), 1),
+  sample(which(delta_vec == 2), 1)
+)
+
+plot_list <- list()
+
+for (i in seq_along(example_ids)) {
+  g <- example_ids[i]
+  
+  df_plot <- tibble(
+    perm_stat = perm_stats[g, ]
+  )
+  
+  plot_list[[i]] <- ggplot(df_plot, aes(x = perm_stat)) +
+    geom_histogram(bins = 30, fill = "grey80", color = "black") +
+    geom_vline(xintercept = obs_stats[g], color = "red", size = 0.8) +
+    labs(
+      title = paste0(
+        "Test #", g,
+        " (δ = ", delta_vec[g], ")"
+      ),
+      x = "Permutation t-statistic",
+      y = "Frequency"
+    ) +
+    theme_minimal()
+}
+
+# Arrange in grid
+wrap_plots(plot_list, ncol = 3)
+```
+
+## Unconstrained GPD fit
+
+```{r run_permApprox_unconstr}
+fname_unconstr <- path_target(paste0("permapprox_unconstr.rds"))
+
+if (!file.exists(fname_unconstr)) {
+  gpd_ctrl_unconstr <- make_gpd_ctrl(
+    fit_method = "LME",
+    tol        = 1e-7,
+    include_obs = FALSE,
+    constraint = "unconstrained",
+    thresh_method = "ftr",
+    exceed0 = 250,
+    exceed_min = 10,
+    thresh_step = 10,
+    gof_test = "ad",
+    gof_alpha = 0.05,
+    cores = 1,
+    verbose = TRUE
+  )
+  
+  papprox_unconstr <- compute_p_values(
+    obs_stats = obs_stats,
+    perm_stats = perm_stats,
+    alternative = "two_sided",
+    method = "gpd",
+    gpd_ctrl = gpd_ctrl_unconstr,
+    adjust_method = "BH"
+  )
+  
+  saveRDS(papprox_unconstr, file = fname_unconstr)
+  
+} else {
+  papprox_unconstr <- readRDS(fname_unconstr)
+}
+```
+
+```{r}
+# Base results
+res <- tibble(
+  idx = seq_along(obs_stats),
+  effect_size = delta_vec,
+  obs_stats = abs(obs_stats),
+  p_ttest = pval_ttest,
+  gpd_fit = papprox_unconstr$gpd_fit$fitted,
+  p_unconstr = papprox_unconstr$p_unadjusted
+)
+```
+
+```{r pvals_unconstr, fig.width = 10, fig.height = 6, dpi = 200}
+df_plot <- res
+
+# Find smallest nonzero p-value
+min_nonzero <- min(c(df_plot$p_ttest[df_plot$p_ttest > 0],
+                     df_plot$p_unconstr[df_plot$p_unconstr > 0]), na.rm = TRUE)
+min_nonzero <- max(min_nonzero, 1e-320)
+
+# Replacement value for zero p-values (half the smallest nonzero)
+zero_repl <- min_nonzero / 100
+
+# Replace 0 with replacement value for plotting
+df_plot <- df_plot %>%
+  mutate(
+    p_ttest_plot = ifelse(p_ttest == 0, zero_repl, p_ttest),
+    p_unconstr_plot  = ifelse(p_unconstr == 0, zero_repl, p_unconstr)
+  )
+
+p <- ggplot(df_plot, aes(x = obs_stats)) +
+  # t-test p-values in black
+  geom_point(
+    aes(y = p_ttest_plot, shape = "t-test"),
+    color = "black", size = 2, stroke = 0.5, alpha = 0.5
+  ) +
+  # GPD p-values colored by discrete effect size
+  geom_point(
+    aes(y = p_unconstr_plot, shape = "unconstrained GPD", color = effect_size),
+    size = 1.6, alpha = 0.6
+  ) +
+  scale_shape_manual(
+    name = "P-value type:",
+    values = c("unconstrained GPD" = 16, "t-test" = 1)
+  ) +
+  scale_color_manual(
+    name = "Effect size:",
+    values = color_values
+  ) +
+  scale_y_log10(
+    breaks = c(zero_repl, 1e-30, 1e-20, 1e-10, 1),
+    labels = c("0", "1e-30", "1e-20", "1e-10", "1"),
+    limits = c(zero_repl, 1), # ensures smallest values are shown
+    minor_breaks = NULL
+  ) +
+  labs(
+    title = "Unconstrained permApprox vs. t-test",
+    x = expression(t[obs]),
+    y = expression(hat(p))
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text       = element_text(size = 14),
+    axis.title      = element_text(size = 16),
+    plot.title      = element_text(size = 16),
+    strip.text      = element_text(size = 15),
+    legend.title    = element_text(size = 14),
+    legend.text     = element_text(size = 12)
+    #legend.position = "top",
+    #legend.box = "vertical"
+  )
+
+print(p)
+```
+
+```{r}
+df <- res %>%
+  mutate(shape = papprox_unconstr$gpd_fit$shape)
+kable(df[300:330, ])
+```
+
+
+As expected, the unconstraint fit may lead to zero p-values if the fitted GPD shape parameter is negative. 
+
+## Constrained GPD fit (vary eps-factor)
+
+We now fit with the constraint that $t_{obs} + \varepsilon$ must lie in the GPD support, where $\varepsilon = \varepsilon_{fact}*t_{obs}$. 
+
+The epsilon factor $\varepsilon_{fact}$ is varied from 0 to 0.5.
+
+```{r run_permApprox_constr_all}
+eps_factors <- c(0, 0.001, 0.01, 0.1, 0.2, 0.3, 0.4, 0.5)
+papprox_list_all <- list()
+
+for (eps in eps_factors) {
+  
+  eps_factor <- function(obs_stats = NULL, factor = eps, ...) {
+    factor * abs(obs_stats)
+  }
+  
+  fname <- path_target(paste0("permapprox_constr_all_eps", eps, ".rds"))
+  
+  if (!file.exists(fname)) {
+    cat("eps: ", eps, "\n")
+    
+    gpd_ctrl <- make_gpd_ctrl(
+      fit_method = "LME",
+      tol = 1e-7,
+      include_obs = FALSE,
+      constraint = "support_at_obs",
+      thresh_method = "ftr",
+      exceed0 = 250,
+      exceed_min = 10,
+      thresh_step = 10,
+      gof_test = "ad",
+      gof_alpha = 0.05,
+      cores = 1,
+      verbose = TRUE
+    )
+    
+    papprox_res <- compute_p_values(
+      obs_stats = obs_stats,
+      perm_stats = perm_stats,
+      alternative = "two_sided",
+      eps_fct = eps_factor,
+      method = "gpd",
+      gpd_ctrl = gpd_ctrl,
+      adjust_method = "BH"
+    )
+    
+    saveRDS(papprox_res, file = fname)
+    
+  } else {
+    papprox_res <- readRDS(fname)
+  }
+  
+  papprox_list_all[[as.character(eps)]] <- papprox_res
+}
+```
+
+```{r}
+# Base results
+res <- tibble(
+  idx = seq_along(obs_stats),
+  effect_size = delta_vec,
+  obs_stats = abs(obs_stats),
+  p_ttest = pval_ttest,
+  gpd_fit = papprox_unconstr$gpd_fit$fitted,
+  p_unconstr = papprox_unconstr$p_unadjusted
+)
+
+# Add permApprox constrained results
+for (eps in eps_factors) {
+  res[[paste0("p_constr_all_eps", eps)]] <- 
+    papprox_list_all[[as.character(eps)]]$p_unadjusted
+}
+
+# Pivot longer
+res_long <- res %>%
+  pivot_longer(
+    cols = matches("^p_constr_"),
+    names_to = "constraint_eps",
+    values_to = "p_constr"
+  ) %>%
+  mutate(
+    constraint_type = if_else(str_detect(constraint_eps, "max"), "max", "all"),
+    epsilon = str_extract(constraint_eps, "[0-9.]+$") %>% as.numeric()
+  ) %>%
+  select(-constraint_eps) %>%
+  relocate(constraint_type, epsilon, .after = obs_stats)
+```
+
+### Epsilon = 0
+
+```{r pvals_constr_eps0}
+## Choose constraint type: "max" or "all"
+plot_constraint <- "all"
+
+df_eps <- res_long %>% 
+  filter(epsilon == 0, constraint_type == plot_constraint)
+
+p <- ggplot(df_eps, aes(x = obs_stats)) +
+  # t-test p-values in black
+  geom_point(
+    aes(y = p_ttest, shape = "t-test"),
+    color = "black", size = 2, stroke = 0.5, alpha = 0.5
+  ) +
+  # Constrained GPD p-values colored by effect size
+  geom_point(
+    aes(y = p_constr, shape = "Constrained", color = effect_size),
+    size = 1.6, alpha = 0.6
+  ) +
+  scale_shape_manual(
+    name = "p-value type",
+    values = c("t-test" = 1, "Constrained" = 16)
+  ) +
+  scale_color_manual(
+    name = "Effect size:",
+    values = color_values
+  ) +
+  scale_y_log10(labels = scales::scientific) +
+  labs(
+    title = paste0(
+      "t-test vs. permApprox constrained (",
+      plot_constraint, " test, eps = 0)"
+    ),
+    x = expression(t[obs]),
+    y = expression(hat(p))
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text       = element_text(size = 14),
+    axis.title      = element_text(size = 16),
+    plot.title      = element_text(size = 16),
+    strip.text      = element_text(size = 15),
+    legend.title    = element_text(size = 14),
+    legend.text     = element_text(size = 12)
+  )
+
+print(p)
+```
+
+With the constrained fitting but without an epsilon (i.e., $\varepsilon = 0$), the approximated p-values are far too small.
+
+### Positive epsilon
+
+```{r pvals_constr_vareps}
+## Choose constraint type: "max" or "all"
+plot_constraint <- "all"
+
+eps_values <- sort(unique(res_long$epsilon))
+
+for (eps in eps_values[-1]) {
+  df_eps <- res_long %>% 
+    filter(epsilon == eps, constraint_type == plot_constraint)
+  
+  cat("\neps=", eps, ":", min(df_eps[df_eps$p_constr != 0, "p_constr"]))
+  
+  p <- ggplot(df_eps, aes(x = obs_stats)) +
+    # t-test p-values in black
+    geom_point(
+      aes(y = p_ttest, shape = "t-test"),
+      color = "black", size = 2, stroke = 0.5, alpha = 0.5
+    ) +
+    # Constrained GPD p-values colored by effect size
+    geom_point(
+      aes(y = p_constr, shape = "Constrained", color = effect_size),
+      size = 1.6, alpha = 0.6
+    ) +
+    scale_shape_manual(
+      name = "p-value type",
+      values = c("t-test" = 1, "Constrained" = 16)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = color_values
+    ) +
+    scale_y_log10(labels = scales::scientific) +
+    labs(
+      title = paste0(
+        "t-test vs. permApprox constrained (",
+        plot_constraint, " test, eps_fact = ", eps, ")"
+      ),
+      x = expression(t[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text       = element_text(size = 14),
+      axis.title      = element_text(size = 16),
+      plot.title      = element_text(size = 16),
+      strip.text      = element_text(size = 15),
+      legend.title    = element_text(size = 14),
+      legend.text     = element_text(size = 12)
+    ) +
+    coord_cartesian(ylim = c(1e-100, 1))
+  
+  print(p)
+}
+```
+
+An epsilon factor of 0.1 would be a good choice for this setting.
+
+## Constrained GPD fit (max only)
+
+To be more conservative, we here apply the constraint to the maximum test statistic only.
+
+```{r run_permApprox_constr_max}
+eps_factors <- c(0, 0.001, 0.01, 0.1, 0.2, 0.3, 0.4, 0.5)
+papprox_list_max <- list()
+
+for (eps in eps_factors) {
+  
+  eps_factor <- function(obs_stats = NULL, factor = eps, ...) {
+    factor * abs(obs_stats)
+  }
+  
+  fname <- path_target(paste0("permapprox_constr_max_eps", eps, ".rds"))
+  
+  if (!file.exists(fname)) {
+    cat("eps: ", eps, "\n")
+    
+    gpd_ctrl <- make_gpd_ctrl(
+      fit_method = "LME",
+      tol = 1e-7,
+      include_obs = FALSE,
+      constraint = "support_at_max",
+      thresh_method = "ftr",
+      exceed0 = 250,
+      exceed_min = 10,
+      thresh_step = 10,
+      gof_test = "ad",
+      gof_alpha = 0.05,
+      cores = 1,
+      verbose = TRUE
+    )
+    
+    papprox_res <- compute_p_values(
+      obs_stats = obs_stats,
+      perm_stats = perm_stats,
+      alternative = "two_sided",
+      eps_fct = eps_factor,
+      method = "gpd",
+      gpd_ctrl = gpd_ctrl,
+      adjust_method = "BH"
+    )
+    
+    saveRDS(papprox_res, file = fname)
+    
+  } else {
+    papprox_res <- readRDS(fname)
+  }
+  
+  papprox_list_max[[as.character(eps)]] <- papprox_res
+}
+```
+
+```{r}
+# Base results
+res <- tibble(
+  idx = seq_along(obs_stats),
+  effect_size = delta_vec,
+  obs_stats = abs(obs_stats),
+  p_ttest = pval_ttest,
+  gpd_fit = papprox_unconstr$gpd_fit$fitted,
+  p_unconstr = papprox_unconstr$p_unadjusted
+)
+
+# Add permApprox constrained results
+for (eps in eps_factors) {
+  res[[paste0("p_constr_max_eps", eps)]] <- 
+    papprox_list_max[[as.character(eps)]]$p_unadjusted
+}
+for (eps in eps_factors) {
+  res[[paste0("p_constr_all_eps", eps)]] <- 
+    papprox_list_all[[as.character(eps)]]$p_unadjusted
+}
+
+# Pivot longer
+res_long <- res %>%
+  pivot_longer(
+    cols = matches("^p_constr_"),
+    names_to = "constraint_eps",
+    values_to = "p_constr"
+  ) %>%
+  mutate(
+    constraint_type = if_else(str_detect(constraint_eps, "max"), "max", "all"),
+    epsilon = str_extract(constraint_eps, "[0-9.]+$") %>% as.numeric()
+  ) %>%
+  select(-constraint_eps) %>%
+  relocate(constraint_type, epsilon, .after = obs_stats)
+```
+
+
+```{r pvals_constr_max_tstat}
+## Choose constraint type: "max" or "all"
+plot_constraint <- "max"
+
+eps_values <- sort(unique(res_long$epsilon))
+
+for (eps in eps_values) {
+  df_eps <- res_long %>% 
+    filter(epsilon == eps, constraint_type == plot_constraint)
+  
+  cat("\neps=", eps, ":", min(df_eps[df_eps$p_constr != 0, "p_constr"]))
+  
+  p <- ggplot(df_eps, aes(x = obs_stats)) +
+    # t-test p-values in black
+    geom_point(
+      aes(y = p_ttest, shape = "t-test"),
+      color = "black", size = 2, stroke = 0.5, alpha = 0.5
+    ) +
+    # Constrained GPD p-values colored by effect size
+    geom_point(
+      aes(y = p_constr, shape = "constrained", color = effect_size),
+      size = 1.6, alpha = 0.6
+    ) +
+    scale_shape_manual(
+      name = "P-value type:",
+      values = c("t-test" = 1, "constrained" = 16)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = color_values
+    ) +
+    scale_y_log10(labels = scales::scientific) +
+    labs(
+      title = paste0(
+        "t-test vs. permApprox constrained (",
+        plot_constraint, " test, eps_fact = ", eps, ")"
+      ),
+      x = expression(t[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text       = element_text(size = 14),
+      axis.title      = element_text(size = 16),
+      plot.title      = element_text(size = 16),
+      strip.text      = element_text(size = 15),
+      legend.title    = element_text(size = 14),
+      legend.text     = element_text(size = 12)
+    ) +
+    coord_cartesian(ylim = c(1e-100, 1))
+  
+  print(p)
+}
+```
+
+Applying the constraint to the maximum test statistic only seems to be conservative across all epsilon factors. We will have to find out how this approach performs for different sample sizes.
+
+## Unconstrained vs. constrained p-values
+
+We now compare the unconstrained p-values with the constrained ones for eps_fact = 0.1 to see if we could imply the optimal epsilon from the unconstrained p-values.
+
+```{r pvalues_unconstrained_vs_constrained}
+## Choose constraint type: "max" or "all"
+plot_constraint <- "all"
+
+eps <- 0.1
+
+df_plot <- res_long %>% 
+  filter(epsilon == eps, constraint_type == plot_constraint) %>%
+  mutate(effect_size = factor(effect_size,
+                              levels = c(0, 0.5, 1, 1.5, 2))) # discrete
+
+# Find smallest nonzero p-value
+min_nonzero <- min(c(df_plot$p_constr[df_plot$p_constr > 0],
+                     df_plot$p_unconstr[df_plot$p_unconstr > 0]), na.rm = TRUE)
+min_nonzero <- max(min_nonzero, 1e-320)
+
+# Replacement value for zero p-values (half the smallest nonzero)
+zero_repl <- min_nonzero / 100
+
+# Replace 0 with replacement value for plotting
+df_plot <- df_plot %>%
+  mutate(
+    p_constr_plot = ifelse(p_constr == 0, zero_repl, p_constr),
+    p_unconstr_plot  = ifelse(p_unconstr == 0, zero_repl, p_unconstr)
+  )
+
+p <- ggplot(df_plot, aes(x = obs_stats)) +
+  # Unconstrained p-values in black (takes t-test role)
+  geom_point(
+    aes(y = p_unconstr_plot, shape = "Unconstrained"),
+    color = "black", size = 2, stroke = 0.5, alpha = 0.5
+  ) +
+  # Constrained p-values colored by effect size
+  geom_point(
+    aes(y = p_constr_plot, shape = "Constrained", color = effect_size),
+    size = 1.6, alpha = 0.6
+  ) +
+  scale_shape_manual(
+    name = "p-value type",
+    values = c("Unconstrained" = 1, "Constrained" = 16)
+  ) +
+  scale_color_manual(
+    name = "Effect size (δ)",
+    values = color_values
+  ) +
+  scale_y_log10(
+    breaks = c(zero_repl, 1e-30, 1e-20, 1e-10, 1),
+    labels = c("0", "1e-30", "1e-20", "1e-10", "1"),
+    limits = c(zero_repl, 1), # ensures smallest values are shown
+    minor_breaks = NULL
+  ) +
+  labs(
+    title = paste0(
+      "permApprox unconstrained vs. constrained (",
+      plot_constraint, " tests, eps = ", eps, ")"
+    ),
+    x = expression(t[obs]),
+    y = expression(hat(p))
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text       = element_text(size = 14),
+    axis.title      = element_text(size = 16),
+    plot.title      = element_text(size = 16),
+    strip.text      = element_text(size = 15),
+    legend.title    = element_text(size = 14),
+    legend.text     = element_text(size = 12)
+  ) + coord_cartesian(ylim = c(zero_repl, 1))
+
+print(p)
+
+```
+
+## Unconstrained vs. constrained p-values (non-zeros only)
+
+```{r pvalues_unconstrained_vs_constrained_nonzero_ylim}
+## Choose constraint type: "max" or "all"
+plot_constraint <- "all"
+
+eps <- 0.1
+
+df_eps <- res_long %>% 
+  filter(epsilon == eps, 
+         constraint_type == plot_constraint,
+         p_unconstr != 0) %>%
+  mutate(effect_size = factor(effect_size,
+                              levels = c(0, 0.5, 1, 1.5, 2))) # discrete
+
+p <- ggplot(df_eps, aes(x = obs_stats)) +
+  # Unconstrained p-values in black (takes t-test role)
+  geom_point(
+    aes(y = p_unconstr, shape = "Unconstrained"),
+    color = "black", size = 2, stroke = 0.5, alpha = 0.5
+  ) +
+  # Constrained p-values colored by effect size
+  geom_point(
+    aes(y = p_constr, shape = "Constrained", color = effect_size),
+    size = 1.6, alpha = 0.6
+  ) +
+  scale_shape_manual(
+    name = "p-value type",
+    values = c("Unconstrained" = 1, "Constrained" = 16)
+  ) +
+  scale_color_manual(
+    name = "Effect size",
+    values = color_values
+  ) +
+  scale_y_log10(labels = scales::scientific) +
+  labs(
+    title = paste0(
+      "permApprox unconstrained (non-zero only) vs. constrained (",
+      plot_constraint, " tests, eps = ", eps, ")"
+    ),
+    x = expression(t[obs]),
+    y = expression(hat(p))
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text       = element_text(size = 14),
+    axis.title      = element_text(size = 16),
+    plot.title      = element_text(size = 16),
+    strip.text      = element_text(size = 15),
+    legend.title    = element_text(size = 14),
+    legend.text     = element_text(size = 12)
+  )  + coord_cartesian(ylim = c(zero_repl, 1))
+
+print(p)
+
+```
+
+It would be difficult to find the optimal epsilon by comparing unconstrained and constrained p-values as the unconstraint p-values have a much higher variation than the ones fitted with constraint.
+
+## Constraint needed vs. not needed
+
+```{r pvalues_constr_needed_vs_not_needed, fig.width=12, fig.height=6, dpi=200}
+## Choose constraint type: "max" or "all"
+plot_constraint <- "all"
+
+eps <- 0.1
+
+df_plot <- res_long %>%
+  filter(epsilon == eps, constraint_type == plot_constraint) %>%
+  mutate(
+    constraint_needed = case_when(
+      gpd_fit == FALSE ~ "No GPD fit",
+      p_unconstr == 0 ~ "Constraint needed", 
+      TRUE ~ "Constraint not needed")
+  ) %>%
+  mutate(constraint_needed = 
+           factor(constraint_needed,
+                  levels = c("No GPD fit", "Constraint not needed", "Constraint needed"))) %>%
+  arrange(constraint_needed)  # ensures "Needed" plotted last
+
+# Find smallest nonzero p-value
+min_nonzero <- min(c(df_plot$p_constr[df_plot$p_constr > 0],
+                     df_plot$p_unconstr[df_plot$p_unconstr > 0]), na.rm = TRUE)
+min_nonzero <- max(min_nonzero, 1e-320)
+
+# Replacement value for zero p-values (half the smallest nonzero)
+zero_repl <- min_nonzero / 100
+
+# Replace 0 with replacement value for plotting
+df_plot <- df_plot %>%
+  mutate(
+    p_constr_plot = ifelse(p_constr == 0, zero_repl, p_constr),
+    p_unconstr_plot  = ifelse(p_unconstr == 0, zero_repl, p_unconstr)
+  )
+
+p <- ggplot(df_plot, aes(x = obs_stats)) +
+  # Unconstrained p-values in black (reference points)
+  geom_point(
+    aes(y = p_unconstr_plot, shape = "Unconstrained"),
+    color = "black", size = 2, stroke = 0.5, alpha = 0.7
+  ) +
+  # Constrained p-values colored by whether constraint was needed
+  geom_point(
+    aes(y = p_constr_plot, shape = "Constrained", color = constraint_needed),
+    size = 1.6, alpha = 0.7
+  ) +
+  scale_shape_manual(
+    name = "p-value type",
+    values = c("Unconstrained" = 1, "Constrained" = 16)
+  ) +
+  scale_color_manual(
+    name = "",
+    values = c(
+      "No GPD fit" = "gray",
+      "Constraint not needed" = "gold",
+      "Constraint needed"     = "#F8766D"
+    )
+  ) +
+  scale_y_log10(
+    breaks = c(zero_repl, 1e-30, 1e-20, 1e-10, 1),
+    labels = c("0", "1e-30", "1e-20", "1e-10", "1"),
+    limits = c(zero_repl, 1), # ensures smallest values are shown
+    minor_breaks = NULL
+  ) +
+  labs(
+    title = paste0(
+      "permApprox unconstrained vs. constrained (",
+      plot_constraint, ", eps = ", eps, ")"
+    ),
+    x = expression(t[obs]),
+    y = expression(hat(p))
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text       = element_text(size = 14),
+    axis.title      = element_text(size = 16),
+    plot.title      = element_text(size = 16),
+    strip.text      = element_text(size = 15),
+    legend.title    = element_text(size = 14),
+    legend.text     = element_text(size = 12)
+  )  + coord_cartesian(ylim = c(zero_repl, 1))
+
+print(p)
+
+```
+
+In the next script, we will apply different epsilon rules to simulated data of various sample sizes. Our goal is to find an epsilon rule applicable to all types of test statistics and works well across different sample sizes.
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

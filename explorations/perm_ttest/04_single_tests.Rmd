@@ -1,0 +1,411 @@
+---
+title: "Two-sample t-test - Test epsilon rule for single tests"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "04_single_tests" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "5e646f9e-bea7-4678-8776-a33608cb3fad")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 200,
+  fig.path = paste0('figures/', params$name, "/expl_single_"),
+  echo = FALSE
+)
+```
+
+
+In this script we evaluate the performance of the **Standardized Lifted Log-Saturation (SLLS) rule** in the **single-test setting**. Here, each test is treated independently: the $p$-value approximation is computed per test, and the choice of $\varepsilon$ depends only on the test’s own permutation distribution rather than on the maximum statistic across multiple tests. This setup isolates the behavior of the rule in a clean, controlled scenario and allows us to study its properties without the additional complexity introduced by multiple testing.
+
+
+```{r packages, message=FALSE, warning=FALSE}
+# Load packages
+library(conflicted)
+
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(future)
+library(future.apply)
+library(kableExtra)
+library(furrr)
+library(patchwork)
+
+# For permApprox:
+library(fdrtool)
+library(fitdistrplus)
+library(future)
+library(future.apply)
+library(goftest)
+library(limma)
+library(progressr)
+
+conflicts_prefer(dplyr::select, dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Data Simulation
+
+```{r}
+## Data Simulation with manual t-statistic computation
+set.seed(42)
+
+n_tests <- 1000    # number of independent tests
+n_per_group_vec <- c(50, 100, 250, 500, 750, 1000) # sample size per group
+B <- 1000          # permutations
+
+# Effect sizes by block
+effect_blocks <- c(0, 0.5, 1, 1.5, 2)
+delta_vec <- rep(effect_blocks, each = n_tests / length(effect_blocks)) %>%
+  factor(levels = effect_blocks)
+```
+
+We reuse the data from the former simulation study, where we simulated two groups from normal distributions with increasing effect sizes (difference in means).
+
+The parameters are set as follows:
+
+* Sample sizes per group: `r n_per_group_vec`  
+* Number of tests: `r n_tests`  
+* Effect sizes (difference in mean): `r paste(effect_blocks, collapse = " ")`  
+* Standard deviation: 1  
+* Tests per effect size: `r paste0("d=", effect_blocks, ": ",table(delta_vec), collapse = ", ")`
+
+The observed $t$-statistic is calculated as
+
+$$
+t_{\text{obs}} = \frac{\bar{x}_1 - \bar{x}_2}
+{\sqrt{\frac{s_1^2 + s_2^2}{n}}}
+$$
+
+where  
+- $\bar{x}_1$ and $\bar{x}_2$ are the sample means,  
+- $s_1^2$ and $s_2^2$ are the sample variances, and  
+- $n$ is the sample size in each group.
+
+
+## Plot function
+
+```{r}
+plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE) {
+  p <- ggplot(df, aes(x = obs_stats)) +
+    # t-test p-values in black
+    geom_point(
+      aes(y = p_ttest, shape = "t-test"),
+      color = "black", size = 2, stroke = 0.5, alpha = 0.5
+    ) +
+    # Constrained GPD p-values colored by effect size
+    geom_point(
+      aes(y = p_constr, shape = "constrained GPD", color = effect_size),
+      size = 1.6, alpha = 0.6
+    ) +
+    scale_shape_manual(
+      name = "P-value type:",
+      values = c("constrained GPD" = 16, "t-test" = 1)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = c(
+        "0"   = "gold",
+        "0.5" = "#ffb347", # light orange
+        "1"   = "#ff8c00", # orange
+        "1.5" = "#e55b00", # deep orange
+        "2"   = "red"
+      )
+    ) +
+    labs(
+      title = paste0( "t-test vs. constrained GPD fit (n = ", sampsize, ")"),
+      x = expression(t[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text       = element_text(size = 14),
+      axis.title      = element_text(size = 16),
+      plot.title      = element_text(size = 16),
+      strip.text      = element_text(size = 15),
+      legend.title    = element_text(size = 14),
+      legend.text     = element_text(size = 12)    
+      #legend.position = "top",
+      #legend.box = "vertical"
+    )
+  
+  if (log_scale) {
+    p <- p + 
+      scale_y_log10(
+        breaks = c(1e-300, 1e-200, 1e-100, 1e-80, 1e-60, 1e-40, 1e-20, 1e-2),
+        labels = c("1e-300", "1e-200", "1e-100", "1e-80", "1e-60", "1e-40", "1e-20", "1e-2"),
+        minor_breaks = NULL
+      )
+  }
+  
+  if (!is.null(ylim)) {
+    p <- p + coord_cartesian(ylim = ylim)
+  }
+  
+  p <- p + expand_limits(x = 0)
+  
+  return(p)
+}
+```
+
+## Function to run permApprox
+
+This function will be used for all p-values approximations with constrained GPD fit.
+
+```{r run_permApprox_function}
+run_permApprox <- function(rule_name, eps_fct, constraint = "support_at_obs") {
+  for (n_per_group in n_per_group_vec) {
+    # Load simulated data
+    obs_stats <- readRDS(path_source("03_find_eps_rule",
+                                     paste0("obs_t_stats_n", 
+                                            n_per_group, "_B", B, ".rds")))
+    perm_stats <- readRDS(path_source("03_find_eps_rule",
+                                      paste0("perm_t_stats_n", 
+                                             n_per_group, "_B", B, ".rds")))
+    pval_ttest <- readRDS(path_source("03_find_eps_rule",
+                                      paste0("pval_ttest_n", 
+                                             n_per_group, "_B", B, ".rds")))
+    
+    fname_constr <- path_target(paste0("single_test_constr_", rule_name, "_n", 
+                                       n_per_group, "_B", B, ".rds"))
+    
+    if (!file.exists(fname_constr)) {
+      cat("n:", n_per_group, "\n")
+      
+      gpd_ctrl_constr <- make_gpd_ctrl(
+        fit_method = "LME",
+        tol = 1e-7,
+        include_obs = FALSE,
+        constraint = constraint,
+        thresh_method = "ftr",
+        exceed0 = 250,
+        exceed_min = 10,
+        thresh_step = 10,
+        gof_test = "ad",
+        gof_alpha = 0.05,
+        cores = 1,
+        verbose = TRUE
+      )
+      
+      papprox_list <- list()
+      
+      for (m in 1:n_tests) {
+        if (m%%50 == 0) print(m)
+    
+        papprox_list[[m]] <- papprox_constr <- compute_p_values(
+          obs_stats = obs_stats[m],
+          perm_stats = perm_stats[, m],
+          eps_fct = eps_fct,
+          sampsize = n_per_group,
+          alternative = "two_sided",
+          method = "gpd",
+          gpd_ctrl = gpd_ctrl_constr,
+          adjust_method = "BH"
+        )
+      }
+      
+      saveRDS(papprox_list, file = fname_constr)
+    }
+  }
+  
+  # ---- Combine results for all n_per_group values ----
+  results_all <- purrr::map_dfr(n_per_group_vec, function(n_per_group) {
+    
+    # Load the original stats & t-test p-values (same source path as in the loop above)
+    obs_stats  <- readRDS(path_source("03_find_eps_rule",
+                                      paste0("obs_t_stats_n",  n_per_group, "_B", B, ".rds")))
+    pval_ttest <- readRDS(path_source("03_find_eps_rule",
+                                      paste0("pval_ttest_n",   n_per_group, "_B", B, ".rds")))
+    
+    # Load the per-test permApprox results (matches the save name above)
+    papprox_list <- readRDS(path_target(
+      paste0("single_test_constr_", rule_name, "_n", n_per_group, "_B", B, ".rds")
+    ))
+    
+    # Safety check
+    stopifnot(length(papprox_list) == length(obs_stats),
+              length(pval_ttest)   == length(obs_stats))
+    
+    # Build tibble for this n by extracting from each per-test result
+    purrr::map_dfr(seq_along(papprox_list), function(m) {
+      fit <- papprox_list[[m]]
+      
+      tibble::tibble(
+        idx         = m,
+        n_per_group = n_per_group,
+        effect_size = delta_vec[m],
+        obs_stats   = abs(obs_stats[m]),         # keep absolute t
+        p_ttest     = pval_ttest[m],
+        gpd_fit     = ifelse(is.null(fit$gpd_fit), NA, fit$gpd_fit$fitted),
+        p_constr     = fit$p_unadjusted,
+        epsilon     = ifelse(is.null(fit$gpd_fit), NA, fit$gpd_fit$epsilon)
+      )
+    })
+  })
+  
+  return(results_all)
+}
+```
+
+
+## Run permApprox with the SLLS rule for $\varepsilon$
+
+We use the SLLS (Standardized Lifted Log-Saturation) rule to define epsilon and run permApprox with this rule.
+
+```{r, echo=TRUE}
+# Build T_cap from choice: "perm" or "tmax"
+# - cap_base = "tmax": uses observed maximum across tests
+# - cap_base = "perm": uses high quantile of |perm_stats| inflated by g(n)
+.build_Tcap <- function(cap_base, t_obs, perm_stats, n, 
+                        q_ref = 0.99, alpha = 0.5) {
+  if (identical(cap_base, "tmax")) {
+    # Observed cap (same for all tests)
+    T_cap <- rep(max(abs(t_obs), na.rm = TRUE), length(t_obs))
+
+  } else if (identical(cap_base, "perm")) {
+    # Permutation cap: high quantile of |perm|, inflated by g(n)
+    if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+    Tabs <- abs(perm_stats)
+    Tq <- apply(Tabs, 2, stats::quantile, probs = q_ref, na.rm = TRUE, names = FALSE)
+    
+    # Inflation g(n) = max(1, alpha * sqrt(n))
+    infl <- pmax(1, alpha * sqrt(n))
+    T_cap <- Tq * infl
+
+    # Broadcast if needed
+    if (length(T_cap) == 1L) T_cap <- rep(T_cap, length(t_obs))
+    if (length(T_cap) != length(t_obs)) T_cap <- rep(T_cap[1L], length(t_obs))
+
+  } else {
+    stop("cap_base must be 'perm' or 'tmax'.")
+  }
+
+  # Guardrails: enforce positive finite caps
+  bad <- !is.finite(T_cap) | T_cap <= 0
+  if (any(bad)) {
+    fallback <- max(T_cap[!bad], 1)
+    T_cap[bad] <- fallback
+  }
+  T_cap
+}
+
+# Standardized Lifted Log-Saturation (SLLS) using unified Z-cap
+# - Standardize to Z using permutation mean/sd per test
+# - Build the cap on the Z-scale via .build_Tcap (cap_base = "perm" or "tmax")
+# - Apply simplified LLS on Z
+# - Map epsilon back to T-scale via sigma_j
+eps_log_saturation_lift_std <- function(obs_stats,
+                                        perm_stats,
+                                        sampsize,
+                                        cap_base      = "perm",  # Z-cap choice
+                                        alpha         = 0.5, # g(n) = max(1, alpha*sqrt(n))
+                                        q_ref         = 0.99, # quantile of |Z_perm|
+                                        rho_lift      = 3,
+                                        k_factor      = 1000,
+                                        target_factor = 0.25,
+                                        floor_epsZ    = 1e-6,
+                                        ...) {
+  cap_base <- if (is.character(cap_base)) match.arg(cap_base) else cap_base
+  n <- sampsize
+  stopifnot(n > 0)
+
+  # Shape inputs --------------------------------------------------------------
+  # Allow vector perm_stats for single test
+  if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+  Tobs <- as.numeric(obs_stats)
+
+  # Z-standardization per test -----------------------------------------------
+  mu  <- colMeans(perm_stats, na.rm = TRUE)
+  sig <- apply(perm_stats, 2, sd, na.rm = TRUE)
+
+  # Guard against non-finite or zero SDs: replace with a small positive fallback
+  valid_sig <- sig[is.finite(sig) & sig > 0]
+  sig_fallback <- if (length(valid_sig)) max(min(valid_sig), 1e-12) else 1e-12
+  sig_ok <- sig
+  sig_ok[!is.finite(sig_ok) | sig_ok <= 0] <- sig_fallback
+
+  Zobs  <- abs((Tobs - mu) / sig_ok)
+  Zperm <- sweep(sweep(perm_stats, 2, mu, "-"), 2, sig_ok, "/")  # same shape as perm_stats
+
+  # Build Z-cap (unified) -----------------------------------------------------
+  # Uses: "tmax" => max(Zobs); "perm" => Q_q(|Zperm|) * g(n) with g(n)=max(1, alpha*sqrt(n))
+  T_cap_Z <- .build_Tcap(cap_base = cap_base,
+                         t_obs    = Zobs,
+                         perm_stats = Zperm,
+                         n        = n,
+                         q_ref    = q_ref,
+                         alpha    = alpha)
+
+  # LLS core on Z -------------------------------------------------------------
+  k        <- k_factor      * (500 / n)
+  E_target <- target_factor * (500 / n)
+
+  if (!any(is.finite(T_cap_Z)) || all(T_cap_Z <= 0)) {
+    # Conservative constant if the cap failed
+    epsZ <- rep(max(E_target + rho_lift, floor_epsZ), length(Zobs))
+  } else {
+    s   <- pmin(Zobs / T_cap_Z, 1)        # scale-free index in [0,1]
+    psi <- (1 - s)^4 * (1 + 4*s)          # Wendland C^2 lift
+    epsZ_core <- E_target * log1p(k * s) / log1p(k) + rho_lift * psi
+    epsZ <- pmax(epsZ_core, floor_epsZ)
+  }
+
+  # Map back to T-scale -------------------------------------------------------
+  epsT <- epsZ * sig_ok
+  epsT
+}
+```
+
+```{r run_permApprox_constr_log_sat_lift_std}
+results_all <- run_permApprox(rule_name = "log_sat_lift_std", 
+                              eps_fct = eps_log_saturation_lift_std)
+```
+
+```{r pvals_constr_log_sat_lift_std}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val)
+  print(p)
+}
+```
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

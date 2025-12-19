@@ -1,0 +1,1958 @@
+---
+title: "Two-sample t-test - Find a proper epsilon rule"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "03_find_eps_rule" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "33fc44d3-dfcd-4437-8007-bd720e59a7e7")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 200,
+  fig.path = paste0('figures/', params$name, "/expl_eps_rule_"),
+  echo = FALSE
+)
+```
+
+In **permApprox**, permutation $p$-values are obtained by fitting a GPD to the tail of permutation test statistics. When the fitted shape is negative ($\hat\xi<0$), the GPD has a finite upper support. To **avoid zero or overly small $p$-values**, we impose the constraint that the **evaluation point** lies inside the support by requiring
+
+$$
+t_{\text{obs}}+\varepsilon \;<\; s_{\text{GPD}},
+$$
+
+where $\varepsilon>0$ is a small, data-dependent buffer. 
+
+This document develops and evaluates candidate rules for the **constraint parameter** $\varepsilon$. We proceed from simple linear rules to adaptive, across-test–aware rules, and finally to a standardized rule that works across statistics.
+At each step we show the mathematical form of $\varepsilon$, discuss its intent, and examine its behavior in simulations.
+
+```{r packages, message=FALSE, warning=FALSE}
+# Load packages
+library(conflicted)
+
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(future)
+library(future.apply)
+library(kableExtra)
+library(furrr)
+library(progressr)
+library(patchwork)
+library(digest) # For seed stream
+
+# For permApprox:
+library(fdrtool)
+library(fitdistrplus)
+library(goftest)
+library(limma)
+
+conflicts_prefer(dplyr::select, dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Data Simulation
+
+```{r}
+## Data Simulation with manual t-statistic computation
+cores <- 8
+
+n_tests <- 1000    # number of independent tests
+n_per_group_vec <- c(50, 100, 250, 500, 750, 1000) # sample size per group
+B <- 1000          # permutations
+
+# Effect sizes by block
+effect_blocks <- c(0, 0.5, 1, 1.5, 2)
+delta_vec <- rep(effect_blocks, each = n_tests / length(effect_blocks))
+```
+
+We simulate two groups from normal distributions with increasing effect sizes (difference in means).
+
+The parameters are set as follows:
+
+* Sample sizes per group: `r n_per_group_vec`  
+* Number of tests: `r n_tests`  
+* Effect sizes (difference in mean): `r paste(effect_blocks, collapse = " ")`  
+* Standard deviation: 1  
+* Tests per effect size: `r paste0("d=", effect_blocks, ": ",table(delta_vec), collapse = ", ")`
+
+The observed $t$-statistic is calculated as
+
+$$
+t_{\text{obs}} = \frac{\bar{x}_1 - \bar{x}_2}
+{\sqrt{\frac{s_1^2 + s_2^2}{n}}}
+$$
+
+where  
+- $\bar{x}_1$ and $\bar{x}_2$ are the sample means,  
+- $s_1^2$ and $s_2^2$ are the sample variances, and  
+- $n$ is the sample size in each group.
+
+```{r}
+### Helpers
+
+# Stable 32-bit integer from arbitrary keys
+seed_from <- function(...) {
+  hx <- digest(paste(..., collapse="|"), algo = "xxhash32")
+  s  <- as.integer(strtoi(hx, base = 16L))
+  if (is.na(s) || s == 0L) 1L else s
+}
+
+# Reproducible seed streams per (setting, rep) using L'Ecuyer-CMRG
+make_seed_stream <- function(n_streams, master_seed) {
+  set.seed(master_seed, kind = "L'Ecuyer-CMRG")
+  s <- .Random.seed
+  streams <- vector("list", n_streams)
+  for (i in seq_len(n_streams)) {
+    s <- parallel::nextRNGStream(s)
+    streams[[i]] <- s
+  }
+  streams
+}
+
+# one test -> (obs t, perm t[B], classical p)
+.sim_one_ttest <- function(n_per_group, B, delta) {
+  # data
+  x1 <- rnorm(n_per_group, mean = 0,     sd = 1)
+  x2 <- rnorm(n_per_group, mean = delta, sd = 1)
+
+  # observed t-stat (pooled-variance version you used)
+  tobs <- (mean(x1) - mean(x2)) /
+    sqrt((var(x1) + var(x2)) / n_per_group)
+
+  # permutations
+  x_comb <- c(x1, x2)
+  n_comb <- length(x_comb)
+  # sample group-1 indices per permutation (columns)
+  perm_idx_mat <- replicate(B, sample(n_comb, n_per_group))
+
+  # vectorized over columns (each column = one permutation)
+  tperm <- apply(perm_idx_mat, 2, function(idx) {
+    x1p <- x_comb[idx]
+    x2p <- x_comb[-idx]
+    (mean(x1p) - mean(x2p)) /
+      sqrt((var(x1p) + var(x2p)) / n_per_group)
+  })
+
+  # classical t-test (two-sided)
+  df_t <- 2 * n_per_group - 2
+  p_cl <- 2 * stats::pt(abs(tobs), df = df_t, lower.tail = FALSE)
+
+  list(t_obs = tobs, t_perm = tperm, p_cl = p_cl)
+}
+
+```
+
+
+```{r}
+simulate_once_ttest <- function(n_per_group, B, n_tests, delta_vec, path_target) {
+  fn_obs <- path_target(paste0("obs_t_stats_n", n_per_group, "_B", B, ".rds"))
+  fn_perm<- path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds"))
+  fn_ptt <- path_target(paste0("pval_ttest_n", n_per_group, "_B", B, ".rds"))
+  
+  if (all(file.exists(fn_obs, fn_perm, fn_ptt))) return(invisible(NULL))
+
+  message("Simulating (t-test, Gaussian) for n=", n_per_group, ", B=", B, " ...")
+
+  # scenario-specific master seed for parallel-safe substreams
+  master_seed <- seed_from("ttest-gauss", n_per_group, B, n_tests)
+
+  oplan <- future::plan(multisession, workers = max(1, future::availableCores() - 1))
+  on.exit(future::plan(oplan), add = TRUE)
+
+  obs_stats  <- numeric(n_tests)
+  pval_ttest <- numeric(n_tests)
+  perm_stats <- matrix(NA_real_, nrow = B, ncol = n_tests)
+
+  with_progress({
+    p <- progressr::progressor(along = seq_len(n_tests))
+
+    # pass the progressor into the future; future.apply will manage RNG streams
+    res_list <- future_lapply(
+      seq_len(n_tests),
+      function(g, p) {
+        p()
+        delta_g <- as.numeric(as.character(delta_vec[g]))
+        .sim_one_ttest(n_per_group, B, delta_g)
+      },
+      p = p,
+      future.seed = master_seed
+    )
+
+    for (g in seq_len(n_tests)) {
+      obs_stats[g]    <- res_list[[g]]$t_obs
+      pval_ttest[g]   <- res_list[[g]]$p_cl
+      perm_stats[, g] <- res_list[[g]]$t_perm
+    }
+  })
+
+  saveRDS(obs_stats,  fn_obs)
+  saveRDS(perm_stats, fn_perm)
+  saveRDS(pval_ttest, fn_ptt)
+  invisible(NULL)
+}
+
+# Create full grid, then simulate each scenario
+scenarios <- expand_grid(n_per_group = n_per_group_vec, B = B) 
+
+scenarios %>% 
+  pwalk(~ simulate_once_ttest(..1, ..2, n_tests, delta_vec, path_target))
+```
+
+```{r}
+# Turn delta vector into factor
+delta_vec <- delta_vec %>% factor(levels = effect_blocks)
+```
+
+## Histograms
+
+```{r histograms}
+n_per_group <- 100
+B <- 1000
+
+perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+
+# Choose up to the first six columns
+cols <- 1:min(6, ncol(perm_stats))
+
+# Prepare long format for faceting
+df <- as.data.frame(perm_stats[, cols, drop = FALSE])
+colnames(df) <- paste0("Test ", cols)
+
+df_long <- df %>%
+  mutate(.row = row_number()) %>%
+  pivot_longer(-.row, names_to = "stat", values_to = "value")
+
+ggplot(df_long, aes(x = value)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ stat, scales = "free_x") +
+  labs(
+    title = "Permutation statistics: Histograms of first six tests (n = 100)",
+    x = expression(U[perm]), y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+## Plot function
+
+```{r}
+# ---------- helper: step = 20→10→5 up to 100, then 50 beyond ----------
+.compute_log_breaks <- function(ymin, ymax, min_ticks = 5, breaks_incl = NULL) {
+  ymin <- max(ymin, .Machine$double.xmin)
+  ymax <- min(max(ymin, ymax), 1)
+  
+  e_min <- floor(log10(ymin))
+  e_max <- min(0, ceiling(log10(ymax)))  # p-values ≤ 1
+  
+  # choose step candidates depending on how deep the tail goes
+  if (abs(e_min) <= 100) {
+    try_steps <- c(20, 10, 5)
+  } else {
+    try_steps <- 50
+  }
+  
+  brks <- NULL
+  
+  for (s in try_steps) {
+    start_exp <- -s * ceiling(abs(e_min) / s)
+    exps <- seq(from = start_exp, to = -s, by = s)
+    exps <- exps[exps >= e_min & exps <= e_max]
+    cand <- 10^exps
+    cand <- cand[cand >= ymin & cand <= ymax]
+    
+    if (!is.null(breaks_incl)) {
+      add <- breaks_incl[breaks_incl > 0 & breaks_incl <= 1]
+      cand <- sort(unique(c(cand, add)))
+      cand <- cand[cand >= ymin & cand <= ymax]
+    }
+    
+    if (length(cand) >= min_ticks) { brks <- cand; break }
+    brks <- cand  # fallback if all fail
+  }
+  
+  labs <- paste0("1e", 
+                 formatC(log10(brks), format = "f",
+                         digits = if (any(abs(log10(brks) - 
+                                              round(log10(brks))) > 1e-9)) 1 else 0))
+  list(breaks = brks, labels = labs)
+}
+
+plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE, 
+                       title = NULL, eps_rule = NULL,
+                       min_ticks = 5, breaks_incl = 1e-3) {
+
+  df <- dplyr::mutate(df, effect_size = as.character(effect_size))
+
+  p <- ggplot(df, aes(x = obs_stats)) +
+    geom_point(aes(y = p_ttest, shape = "t-test"),
+               color = "black", size = 2, stroke = 0.5, alpha = 0.5) +
+    geom_point(aes(y = p_constr, shape = "constrained GPD", color = effect_size),
+               size = 1.6, alpha = 0.6) +
+    scale_shape_manual(
+      name = "P-value type:",
+      values = c("constrained GPD" = 16, "t-test" = 1)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = c("0"="gold","0.5"="#ffb347","1"="#ff8c00","1.5"="#e55b00","2"="red")
+    ) +
+    labs(
+      title = ifelse(!is.null(title), title,
+                     paste0("n = ", sampsize, "; epsilon rule: ", eps_rule)),
+      x = expression(t[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text    = element_text(size = 14),
+      axis.title   = element_text(size = 15),
+      plot.title   = element_text(size = 15),
+      strip.text   = element_text(size = 15),
+      legend.title = element_text(size = 14),
+      legend.text  = element_text(size = 12)
+    )
+
+  # range
+  if (is.null(ylim)) {
+    y_min <- suppressWarnings(min(c(df$p_ttest, df$p_constr), na.rm = TRUE))
+    y_max <- suppressWarnings(max(c(df$p_ttest, df$p_constr), na.rm = TRUE))
+  } else {
+    y_min <- ylim[1]; y_max <- ylim[2]
+    p <- p + coord_cartesian(ylim = ylim)
+  }
+  
+  if (log_scale) {
+    br <- .compute_log_breaks(ymin = y_min, ymax = y_max,
+                              min_ticks = min_ticks,
+                              breaks_incl = breaks_incl)
+    p <- p + scale_y_log10(breaks = br$breaks, labels = br$labels, minor_breaks = NULL)
+  }
+  
+  p <- p + expand_limits(x = 0)
+  
+  p
+}
+
+```
+
+## Function to run permApprox
+
+This function will be used for all p-values approximations with constrained GPD fit.
+
+```{r run_permApprox_function}
+run_permApprox <- function(rule_name, eps_fct, constraint = "support_at_obs",
+                           cores = 8) {
+  path_out <- path_target()
+  
+  # ---- pre-check: which outputs already exist?
+  out_files <- paste0(path_out, "/permapprox_constr_", rule_name,
+                      "_n", n_per_group_vec, "_B", B, ".rds")
+  missing_idx <- which(!file.exists(out_files))
+  missing_n   <- n_per_group_vec[missing_idx]
+  
+  # ---- run only for missing n's
+  if (length(missing_n) > 0) {
+    
+    handlers("txtprogressbar")
+    plan(multisession, workers = cores)
+    
+    with_progress({
+      p <- progressor(along = n_per_group_vec)
+      
+      future_map(
+        n_per_group_vec,
+        function(n_per_group) {
+          # file name for this n
+          fname_constr <- paste0(path_out, "/permapprox_constr_", rule_name, "_n",
+                                 n_per_group, "_B", B, ".rds")
+          
+          # skip if already computed
+          if (file.exists(fname_constr)) {
+            p(message = sprintf("n=%s: skip (exists)", n_per_group))
+            return(invisible(NULL))
+          }
+          
+          # Load simulated data for this n
+          obs_stats  <- readRDS(paste0(path_out, "/obs_t_stats_n",  n_per_group, 
+                                       "_B", B, ".rds"))
+          perm_stats <- readRDS(paste0(path_out, "/perm_t_stats_n", n_per_group, 
+                                       "_B", B, ".rds"))
+          pval_ttest <- readRDS(paste0(path_out, "/pval_ttest_n",   n_per_group, 
+                                       "_B", B, ".rds"))
+          
+          # GPD control
+          gpd_ctrl_constr <- make_gpd_ctrl(
+            fit_method = "LME",
+            tol = 1e-7,
+            include_obs = FALSE,
+            constraint = constraint,
+            thresh_method = "ftr",
+            exceed0 = 250,
+            exceed_min = 10,
+            thresh_step = 10,
+            gof_test = "ad",
+            gof_alpha = 0.05,
+            cores = 1,
+            verbose = TRUE
+          )
+          
+          # compute and save
+          papprox_constr <- compute_p_values(
+            obs_stats = obs_stats,
+            perm_stats = perm_stats,
+            eps_fct = eps_fct,
+            sampsize = n_per_group,
+            alternative = "two_sided",
+            method = "gpd",
+            gpd_ctrl = gpd_ctrl_constr,
+            adjust_method = "BH"
+          )
+          
+          saveRDS(papprox_constr, file = fname_constr)
+          p(message = sprintf("n=%s: done", n_per_group))
+          invisible(NULL)
+        },
+        .options = furrr_options(seed = TRUE)  # reproducible RNG per worker
+      )
+    })
+    
+    plan(sequential)
+  } # else: nothing to compute; fall through to loading
+  
+  # Combine results for all n_per_group values
+  results_all <- map_dfr(n_per_group_vec, function(n_per_group) {
+    
+    # Load saved results
+    obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_per_group, 
+                                            "_B", B, ".rds")))
+    pval_ttest <- readRDS(path_target(paste0("pval_ttest_n", n_per_group, 
+                                             "_B", B, ".rds")))
+    
+    papprox_constr <- readRDS(path_target(paste0("permapprox_constr_", 
+                                                 rule_name, "_n", n_per_group, 
+                                                 "_B", B, ".rds")))
+    
+    # Build tibble for this n
+    tibble(
+      idx = seq_along(obs_stats),
+      n_per_group = n_per_group,
+      effect_size = delta_vec,
+      obs_stats = abs(obs_stats), # We take absolute values of the t-statistic
+      p_ttest = pval_ttest,
+      gpd_fit = papprox_constr$gpd_fit$fitted,
+      p_constr = papprox_constr$p_unadjusted,
+      epsilon = papprox_constr$gpd_fit$epsilon
+    )
+  })
+  
+  return(results_all)
+}
+```
+
+## Unconstrained GPD fit
+
+For comparison, we again start with the unconstrained fit.
+
+```{r}
+path_out <- path_target()
+
+# ---- pre-check: which outputs already exist?
+out_files <- paste0(path_out, "/permapprox_unconstr_n", 
+                    n_per_group_vec, "_B", B, ".rds")
+missing_idx <- which(!file.exists(out_files))
+missing_n   <- n_per_group_vec[missing_idx]
+
+# ---- run only for missing n's
+if (length(missing_n) > 0) {
+  
+  handlers("txtprogressbar")
+  plan(multisession, workers = 6)
+  
+  with_progress({
+    p <- progressor(along = n_per_group_vec)
+    
+    future_map(
+      n_per_group_vec,
+      function(n_per_group) {
+        # file name for this n
+        fname_unconstr <- paste0(path_out, "/permapprox_unconstr_n", 
+                                 n_per_group, "_B", B, ".rds")
+        
+        # skip if already computed
+        if (file.exists(fname_unconstr)) {
+          p(message = sprintf("n=%s: skip (exists)", n_per_group))
+          return(invisible(NULL))
+        }
+        
+        # Load simulated data for this n
+        obs_stats  <- readRDS(paste0(path_out, "/obs_t_stats_n",  
+                                     n_per_group, "_B", B, ".rds"))
+        perm_stats <- readRDS(paste0(path_out, "/perm_t_stats_n", 
+                                     n_per_group, "_B", B, ".rds"))
+        pval_ttest <- readRDS(paste0(path_out, "/pval_ttest_n",   
+                                     n_per_group, "_B", B, ".rds"))
+        
+        # GPD control: keep cores=1 to avoid nested parallelism
+        gpd_ctrl_unconstr <- make_gpd_ctrl(
+          fit_method  = "LME",
+          tol = 1e-7,
+          include_obs = FALSE,
+          constraint  = "unconstrained",
+          thresh_method = "ftr",
+          exceed0     = 250,
+          exceed_min  = 10,
+          thresh_step = 10,
+          gof_test    = "ad",
+          gof_alpha   = 0.05,
+          cores       = 1,
+          verbose     = FALSE
+        )
+        
+        # Compute and save
+        papprox_unconstr <- compute_p_values(
+          obs_stats     = obs_stats,
+          perm_stats    = perm_stats,
+          alternative   = "two_sided",
+          method        = "gpd",
+          gpd_ctrl      = gpd_ctrl_unconstr,
+          adjust_method = "BH"
+        )
+        
+        saveRDS(papprox_unconstr, file = fname_unconstr)
+        p(message = sprintf("n=%s: done", n_per_group))
+        invisible(NULL)
+      },
+      .options = furrr_options(seed = TRUE)  # reproducible RNG per worker
+    )
+  })
+  
+  plan(sequential)
+}
+```
+
+
+```{r}
+# Combine results for all n_per_group values
+results_all <- map_dfr(n_per_group_vec, function(n_per_group) {
+  
+  # Load saved results
+  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_per_group, "_B", B, ".rds")))
+  pval_ttest <- readRDS(path_target(paste0("pval_ttest_n", n_per_group, "_B", B, ".rds")))
+  
+  papprox_unconstr   <- readRDS(path_target(paste0("permapprox_unconstr_n", n_per_group, "_B", B, ".rds")))
+
+  # Build tibble for this n
+  tibble(
+    idx = seq_along(obs_stats),
+    n_per_group = n_per_group,
+    effect_size = factor(delta_vec,
+                              levels = c(0, 0.5, 1, 1.5, 2)),
+    obs_stats = abs(obs_stats), # We take the absolute values of the t-statistic
+    p_ttest = pval_ttest,
+    gpd_fit = papprox_unconstr$gpd_fit$fitted,
+    p_unconstr = papprox_unconstr$p_unadjusted
+  )
+})
+
+# Quick check
+dplyr::glimpse(results_all)
+```
+
+
+```{r pvals_unconstr}
+n_values <- sort(unique(results_all$n_per_group))
+
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val)
+  
+  cat("Number of zeros for n = ", n_val, ": ", sum(df_n$p_unconstr == 0), "\n", sep = "")
+  
+  # Find smallest nonzero p-value
+  min_nonzero <- min(c(df_n$p_ttest[df_n$p_ttest > 0],
+                       df_n$p_unconstr[df_n$p_unconstr > 0]), na.rm = TRUE)
+  min_nonzero <- max(min_nonzero, 1e-320)
+
+  # Replacement value for zero p-values (half the smallest nonzero)
+  zero_repl <- min_nonzero / 100
+
+  # Replace 0 with replacement value for plotting
+  df_n <- df_n %>%
+    mutate(
+      p_ttest_plot     = ifelse(p_ttest == 0, zero_repl, p_ttest),
+      p_unconstr_plot  = ifelse(p_unconstr == 0, zero_repl, p_unconstr)
+    )
+  
+  p <- ggplot(df_n, aes(x = obs_stats)) +
+    # t-test p-values in black
+    geom_point(
+      aes(y = p_ttest_plot, shape = "t-test"),
+      color = "black", size = 2, stroke = 0.5, alpha = 0.5
+    ) +
+    # GPD p-values colored by discrete effect size
+    geom_point(
+      aes(y = p_unconstr_plot, shape = "unconstrained GPD", color = factor(effect_size)),
+      size = 1.6, alpha = 0.6
+    ) +
+    scale_shape_manual(
+      name = "P-value type:",
+      values = c("unconstrained GPD" = 16, "t-test" = 1)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = c(
+        "0"   = "gold",
+        "0.5" = "#ffb347", # light orange
+        "1"   = "#ff8c00", # orange
+        "1.5" = "#e55b00", # deep orange
+        "2"   = "red"
+      )
+    ) +
+    scale_y_log10(
+      breaks = c(zero_repl, 1e-300, 1e-200, 1e-100, 1e-80, 1e-60, 1e-40, 1e-20, 1e-2),
+      labels = c("0", "1e-300", "1e-200", "1e-100", "1e-80", "1e-60", "1e-40", "1e-20", "1e-2"),
+      limits = c(zero_repl, 1), # ensures smallest values are shown
+      minor_breaks = NULL
+    ) +
+    labs(
+      title = paste0("Unconstrained permApprox vs. t-test (n = ", n_val, ")"),
+      x = expression(t[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text       = element_text(size = 14),
+      axis.title      = element_text(size = 16),
+      plot.title      = element_text(size = 16),
+      strip.text      = element_text(size = 15),
+      legend.title    = element_text(size = 14),
+      legend.text     = element_text(size = 12)
+    )
+  
+  print(p)
+}
+
+```
+
+The number of zeros clearly increases with sample size, which is expected as the t-test p-values decrease with increasing sample size.
+
+
+## $\varepsilon$ rule: Factor = 0.1
+
+This is the simplest **linear-in-$t$** rule. We set epsilon to a fixed fraction of the absolute observed statistic:
+
+$$
+\varepsilon = \varepsilon_{fact} * |t_{obs}| \;, \qquad \varepsilon_{fact}=0.1 \, .
+$$
+
+Larger $|t_{obs}|$ get a proportionally larger safety margin, while small effects remain lightly adjusted. This rule ignores $n$ and the across-test context, so it mainly serves as a baseline.
+
+```{r rule_factor_0.1}
+eps_factor <- function(obs_stats = NULL, factor = 0.1, ...) {
+  factor * abs(obs_stats)
+}
+
+n_val <- 100
+obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+p <- tibble(
+  t_obs = abs(obs_stats),
+  factor = eps_factor(obs_stats, factor = 0.1)
+) %>%
+  pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+  ggplot(aes(t_obs, eps, color = rule)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+    x = expression(t[obs]),
+    y = expression(epsilon)
+  ) +
+  theme_minimal(base_size = 14)
+print(p)
+```
+
+```{r}
+results_all <- run_permApprox(rule_name = "factor01", eps_fct = eps_factor)
+```
+
+```{r pvals_constr_factor01}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "factor = 0.1")
+  print(p)
+}
+```
+
+## $\varepsilon$ rule: Factor = 0.05
+
+Same epsilon rule as before but with $\varepsilon_{fact}=0.05$
+
+```{r rule_factor_0.05}
+eps_factor <- function(obs_stats = NULL, factor = 0.05, ...) {
+  factor * abs(obs_stats)
+}
+
+n_val <- 100
+obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+p <- tibble(
+  t_obs = abs(obs_stats),
+  factor_0.05 = eps_factor(obs_stats, factor = 0.05),
+  factor_0.1 = eps_factor(obs_stats, factor = 0.1)
+) %>%
+  pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+  ggplot(aes(t_obs, eps, color = rule)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+    x = expression(t[obs]),
+    y = expression(epsilon)
+  ) +
+  theme_minimal(base_size = 14)
+print(p)
+```
+
+```{r}
+results_all <- run_permApprox(rule_name = "factor005", eps_fct = eps_factor)
+```
+
+```{r pvals_constr_factor005}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val)
+  print(p)
+}
+```
+
+While $\varepsilon_{fact}=0.1$ was the best choice for $n=100$, the epsilon rule $\varepsilon_{fact}=0.05$ would be the best choice for $n=250$. 
+
+The simulations show that the optimal epsilon factor is clearly dependent on the sample size $n$. 
+
+## $\varepsilon$ rule: Factor = 0
+
+We also take a brief look at eps = 0.
+
+```{r rule_factor_0}
+eps_factor <- function(obs_stats = NULL, factor = 0, ...) {
+  factor * abs(obs_stats)
+}
+```
+
+```{r}
+results_all <- run_permApprox(rule_name = "factor0", eps_fct = eps_factor)
+```
+
+```{r pvals_constr_factor0}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "eps = 0")
+  print(p)
+}
+```
+
+While $\varepsilon_{fact}=0.1$ was the best choice for $n=100$, the epsilon rule $\varepsilon_{fact}=0.05$ would be the best choice for $n=250$. 
+
+The simulations show that the optimal epsilon factor is clearly dependent on the sample size $n$. 
+
+## $\varepsilon$ rule: Factor = 0.1 (constraint on max test statistic)
+
+To see how well the approach of applying the constraint only on the maximum observed test statistic, we will test this now with $\varepsilon_{fact}=0.1$.
+
+```{r}
+eps_factor <- function(obs_stats = NULL, factor = 0.01, ...) {
+  factor * abs(obs_stats)
+}
+
+results_all <- run_permApprox(rule_name = "factor01_max", eps_fct = eps_factor,
+                              constraint = "support_at_max")
+```
+
+```{r pvals_constr_factor01_max}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, 
+                  eps_rule = "factor = 0.1 (on max test statistic)")
+  print(p)
+}
+```
+
+Applying the contraint to the maximum test statistic only is far too conservative for larger sample sizes.
+
+## $\varepsilon$ rule: Power law in n, linear in t
+
+As the optimal epsilon factor seems to be dependent on the the sample size, we define the following epsilon rule:
+
+$$
+\varepsilon = |t_{obs}| \times \frac{C}{n^p}
+$$
+
+where $C$ is a scaling constant and $p$ controls the rate of decay.
+
+Larger sample sizes lead to smaller $\varepsilon$ values, reflecting increased precision of the permutation distribution.
+
+$C = 1000$ and $p = 2$ turned out to be good choices in former trials. 
+
+```{r rule_n_power}
+eps_n_power <- function(obs_stats = NULL, sampsize = NULL, C = 1000, p = 2, ...) {
+  abs(obs_stats) * (C / sampsize^p)
+}
+
+obs_stats_n100 <- abs(readRDS(path_target(paste0("obs_t_stats_n", 100, "_B", B, ".rds"))))
+obs_stats_n250 <- abs(readRDS(path_target(paste0("obs_t_stats_n", 250, "_B", B, ".rds"))))
+obs_stats_n500 <- abs(readRDS(path_target(paste0("obs_t_stats_n", 500, "_B", B, ".rds"))))
+
+eps <- eps_n_power(obs_stats, sampsize = n_val)
+cat("eps range for n =", n_val, ":", range(eps), "\n")
+
+t_seq <- seq(0, max(obs_stats_n100, obs_stats_n250, obs_stats_n500), length.out = n_tests)
+
+p <- tibble(
+  t_obs = t_seq,
+  eps_n100 = eps_n_power(obs_stats = sort(obs_stats_n100), sampsize = 100),
+  eps_n250 = eps_n_power(obs_stats = sort(obs_stats_n250), sampsize = 250),
+  eps_n500 = eps_n_power(obs_stats = sort(obs_stats_n500), sampsize = 500)
+) %>%
+  pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+  ggplot(aes(t_obs, eps, color = rule)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Epsilon scaling comparison",
+    x = expression(t),
+    y = expression(epsilon)
+  ) +
+  theme_minimal(base_size = 14)
+print(p)
+```
+
+```{r run_permApprox_constr_n_squared}
+results_all <- run_permApprox(rule_name = "n_squared", eps_fct = eps_n_power)
+```
+
+```{r pvals_constr_n_squared}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "power law in n")
+  print(p)
+}
+```
+
+An epsilon rule dependent on $n$ leads to much better p-values approximations than the factor rule. However, while the approximated p-values are close to the t-test p-values for large effect sizes, the p-values are generally too small for a moderate effect size. In other words: the trend seems to be too linear. 
+
+A logarithmic dependence on $t_{obs}$ might be more sufficient than a rule that is linear in $t_{obs}$.
+
+
+## $\varepsilon$ rule: Logarithmic growth in t
+
+This rule makes use of a **scaled logarithmic growth**:
+
+$$
+\varepsilon = \frac{A}{n^2} \cdot \log\!\big( 1 + B \cdot t_{obs} \big)
+$$
+
+where $B$ influences the bend position and $A$ the plateau height.
+
+This gives a smooth, concave curve that grows more quickly for small $t_{obs}$ and flattens for larger test statistics.
+
+For $n=100$ setting $A$ to 4000 and $B$ to 1.5 seems to be a good choice:
+
+```{r, echo=TRUE}
+eps_log_t <- function(obs_stats = NULL, sampsize = NULL, A = 4000, B = 1.5, ...) {
+  obs_stats <- abs(obs_stats)
+  (A / sampsize^2) * log1p(B * obs_stats)
+}
+```
+
+
+```{r rule_log_t}
+obs_stats_n100 <- abs(readRDS(path_target(paste0("obs_t_stats_n", 100, "_B", B, ".rds"))))
+
+t_seq <- seq(0, max(obs_stats_n100), length.out = n_tests)
+
+p <- tibble(
+  t_obs = t_seq,
+  eps_n100 = eps_n_power(obs_stats = sort(obs_stats_n100), sampsize = 100),
+  eps_log_t = eps_log_t(obs_stats = sort(obs_stats_n100), sampsize = 100)
+) %>%
+  pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+  ggplot(aes(t_obs, eps, color = rule)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Epsilon scaling comparison",
+    x = expression(t),
+    y = expression(epsilon)
+  ) +
+  theme_minimal(base_size = 14)
+print(p)
+```
+
+```{r run_permApprox_constr_log_t}
+results_all <- run_permApprox(rule_name = "log_t", eps_fct = eps_log_t)
+```
+
+```{r pvals_constr_log_t}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, 
+                  eps_rule = "logarithmic growth in t")
+  print(p)
+}
+```
+
+This rule performs well for n = 100 with the chosen values for $A$ and $B$, but we need a generally applicable rule.
+
+## Log-Saturation (LS) rule
+
+We now define an $\varepsilon$-rule that combines **logarithmic growth** in the observed test statistic with a **sample-size–dependent plateau**.
+
+The aim is to keep $\varepsilon$ modest for small and moderate statistics while ensuring it saturates at a controlled level for the largest observed values - a property particularly important in multiple-testing scenarios.
+
+Let $n$ denote the **per-group** sample size in a two-sample test and
+
+$$
+T_{\max} = \max_j \left| T_{\text{obs}}^{(j)} \right|
+$$
+
+be the largest observed test statistic across all tests.
+
+### Step 1 - Sample-size dependent curvature and plateau height
+
+We first define the curvature parameter $k$ and the target plateau height $E_{\text{target}}$ as
+
+$$
+k = k_{\text{factor}} \cdot \frac{500}{n},  
+\qquad
+E_{\text{target}} = \text{target}_{\text{factor}} \cdot \frac{500}{n}.
+$$
+
+Here:
+
+* $k_{\text{factor}}$ controls the steepness of the initial growth,
+* $\text{target}_{\text{factor}}$ sets the desired plateau height at $T_{\max}$,
+* the factor $500/n$ ensures that $\varepsilon$ decreases for larger $n$, reflecting greater statistical precision.
+
+
+### Step 2 - Calibration to the observed range
+
+To ensure the curve saturates exactly at $E_{\text{target}}$ when $t_{\text{obs}} = T_{\max}$, we define
+
+$$
+B = \frac{k}{T_{\max}},  
+\qquad
+A = \frac{E_{\text{target}}}{\log\!\left(1 + B \, T_{\max}\right)}.
+$$
+
+* $B$ controls **how quickly** the curve bends toward saturation.
+* $A$ rescales the curve so that the maximum value matches $E_{\text{target}}$.
+
+### Step 3 - Final formula with floor
+
+For any test statistic $t_{\text{obs}}$,
+
+$$
+\varepsilon = \max\!\left[ A \cdot \log\!\big(1 + B \, |t_{\text{obs}}|\big),\ \varepsilon_{\min} \right],
+$$
+
+where $\varepsilon_{\min}$ is a small constant (e.g., $10^{-6}$) preventing extremely small constraint values.
+
+
+**Interpretation**:
+
+* For small $t_{\text{obs}}$, $\varepsilon$ grows approximately linearly.
+* Growth slows for moderate values and approaches a plateau for the largest observed statistics.
+* Both the curvature and the plateau height adapt naturally to $n$ and the data’s observed range.
+
+```{r, echo=TRUE}
+eps_log_saturation <- function(obs_stats,
+                               sampsize,
+                               k_factor = 1000,
+                               target_factor = 0.25,
+                               floor_eps = 1e-6, 
+                               ...) {
+  Tobs <- abs(obs_stats)
+  Tmax <- max(Tobs, na.rm = TRUE)
+  
+  # Curvature and target plateau height
+  k        <- k_factor * (500 / sampsize)
+  E_target <- target_factor * (500 / sampsize)
+  
+  # Calibrate to Tmax
+  B <- k / Tmax
+  A <- E_target / log1p(B * Tmax)
+  
+  # Epsilon values with floor
+  eps <- pmax(A * log1p(B * Tobs), floor_eps)
+  eps
+}
+```
+
+
+```{r rule_log_saturation}
+for (n_val in n_per_group_vec) {
+  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_log = eps_log_t(obs_stats, sampsize = n_val),
+    eps_log_sat = eps_log_saturation(obs_stats, perm_stats = perm_stats, sampsize = n_val)
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+    geom_line(size = 1.2, alpha = 0.7) +
+    labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(t[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+}
+```
+
+```{r run_permApprox_constr_log_sat}
+results_all <- run_permApprox(rule_name = "log_sat", eps_fct = eps_log_saturation)
+```
+
+```{r pvals_constr_log_sat}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, 
+                  eps_rule = "log-saturation with n-dependent plateau")
+  print(p)
+}
+```
+
+The approach still under-estimates the p-values for moderate effect sizes. That means, we would have to increase the epsilon there, but keep it for high effect sizes. We run the log rule again, but with a higher $k_{factor}$, which influences the curvature of the epsilon function.
+
+## Rerun LS rule with high $k_{factor}$
+
+```{r rule_log_t_kf_10000}
+eps_fct <- function(obs_stats, perm_stats, sampsize, k_factor = 1000, ...){
+  eps_log_saturation(obs_stats = obs_stats,
+                     perm_stats = perm_stats,
+                     sampsize = sampsize,
+                     k_factor = k_factor)
+}
+
+n_val <- 100
+obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+
+p <- tibble(
+  t_obs = abs(obs_stats),
+  eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+  eps_log_sat_k_1000 = eps_fct(obs_stats, sampsize = n_val, k_factor = 1000),
+  eps_log_sat_k_5000 = eps_fct(obs_stats, sampsize = n_val, k_factor = 5000),
+  eps_log_sat_k_10000 = eps_fct(obs_stats, sampsize = n_val, k_factor = 10000)
+) %>%
+  pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+  ggplot(aes(t_obs, eps, color = rule)) +
+  geom_line(size = 1.2, alpha = 0.7) +
+  labs(
+    title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+    x = expression(t[obs]),
+    y = expression(epsilon)
+  ) +
+  theme_minimal(base_size = 14)
+print(p)
+```
+
+```{r run_permApprox_constr_log_sat_kf_10000}
+eps_fct <- function(obs_stats, perm_stats, sampsize, k_factor = 10000, ...){
+  eps_log_saturation(obs_stats = obs_stats,
+                     perm_stats = perm_stats,
+                     sampsize = sampsize,
+                     k_factor = k_factor)
+}
+
+results_all <- run_permApprox(rule_name = "log_sat_kf_10000", eps_fct = eps_fct)
+```
+
+```{r pvals_constr_log_sat_kf10000}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, 
+                  eps_rule = "log-saturation with high k_factor")
+  print(p)
+}
+```
+
+Almost nothing has changed with the higher k-factor. We need a rule that shifts epsilon more extremely for moderate test statistics. With the next rule, the epsilon function has a bump/lift for small test statistics. 
+
+## Lifted Log-Saturation (LLS) rule
+
+While the basic log-saturation rule adapts well to the range of observed statistics, it can **underestimate** $\varepsilon$ for small or moderate test statistics, which may lead to anticonservative $p$-value approximations in this range.
+
+To address this, we introduce a **lift kernel** $\psi(s)$ applied to small statistics, where
+
+$$
+s = \frac{|t_{\text{obs}}|}{T_{\max}} \in [0,1].
+$$
+
+Here, $s$ is a scale-free index that describes the relative position of a test statistic within the reference range up to $T_{max}$, and it governs how strongly the log-saturation curve and the lift component contribute to $\varepsilon$.
+
+Due to its smootheness, we use the **Wendland $C^2$** kernel:
+
+$$
+\psi_{C^2}(s) = (1 - s)^4 \, (1 + 4s),
+$$
+
+which satisfies:
+
+* $\psi(0) = 1$ — maximum lift for the smallest test statistic,
+* $\psi(1) = 0$ — no lift at the plateau,
+* compact support on $[0,1]$ and $C^2$ smoothness, ensuring a seamless join with the plateau.
+
+We then add the lift term to the base rule:
+
+$$
+\varepsilon \;=\; \max\!\left[
+A \cdot \log\!\big(1 + B \, |t_{\text{obs}}|\big) + \rho_{\text{lift}} \cdot \psi(s),\ \varepsilon_{\min}
+\right],
+$$
+
+where $\rho_{\text{lift}}$ controls the magnitude of the lift at $s = 0$.
+
+
+**Effect of the lift**:
+
+* Increases $\varepsilon$ for small statistics → more conservative approximation in the range where GPD extrapolation is most sensitive.
+* Leaves the plateau value for large $t_{\text{obs}}$ unchanged.
+* Transition from lifted to plateau region is smooth due to the $C^2$ continuity of $\psi$.
+
+```{r, echo=TRUE}
+eps_log_saturation_lift <- function(obs_stats,
+                                    sampsize,
+                                    k_factor = 1000,
+                                    target_factor = 0.25,
+                                    rho_lift = 3,
+                                    floor_eps = 1e-6, ...) {
+  Tobs <- abs(obs_stats)
+  Tmax <- max(Tobs, na.rm = TRUE)
+  
+  # Curvature and target plateau height
+  k        <- k_factor * (500 / sampsize)
+  E_target <- target_factor * (500 / sampsize)
+  
+  # Calibrate to Tmax
+  B <- k / Tmax
+  A <- E_target / log1p(B * Tmax)
+  
+  # Relative position and lift term
+  s         <- pmin(Tobs / Tmax, 1)
+  psi_wendland_c2 <- (1 - s)^4 * (1 + 4*s)
+  lift_term <- rho_lift * psi_wendland_c2
+  
+  # Epsilon with lift and floor
+  eps <- pmax(A * log1p(B * Tobs) + lift_term, floor_eps)
+  eps
+}
+```
+
+
+```{r rule_log_sat_lift}
+for (n_val in n_per_group_vec[1:2]) {
+  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_log_sat = eps_log_saturation(obs_stats, perm_stats = perm_stats, sampsize = n_val,
+                                k_factor = 10000, target_factor = 0.25),
+    eps_log_sat_lift = eps_log_saturation_lift(obs_stats, perm_stats = perm_stats, sampsize = n_val)
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+    geom_line(size = 1.2, alpha = 0.7) +
+    labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(t[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+}
+```
+
+```{r run_permApprox_constr_log_sat_lift}
+results_all <- run_permApprox(rule_name = "log_sat_lift", eps_fct = eps_log_saturation_lift)
+```
+
+```{r pvals_constr_log_sat_lift}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "lifted log-saturation")
+  print(p)
+}
+```
+
+## Why not Wendland's $C^0$-function?
+
+We use **$C^2$** rather than **$C^0$** because we want the lift to blend into the baseline curve **smoothly**, without creating visible kinks or slope jumps at the point where it vanishes ($s = 1$).
+
+* **$C^0$** Wendland:
+
+  $$
+  h(s) = (1-s)^2_+
+  $$
+
+  Continuous, but the slope has a jump at $s = 1$ (first derivative discontinuous).
+  This means the bump will end abruptly in slope when meeting the plateau, which can create a *sharp corner* in your epsilon curve.
+
+* **$C^2$** Wendland:
+
+  $$
+  h(s) = (1-s)^4 (1 + 4s)
+  $$
+
+  Continuous up to the second derivative — the slope *and* curvature vanish smoothly at $s = 1$. This means the bump “fades” into the plateau seamlessly, so the total curve is very smooth.
+
+```{r wendland_C0_C2}
+# s values from 0 to 1
+s_vals <- seq(0, 1, length.out = 200)
+
+# Wendland C0 and C2
+h_c0 <- (1 - s_vals)^2
+h_c2 <- (1 - s_vals)^4 * (1 + 4*s_vals)
+
+# Create tibble for plotting
+df <- tibble(
+  s = rep(s_vals, 2),
+  h = c(h_c0, h_c2),
+  type = rep(c("Wendland C0: (1-s)^2", 
+               "Wendland C2: (1-s)^4(1+4s)"), each = length(s_vals))
+)
+
+# Plot
+ggplot(df, aes(x = s, y = h, color = type)) +
+  geom_line(size = 1.2) +
+  geom_hline(yintercept = 0, color = "grey50", size = 0.4) +
+  labs(
+    title = "Wendland C0 vs C2",
+    x = expression(s),
+    y = expression(h(s)),
+    color = "Function"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+```
+
+
+```{r, echo=TRUE}
+eps_log_saturation_lift_C0 <- function(obs_stats,
+                                    sampsize,
+                                    k_factor = 1000,
+                                    target_factor = 0.25,
+                                    rho_lift = 3,
+                                    floor_eps = 1e-6, ...) {
+  Tobs <- abs(obs_stats)
+  Tmax <- max(Tobs, na.rm = TRUE)
+  
+  # Curvature and target plateau height
+  k        <- k_factor * (500 / sampsize)
+  E_target <- target_factor * (500 / sampsize)
+  
+  # Calibrate to Tmax
+  B <- k / Tmax
+  A <- E_target / log1p(B * Tmax)
+  
+  # Relative position and lift term
+  s         <- pmin(Tobs / Tmax, 1)
+  wendland_C0 <- (1 - s)^2
+  lift_term <- rho_lift * wendland_C0
+  
+  # Epsilon with lift and floor
+  eps <- pmax(A * log1p(B * Tobs) + lift_term, floor_eps)
+  eps
+}
+```
+
+
+```{r rule_log_sat_lift_C0}
+for (n_val in n_per_group_vec[1:2]) {
+  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_log_sat = eps_log_saturation(obs_stats, perm_stats = perm_stats, sampsize = n_val,
+                                k_factor = 10000, target_factor = 0.25),
+    eps_log_sat_lift_C0 = eps_log_saturation_lift_C0(obs_stats, perm_stats = perm_stats, sampsize = n_val),
+    eps_log_sat_lift_C2 = eps_log_saturation_lift(obs_stats, perm_stats = perm_stats, sampsize = n_val)
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+    geom_line(size = 1.2, alpha = 0.7) +
+    labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(t[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+}
+```
+
+## Simplification
+
+The paramters $A$ and $B$ still stem from the power law rule in the beginning of our trials, but are redundant in the new rule. We therefore can considerably simplify the rule. 
+
+Using
+
+$$
+B = \frac{k}{T_{\max}},  
+\qquad
+A = \frac{E_{\text{target}}}{\log\!\left(1 + B \, T_{\max}\right)}.
+$$
+
+the lifted rule
+
+$$
+\varepsilon
+= \max\!\left[
+A \log\!\big(1 + B\,|t_{\text{obs}}|\big) + \rho_{\text{lift}}\psi(s),\ \varepsilon_{\min}
+\right]
+$$
+
+reduces algebraically to the **lifted log-saturation in scale-free form**
+
+$$
+\boxed{
+\;\varepsilon(t_{\text{obs}})
+= \max\!\left[
+E_{\text{target}}\,
+\frac{\log\!\big(1 + k\, s\big)}{\log(1+k)}
+\;+\;\rho_{\text{lift}}\,\psi(s)
+\;,\ \varepsilon_{\min}
+\right],\quad
+s=\frac{|t_{\text{obs}}|}{T_{\max}}\in[0,1].
+}
+$$
+
+Here $k=k_{\text{factor}}\cdot \tfrac{500}{n}$ controls the curvature and $E_{\text{target}}=\text{target}_{\text{factor}}\cdot \tfrac{500}{n}$ sets the plateau height.
+
+### Properties (unchanged)
+
+* **Plateau invariance:** since $\psi(1)=0$,
+  $\varepsilon(T_{\max}) = E_{\text{target}}$.
+* **Scale-free:** depends on $|t_{\text{obs}}|/T_{\max}$ only; linear rescalings of the statistic cancel out.
+* **Small-$s$ behavior:** $\varepsilon(t)\approx \rho_{\text{lift}} + E_{\text{target}}\dfrac{k}{\log(1+k)}\,\dfrac{|t|}{T_{\max}}$ (more conservative near zero via $\rho_{\text{lift}}$).
+* **Smoothness:** $\psi(s)=(1-s)^4(1+4s)$ is $C^2$ and vanishes at $s=1$.
+
+### Edge case
+
+If $T_{\max}=0$ (all observed statistics zero), set
+$\varepsilon \equiv \max(E_{\text{target}}+\rho_{\text{lift}},\,\varepsilon_{\min})$.
+
+### Drop-in R replacement
+
+```{r}
+# Simplified Lifted Log-Saturation anchored at T_max
+eps_log_saturation_lift <- function(obs_stats,
+                                    sampsize,
+                                    k_factor = 1000,
+                                    target_factor = 0.25,
+                                    rho_lift = 3,
+                                    floor_eps = 1e-6, ...) {
+  Tobs <- abs(obs_stats)
+  Tmax <- max(Tobs, na.rm = TRUE)
+
+  # Curvature and plateau
+  k <- k_factor * (500 / sampsize)
+  E_target <- target_factor * (500 / sampsize)
+
+  # Degenerate case: all stats zero
+  if (!is.finite(Tmax) || Tmax <= 0) {
+    return(rep(max(E_target + rho_lift, floor_eps), length(Tobs)))
+  }
+
+  # Normalized position and lift
+  s <- pmin(Tobs / Tmax, 1)                    # clamp to [0,1]
+  psi_wendland_c2 <- (1 - s)^4 * (1 + 4*s)
+
+  # Simplified core (uses s instead of A,B)
+  eps_core <- E_target * log1p(k * s) / log1p(k) + rho_lift * psi_wendland_c2
+  pmax(eps_core, floor_eps)
+}
+```
+
+This version is algebraically equivalent to our previous LLS rule, avoids the $A,B$ bookkeeping, keeps numerical stability via `log1p`, and preserves all desired behaviors before introducing the permutation-based cap.
+
+We will briefly check if we see the same results as before.
+
+```{r rule_log_sat_lift_simple}
+for (n_val in n_per_group_vec[1:2]) {
+  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_log_sat = eps_log_saturation(obs_stats, perm_stats = perm_stats, 
+                                     sampsize = n_val,k_factor = 10000, 
+                                     target_factor = 0.25),
+    eps_log_sat_lift = eps_log_saturation_lift(obs_stats, perm_stats = perm_stats, 
+                                               sampsize = n_val)
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+    geom_line(size = 1.2, alpha = 0.7) +
+    labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(t[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+}
+```
+
+
+```{r run_permApprox_constr_log_sat_lift_simple}
+results_all <- run_permApprox(rule_name = "log_sat_lift_simple", 
+                              eps_fct = eps_log_saturation_lift)
+```
+
+```{r pvals_constr_log_sat_lift_simple}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "lifted log-saturation (simplified)")
+  print(p)
+}
+```
+
+## LLS rule with an (optional) permutation-based cap
+
+To reduce sensitivity to outlying observed statistics and to support **single-test** scenarios (where ($|t_{\text{obs}}| = T_{\max}$)), we anchor the rule at a **cap** ($T_{\text{cap}}$). We allow two choices:
+
+* **Observed cap** (many tests):
+  $T_{\text{cap}} := T_{\max} = \max_j |T^{(j)}_{\text{obs}}|.$
+
+* **Permutation-based cap** (single/few tests or for robustness):
+  $T_{\text{cap}} := Q_q\big(|\mathcal T|\big)\cdot g(n),\qquad g(n)=\max\{1,\ \alpha\sqrt{n}\}$
+  where ($Q_q(|\mathcal T|)$) is a high quantile (e.g., (q=0.99)) of the **absolute** permutation statistics and ($\alpha>0$) is a single tuning constant (default ($\alpha=0.5$)). The floor at (1) prevents deflation for small ($n$).
+
+We then use the **scale-free index**
+$$
+s = \frac{|t_{\text{obs}}|}{T_{\text{cap}}}\in[0,1],
+$$
+and apply the simplified LLS rule from above (with lift), i.e., replace ($T_{\max}$) by ($T_{\text{cap}}$) wherever ($s$) appears.
+
+**Practical guidance.** Use `cap_base = "perm"` for **single/few tests** or when you want robustness against extreme ($t_{\text{obs}}$). For **many tests**, `cap_base = "tmax"` leverages the observed range across features. The single knob ($\alpha$) controls how aggressively the permutation cap is inflated with ($n$) (default ($\alpha=0.5$)).
+
+
+```{r, echo=TRUE}
+# Build T_cap from choice: "perm" or "tmax"
+# - cap_base = "tmax": uses observed maximum across tests
+# - cap_base = "perm": uses high quantile of |perm_stats| inflated by g(n)
+.build_Tcap <- function(cap_base, t_obs, perm_stats, n, 
+                        q_ref = 0.99, alpha = 0.5) {
+  if (identical(cap_base, "tmax")) {
+    # Observed cap (same for all tests)
+    T_cap <- rep(max(abs(t_obs), na.rm = TRUE), length(t_obs))
+
+  } else if (identical(cap_base, "perm")) {
+    # Permutation cap: high quantile of |perm|, inflated by g(n)
+    if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+    Tabs <- abs(perm_stats)
+    Tq <- apply(Tabs, 2, stats::quantile, probs = q_ref, na.rm = TRUE, names = FALSE)
+    
+    # Inflation g(n) = max(1, alpha * sqrt(n))
+    infl <- pmax(1, alpha * sqrt(n))
+    T_cap <- Tq * infl
+
+    # Broadcast if needed
+    if (length(T_cap) == 1L) T_cap <- rep(T_cap, length(t_obs))
+    if (length(T_cap) != length(t_obs)) T_cap <- rep(T_cap[1L], length(t_obs))
+
+  } else {
+    stop("cap_base must be 'perm' or 'tmax'.")
+  }
+
+  # Guardrails: enforce positive finite caps
+  bad <- !is.finite(T_cap) | T_cap <= 0
+  if (any(bad)) {
+    fallback <- max(T_cap[!bad], 1)
+    T_cap[bad] <- fallback
+  }
+  T_cap
+}
+
+# Simplified LLS using unified T_cap
+eps_log_saturation_lift_cap <- function(obs_stats,
+                                        perm_stats,
+                                        sampsize,
+                                        cap_base = c("perm", "tmax"),
+                                        k_factor = 1000,
+                                        target_factor = 0.25,
+                                        rho_lift = 3,
+                                        floor_eps = 1e-6,
+                                        q_ref = 0.99,   # quantile of |T_perm|
+                                        alpha = 0.5,    # inflation constant
+                                        ...) {
+  cap_base <- if (is.character(cap_base)) match.arg(cap_base) else cap_base
+  Tobs <- abs(obs_stats)
+  n <- sampsize
+  
+  # Build cap T_cap according to cap_base
+  T_cap <- .build_Tcap(cap_base, Tobs, perm_stats, n,
+                       q_ref = q_ref, alpha = alpha)
+  
+  # Curvature (k) and plateau (E_target) scale with 1/n
+  k <- k_factor * (500 / n)
+  E_target <- target_factor * (500 / n)
+  
+  # Degenerate guard: if cap fails, return conservative constant
+  if (!any(is.finite(T_cap)) || all(T_cap <= 0)) {
+    return(rep(max(E_target + rho_lift, floor_eps), length(Tobs)))
+  }
+  
+  # Scale-free index s and smooth Wendland C^2 lift
+  s <- pmin(Tobs / T_cap, 1)                # clamp to [0,1]
+  psi_wendland_c2 <- (1 - s)^4 * (1 + 4*s)  # lift vanishes at s=1
+  
+  # Simplified LLS core (no A,B), numerically stable via log1p
+  eps_core <- E_target * log1p(k * s) / log1p(k) + rho_lift * psi_wendland_c2
+  
+  # Floor to avoid vanishing constraints
+  pmax(eps_core, floor_eps)
+}
+```
+
+```{r rule_log_sat_lift_perm}
+for (n_val in n_per_group_vec) {
+  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_log_sat_lift = 
+      eps_log_saturation_lift(obs_stats, perm_stats = perm_stats, sampsize = n_val),
+    eps_log_sat_lift_tmax = 
+      eps_log_saturation_lift_cap(obs_stats, perm_stats = perm_stats, 
+                                  sampsize = n_val, cap_base = "tmax"),
+    eps_log_sat_lift_perm = 
+      eps_log_saturation_lift_cap(obs_stats, perm_stats = perm_stats, 
+                                  sampsize = n_val, cap_base = "perm")
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+      geom_line(size = 1.2, alpha = 0.7) +
+      labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(t[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+}
+```
+
+eps_log_sat_lift and eps_log_sat_lift_tmax lead to exactly the same epsilon values (curves overlap). Using the quantile of permutation statistics as cap is less conservative (smaller epsilon values) in our scenario and might therefore lead to a better approximation of the t-test p-values. 
+
+```{r run_permApprox_constr_log_sat_lift_perm}
+results_all <- run_permApprox(rule_name = "log_sat_lift_perm", 
+                              eps_fct = eps_log_saturation_lift_cap)
+```
+
+```{r pvals_constr_log_sat_lift_perm}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, 
+                  eps_rule = "lifted log-saturation (perm based)")
+  print(p)
+}
+```
+
+Due to the smaller $\varepsilon$ values for mid-sized test statistics, this rule performs better than the rule based on $t_{max}$ as the approximations are closer to the t-test p-values. On the other hand, it is less conservative  
+
+## Standardized Lifted Log-Saturation (SLLS) rule
+
+If test statistics are on very different scales (e.g., different test types in a multiple testing setup),
+the previous rules may assign systematically larger or smaller $\varepsilon$ values purely due to scale differences.
+
+We solve this by working on a **standardized $Z$-scale**:
+
+$$
+Z_{\text{obs}}^{(j)} = \frac{|T_{\text{obs}}^{(j)} - \mu_j|}{\sigma_j},
+$$
+
+where $\mu_j$ and $\sigma_j$ are the mean and SD of the permutation distribution for test $j$.
+
+The *Lifted Log-Saturation Rule* is applied in $Z$-space, and the result is converted back to the original $T$-scale:
+
+$$
+\varepsilon^{(j)} = \sigma_j \cdot \varepsilon_{Z}^{(j)}.
+$$
+
+**Why standardization matters**:
+
+* Ensures comparability across tests with different statistic ranges.
+* Keeps the lift and saturation behavior consistent, independent of the original scale.
+* Makes the rule generally applicable in heterogeneous testing situations.
+
+```{r, echo=TRUE}
+# Build T_cap from choice: "perm" or "tmax"
+# - cap_base = "tmax": uses observed maximum across tests
+# - cap_base = "perm": uses high quantile of |perm_stats| inflated by g(n)
+.build_Tcap <- function(cap_base, t_obs, perm_stats, n, 
+                        q_ref = 0.99, alpha = 0.5) {
+  if (identical(cap_base, "tmax")) {
+    # Observed cap (same for all tests)
+    T_cap <- rep(max(abs(t_obs), na.rm = TRUE), length(t_obs))
+
+  } else if (identical(cap_base, "perm")) {
+    # Permutation cap: high quantile of |perm|, inflated by g(n)
+    if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+    Tabs <- abs(perm_stats)
+    Tq <- apply(Tabs, 2, stats::quantile, probs = q_ref, na.rm = TRUE, names = FALSE)
+    
+    # Inflation g(n) = max(1, alpha * sqrt(n))
+    infl <- pmax(1, alpha * sqrt(n))
+    T_cap <- Tq * infl
+
+    # Broadcast if needed
+    if (length(T_cap) == 1L) T_cap <- rep(T_cap, length(t_obs))
+    if (length(T_cap) != length(t_obs)) T_cap <- rep(T_cap[1L], length(t_obs))
+
+  } else {
+    stop("cap_base must be 'perm' or 'tmax'.")
+  }
+
+  # Guardrails: enforce positive finite caps
+  bad <- !is.finite(T_cap) | T_cap <= 0
+  if (any(bad)) {
+    fallback <- max(T_cap[!bad], 1)
+    T_cap[bad] <- fallback
+  }
+  T_cap
+}
+
+# Standardized Lifted Log-Saturation (SLLS) using unified Z-cap
+# - Standardize to Z using permutation mean/sd per test
+# - Build the cap on the Z-scale via .build_Tcap (cap_base = "perm" or "tmax")
+# - Apply simplified LLS on Z
+# - Map epsilon back to T-scale via sigma_j
+eps_log_saturation_lift_std <- function(obs_stats,
+                                        perm_stats,
+                                        sampsize,
+                                        cap_base      = c("perm", "tmax"),  # Z-cap choice
+                                        alpha         = 0.5, # g(n) = max(1, alpha*sqrt(n))
+                                        q_ref         = 0.99, # quantile of |Z_perm|
+                                        rho_lift      = 3,
+                                        k_factor      = 1000,
+                                        target_factor = 0.25,
+                                        floor_epsZ    = 1e-6,
+                                        ...) {
+  cap_base <- if (is.character(cap_base)) match.arg(cap_base) else cap_base
+  n <- sampsize
+  stopifnot(n > 0)
+
+  # Shape inputs --------------------------------------------------------------
+  # Allow vector perm_stats for single test
+  if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+  Tobs <- as.numeric(obs_stats)
+
+  # Z-standardization per test -----------------------------------------------
+  mu  <- colMeans(perm_stats, na.rm = TRUE)
+  sig <- apply(perm_stats, 2, sd, na.rm = TRUE)
+
+  # Guard against non-finite or zero SDs: replace with a small positive fallback
+  valid_sig <- sig[is.finite(sig) & sig > 0]
+  sig_fallback <- if (length(valid_sig)) max(min(valid_sig), 1e-12) else 1e-12
+  sig_ok <- sig
+  sig_ok[!is.finite(sig_ok) | sig_ok <= 0] <- sig_fallback
+
+  Zobs  <- abs((Tobs - mu) / sig_ok)
+  Zperm <- sweep(sweep(perm_stats, 2, mu, "-"), 2, sig_ok, "/")  # same shape as perm_stats
+
+  # Build Z-cap (unified) -----------------------------------------------------
+  # Uses: "tmax" => max(Zobs); "perm" => Q_q(|Zperm|) * g(n) with g(n)=max(1, alpha*sqrt(n))
+  T_cap_Z <- .build_Tcap(cap_base = cap_base,
+                         t_obs    = Zobs,
+                         perm_stats = Zperm,
+                         n        = n,
+                         q_ref    = q_ref,
+                         alpha    = alpha)
+
+  # LLS core on Z -------------------------------------------------------------
+  k        <- k_factor      * (500 / n)
+  E_target <- target_factor * (500 / n)
+
+  if (!any(is.finite(T_cap_Z)) || all(T_cap_Z <= 0)) {
+    # Conservative constant if the cap failed
+    epsZ <- rep(max(E_target + rho_lift, floor_epsZ), length(Zobs))
+  } else {
+    s   <- pmin(Zobs / T_cap_Z, 1)        # scale-free index in [0,1]
+    psi <- (1 - s)^4 * (1 + 4*s)          # Wendland C^2 lift
+    epsZ_core <- E_target * log1p(k * s) / log1p(k) + rho_lift * psi
+    epsZ <- pmax(epsZ_core, floor_epsZ)
+  }
+
+  # Map back to T-scale -------------------------------------------------------
+  epsT <- epsZ * sig_ok
+  epsT
+}
+```
+
+
+```{r rule_log_sat_lift_std}
+for (n_val in n_per_group_vec[1:2]) {
+  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_log_sat_lift_perm = 
+      eps_log_saturation_lift_cap(obs_stats, perm_stats = perm_stats, 
+                                  sampsize = n_val, cap_base = "perm"),
+    eps_log_sat_lift_std = 
+      eps_log_saturation_lift_std(obs_stats, perm_stats = perm_stats, 
+                                  sampsize = n_val, cap_base = "perm")
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+    geom_line(size = 1.2, alpha = 0.7) +
+    labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(t[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+}
+```
+
+Since the data in this study are already standardized (Gaussian data with sd = 1), there is almost no difference in epsilon values between the standardized and non-standardized version. We will see a difference in a later study using the Wilcoxon test.
+
+```{r run_permApprox_constr_log_sat_lift_std}
+results_all <- run_permApprox(rule_name = "log_sat_lift_std", 
+                              eps_fct = eps_log_saturation_lift_std)
+```
+
+```{r pvals_constr_log_sat_lift_std}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, 
+                  eps_rule = "standardized lifted log-saturation (SLLS)")
+  print(p)
+}
+```
+
+## Constrained vs. unconstrained fit
+
+```{r}
+# Load & combine results: t-test, unconstrained GPD, constrained GPD
+rule_name <- "log_sat_lift_std"   # <- change if you used a different rule_name
+
+results_three <- purrr::map_dfr(n_per_group_vec, function(n_per_group) {
+
+  # base inputs
+  obs_stats   <- readRDS(path_target(paste0("obs_t_stats_n", n_per_group, 
+                                            "_B", B, ".rds")))
+  pval_ttest  <- readRDS(path_target(paste0("pval_ttest_n", n_per_group, 
+                                            "_B", B, ".rds")))
+
+  # GPD results
+  papprox_unconstr <- readRDS(path_target(paste0("permapprox_unconstr_n", 
+                                                 n_per_group, "_B", B, ".rds")))
+  papprox_constr   <- readRDS(path_target(paste0("permapprox_constr_",
+                                                 rule_name, "_n", n_per_group, 
+                                                 "_B", B, ".rds")))
+
+  tibble::tibble(
+    idx           = seq_along(obs_stats),
+    n_per_group   = n_per_group,
+    effect_size   = factor(delta_vec, levels = c(0, 0.5, 1, 1.5, 2)),
+    obs_stats     = abs(obs_stats),
+    p_ttest       = pval_ttest,
+    p_unconstr    = papprox_unconstr$p_unadjusted,
+    p_constr      = papprox_constr$p_unadjusted,
+    gpd_unconstr_fit = papprox_unconstr$gpd_fit$fitted,
+    gpd_constr_fit   = papprox_constr$gpd_fit$fitted
+  )
+})
+```
+
+
+```{r}
+# Plot function: three p-value types in one panel
+plot_pvals_three <- function(df, sampsize, log_scale = TRUE) {
+  df_plot <- df
+
+  # find smallest nonzero across all three types for stable zero replacement on log scale
+  min_nonzero <- min(
+    c(df_plot$p_ttest[df_plot$p_ttest > 0],
+      df_plot$p_unconstr[df_plot$p_unconstr > 0],
+      df_plot$p_constr[df_plot$p_constr > 0]),
+    na.rm = TRUE
+  )
+  min_nonzero <- max(min_nonzero, 1e-320)
+  zero_repl   <- min_nonzero / 100
+  
+  df_long <- df_plot %>%
+    dplyr::mutate(
+      p_ttest_plot     = ifelse(p_ttest     == 0, zero_repl, p_ttest),
+      p_unconstr_plot  = ifelse(p_unconstr  == 0, zero_repl, p_unconstr),
+      p_constr_plot    = ifelse(p_constr    == 0, zero_repl, p_constr)
+    ) %>%
+    tidyr::pivot_longer(
+      cols = c(p_ttest_plot, p_unconstr_plot, p_constr_plot),
+      names_to = "ptype", values_to = "pval"
+    ) %>%
+    dplyr::mutate(
+      ptype = dplyr::recode(ptype,
+                            p_ttest_plot    = "t-test",
+                            p_unconstr_plot = "unconstrained",
+                            p_constr_plot   = "constrained"
+      ),
+      # set the legend order
+      ptype = factor(ptype, levels = c("t-test", "constrained", "unconstrained"))
+    ) %>%
+    # this controls the draw order in a single geom_point layer
+    dplyr::arrange(ptype)
+  
+  p <- ggplot2::ggplot(df_long, ggplot2::aes(x = obs_stats, y = pval, color = ptype, size = ptype)) +
+    ggplot2::geom_point(alpha = 0.6) +
+    ggplot2::scale_color_manual(
+      name   = "P-value type:",
+      values = c("t-test" = "grey40", "unconstrained" = "#1f77b4", 
+                 "constrained" = "darkorange")
+    ) + 
+    scale_size_manual(
+      values = c("t-test" = 1.6,
+                 "constrained" = 1.6,
+                 "unconstrained" = 1.2)  # smaller dots here
+    ) +
+    ggplot2::labs(
+      title = paste0("n = ", sampsize),
+      x = expression(t[obs]),
+      y = expression(hat(p))
+    ) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      axis.text    = ggplot2::element_text(size = 14),
+      axis.title   = ggplot2::element_text(size = 16),
+      plot.title   = ggplot2::element_text(size = 16),
+      legend.title = ggplot2::element_text(size = 14),
+      legend.text  = ggplot2::element_text(size = 12)
+    ) +
+    guides(size = "none")
+
+  if (log_scale) {
+    p <- p +
+      ggplot2::scale_y_log10(
+        breaks = c(zero_repl, 1e-300, 1e-200, 1e-100, 1e-80, 1e-60, 1e-40, 1e-20, 1e-2),
+        labels = c("0", "1e-300", "1e-200", "1e-100", "1e-80", "1e-60", "1e-40", "1e-20", "1e-2"),
+        limits = c(zero_repl, 1),
+        minor_breaks = NULL
+      )
+  }
+
+  return(p)
+}
+```
+
+
+```{r pvals_unconstr_vs_constr, fig.width=10, fig.height=6, dpi=200}
+# Make the plots for each sample size
+for (n_val in n_per_group_vec) {
+  df_n <- dplyr::filter(results_three, n_per_group == n_val)
+  cat("n =", n_val,
+      "| zeros (ttest, unconst, const):",
+      sum(df_n$p_ttest == 0, na.rm = TRUE), ",",
+      sum(df_n$p_unconstr == 0, na.rm = TRUE), ",",
+      sum(df_n$p_constr == 0, na.rm = TRUE), "\n")
+  print(plot_pvals_three(df_n, sampsize = n_val))
+}
+
+```
+
+## Combined plot
+
+```{r}
+results_fact0  <- run_permApprox(rule_name = "factor0", eps_fct = eps_factor)
+results_fact01 <- run_permApprox(rule_name = "factor01", eps_fct = eps_factor)
+results_ls     <- run_permApprox(rule_name = "log_sat", 
+                                 eps_fct = eps_log_saturation)
+results_slls   <- run_permApprox(rule_name = "log_sat_lift_std", 
+                                 eps_fct = eps_log_saturation_lift_std)
+```
+
+```{r eps_rules_combined, fig.width=10, fig.height=6, dpi=200}
+sampsize <- 250
+
+p_fact0 <- results_fact0  %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "ε = 0")
+
+p_fact01 <- results_fact01 %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "ε-factor = 0.1")
+
+p_ls <- results_ls %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "Log-saturation")
+
+p_slls <- results_slls %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "Std. lifted log-saturation (SLLS)")
+
+# All four plots
+(p_fact0 | p_fact01) /
+(p_ls    | p_slls) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+```
+
+
+## Conclusion
+
+In this set of simulation studies we systematically evaluated different rules for defining $\varepsilon$. Our results demonstrate that:
+
+* The **log-saturation rule** provides a stable baseline for defining $\varepsilon$ that adapts smoothly to both the observed test statistics and the sample size.
+* Introducing the **lift term** mitigates anticonservative behavior for small and moderate test statistics, ensuring that the approximation remains reliable across the full range of effect sizes.
+* Replacing the dependency on the maximum observed statistic $T_{\max}$ by a **permutation-based cap** makes the rule more robust to outliers and suitable for single-test settings, while still preserving the desired $\sqrt{n}$-like scaling.
+* Standardization to the permutation $Z$-scale further improves comparability across different test types and scales.
+
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```
