@@ -1,0 +1,786 @@
+---
+title: "Evaluate GPD parameter estimation methods"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "02_unconstrained"
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "52a6b799-d49a-4efe-9bb8-22bea6c7d463")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.width = 10, 
+                      fig.height = 5, 
+                      dpi = 200,
+                      fig.path = paste0('figures/', params, "/sim_GPD_unconstr_"),
+                      echo = FALSE)
+```
+
+In this document, several existing methods for estimating parameters of the Generalized Pareto Distribution (GPD) are compared and evaluated regarding their estimation accuracy. 
+
+## Install and load packages
+
+
+```{r packages, message=FALSE, warning=FALSE}
+library(conflicted)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(patchwork)
+library(kableExtra)
+library(eva)
+library(furrr)
+library(progressr)
+conflicts_prefer(dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Setting
+
+### GPD parameters
+
+All possible combinations of the following parameters are considered:
+
+```{r}
+shapes <- c(-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6)
+scale <- 1
+sample_sizes <- c(25, 50, 75, 100, 250, 500, 750, 1000)
+num_reps <- 500
+cores <- parallel::detectCores() - 2
+
+cat("Shape values: ", shapes,
+    "\nScale: ", scale,
+    "\nSample sizes: ", sample_sizes,
+    "\nRepetitions: ", num_reps)
+```
+
+### Fit methods
+
+The GPD parameters are estimated for all considered parameter combinations using the following estimation methods:
+
+* MOM (Method of Moments)
+* PWM (Probability weighted momement) by Hosking-Wallis
+* LME (Likelihood moment estimator) by Zhang (2007)
+* WNLLSM (Weighted Nonlinear Least Squares Likelihood Moments Estimation) by Zhao et al. (2019)
+* MLE-1D (one-dimensional MLE) by Castillo & Serra (2015)
+* MLE-2D (Maximum Likelihood Estimation)
+* NLS2 (Quantile Estimation) by Song & Song (2012)
+* ZSE (Zhang Stephens Estimator; Bayesian methods) by Zhang & Stephens (2009)
+
+```{r}
+# Methods for parameter fitting
+fit_methods <- c("MOM", "PWM", "LME", "MLE1D", "MLE2D", "NLS2", "WNLLSM", "ZSE")
+fit_methods <- factor(fit_methods, levels = fit_methods)
+```
+
+### Combinations
+
+```{r}
+# Create combinations of shape, sample size, and method
+estimation_settings <- tidyr::crossing(shape = shapes, 
+                                       n = sample_sizes, 
+                                       method = fit_methods)
+
+estimation_settings %>% head()
+
+cat("Number of settings: ", nrow(estimation_settings))
+```
+
+## Perform estimations
+
+```{r}
+# Define estimation function
+estimate_one_setting <- function(i, path_results, path_data) {
+  setting <- estimation_settings[i, ]
+  shape <- unlist(base::unname(setting$shape))
+  n <- unlist(base::unname(setting$n))
+  method <- as.character(unlist(base::unname(setting$method)))
+  
+  tol <- case_when(
+    method == "LME" ~ 1e-7,
+    method == "MLE1D" ~ 1e-10,
+    method == "MLE2D" ~ 1e-10,
+    method == "NLS2" ~ 1e-9,
+    method == "WNLLSM" ~1e-9,
+    TRUE ~ NA_real_
+  )
+  
+  # Output file path
+  result_file <- file.path(path_results, 
+                           paste0("shape-", shape, 
+                                  "_n-", n,
+                                  "_method-", method, 
+                                  ".RDS"))
+  
+  #if (!file.exists(result_file)) {
+    # Load data
+    data_file <- file.path(path_data, 
+                           paste0("shape-", shape, "_n-", n, ".RDS"))
+    gpd_samples <- readRDS(data_file)
+    
+    # Estimate parameters
+    fit_results <- purrr::imap_dfr(gpd_samples, ~ {
+      browser()
+      fit <- fit_gpd(
+        data = .x, 
+        fit_method = method,
+        thresh = 0, 
+        support_boundary = NULL, 
+        constraint = "unconstrained",
+        tol = tol, 
+        epsilon = 0
+      )
+      tibble(true_shape = shape,
+             n = n,
+             method = method,
+             repetition = .y,
+             parameter = c("shape", "scale"), 
+             true_value = c(shape, scale),
+             estimate = c(fit$shape, fit$scale))
+    })
+    
+    # Save results
+    saveRDS(fit_results,file = result_file)
+
+  #} else {
+   # fit_results <- NULL
+  #}
+  
+  return(fit_results)
+}
+```
+
+```{r, eval=FALSE}
+# Set up progress handler
+handlers("txtprogressbar")
+
+# Set number of cores
+if (parallel::detectCores() < cores) {
+  cores <- parallel::detectCores() - 2
+}
+
+# Set up parallel plan
+plan(multisession, workers = cores)
+
+path_results <- path_target()
+path_data <- path_source("01_data_gen")
+
+# Run estimation in parallel with progress
+with_progress({
+  pb <- progressor(steps = nrow(estimation_settings))
+
+  gpdfitlist <- future_map(seq_len(nrow(estimation_settings)), function(i) {
+    pb()
+    estimate_one_setting(i, 
+                         path_results = path_results, 
+                         path_data = path_data)
+  })
+})
+
+# Optionally stop the plan (not necessary in most cases)
+plan(sequential)
+```
+
+## Combine results
+
+```{r}
+# Load all result files and combine into one data frame
+all_result_files <- list.files(path_target(), full.names = TRUE)
+
+gpdfitlist <- purrr::map_dfr(all_result_files, ~ {
+  res <- readRDS(.x)
+  res %>%
+    mutate(across(where(is.list), ~ unlist(base::unname(.))))
+}) %>%
+  mutate(method = factor(method, levels = levels(fit_methods))) %>%
+  arrange(true_shape)
+
+# Filter
+gpdfitlist <- gpdfitlist %>% filter(! method %in% c("PWM"))
+
+# Compute evaluation metrics
+evaluation <- gpdfitlist %>%
+  group_by(true_shape, n, method, parameter) %>%
+  summarise(
+    mean = mean(estimate, na.rm = TRUE),
+    sd = sd(estimate, na.rm = TRUE),
+    bias = mean(estimate - true_value, na.rm = TRUE),
+    mse = mean((estimate - true_value)^2, na.rm = TRUE),
+    rmse = sqrt(mean((estimate - true_value)^2, na.rm = TRUE)),
+    .groups = "drop"
+  )
+```
+
+```{r}
+str(gpdfitlist)
+```
+
+## Boxplots
+
+### Colors
+
+```{r}
+# Okabe Ito palette (colorblind-friendly)
+okabe_ito_cols <- c("black",   "#E69F00", "#56B4E9", 
+                    "#009E73", "#F0E442", "#0072B2",
+                    "#D55E00", "#CC79A7", "gray60")
+  
+my_cols_old <- c("gray60", "#A6CEE3", "#B2DF8A", "#33A02C", "#1F78B4",
+                   "#FF7F00", "#6A3D9A")
+
+my_cols <- c(
+  "MOM"    = "#6C6C6C",
+  "PWM"    = "#6C6C6C",
+  "LME"    = "#009E73", 
+  "MLE1D"  = "#56B4E9", 
+  "MLE2D"  = "#0072B2",
+  "NLS2"   = "#E69F00",
+  "WNLLSM" = "#D55E00",
+  "ZSE"    = "#CC79A7"
+)
+```
+
+### Plot function
+
+```{r}
+plot_error_by_n <- function(df, param, shape, col_palette,
+                            abs_error = TRUE,
+                            type = "boxplot",
+                            axis_text_size = 14,
+                            axis_title_size = 16,
+                            legend_text_size = 12,
+                            legend_title_size = 16,
+                            title_size = 16,
+                            hline_alpha = 0.5,
+                            boxplot_width = 0.4,
+                            add_horizontal_line = TRUE) {
+
+  if (abs_error) {
+    param_label <- switch(
+      param,
+      shape = expression("|" * hat(xi) - xi[0] * "|"),
+      scale = expression("|" * hat(sigma) - sigma[0] * "|")
+    )
+  } else {
+    param_label <- switch(
+      param,
+      shape = expression(hat(xi) - xi[0]),
+      scale = expression(hat(sigma) - sigma[0])
+    )
+  }
+  
+  
+  df_plot <- df %>%
+    filter(parameter == param, true_shape == shape) %>%
+    mutate(
+      true_shape = factor(true_shape),
+      n = factor(n),
+      error = case_when(
+        abs_error == TRUE ~  abs(estimate - true_value),
+        abs_error == FALSE ~ estimate - true_value
+      ))
+  
+  p <- ggplot(df_plot, aes(x = n, y = error, fill = method))
+  
+  if (type == "violin") {
+    p <- p + 
+      geom_violin(position = position_dodge(width = 0.9), 
+                  alpha = 0.7, 
+                  scale = "width", 
+                  trim = FALSE) +
+      geom_boxplot(width = boxplot_width, 
+                   position = position_dodge(width = 0.9),
+                   outlier.size = 0.7, 
+                   alpha = 0.5)
+  } else {
+    p <- p + 
+      geom_boxplot(outlier.size = 0.7, 
+                   position = position_dodge(width = 0.8))
+    
+  }
+  
+  if (add_horizontal_line) {
+    p <- p + geom_hline(yintercept = 0, linetype = "dashed", color = "black", 
+                        alpha = hline_alpha)
+  }
+  
+  p <- p + 
+    scale_fill_manual(
+      values = col_palette,
+      labels = setNames(
+        lapply(names(col_palette), function(m) {
+          if (m == "LME") bquote(bold("LME" * "*")) else m
+        }),
+        names(col_palette)
+      )
+    ) +
+    labs(
+      x = "n",
+      y = param_label,
+      title = bquote(xi[0] == .(shape)),
+      fill = "Method"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text = element_text(size = axis_text_size),
+      axis.title = element_text(size = axis_title_size),
+      legend.text = element_text(size = legend_text_size),
+      legend.title = element_text(size = legend_title_size),
+      plot.title = element_text(size = title_size)
+    )
+  
+  p
+  
+  return(p)
+}
+
+```
+
+### Estimation errors by n
+
+#### Shape
+
+```{r error_shape_by_n, fig.width = 10, fig.height = 5, dpi = 200}
+for (shape in shapes) {
+  print(plot_error_by_n(gpdfitlist, param = "shape", shape = shape, 
+                        col_palette = my_cols,
+                        type = "boxplot", abs_error = FALSE))
+}
+```
+
+#### Scale
+
+```{r error_scale_by_n, fig.width = 10, fig.height = 5, dpi = 200}
+for (shape in shapes) {
+  print(plot_error_by_n(gpdfitlist, param = "scale", shape = shape, 
+                        col_palette = my_cols,
+                        type = "boxplot", abs_error = FALSE))
+}
+```
+
+
+### Absolute estimation errors by n
+
+#### Shape
+
+```{r abs_error_shape_by_n, fig.width = 10, fig.height = 5, dpi = 200}
+for (shape in shapes) {
+  print(plot_error_by_n(gpdfitlist, param = "shape", shape = shape, 
+                        type = "boxplot", abs_error = TRUE,
+                        col_palette = my_cols,
+                        add_horizontal_line = FALSE))
+}
+```
+
+#### Scale
+
+```{r abs_error_scale_by_n, fig.width = 10, fig.height = 5, dpi = 200}
+for (shape in shapes) {
+  print(plot_error_by_n(gpdfitlist, param = "scale", shape = shape, 
+                        type = "boxplot", abs_error = TRUE,
+                        col_palette = my_cols))
+}
+```
+
+## Evaluation metrics
+
+### Line plots
+
+```{r}
+plot_eval_metric_by_shape <- function(eval_df,
+                                      shape_filter = NULL,
+                                      col_palette,
+                                      param = c("shape", "scale"),
+                                      metric = c("bias", "rmse", "sd"),
+                                      axis_text_size = 14,
+                                      axis_title_size = 16,
+                                      legend_text_size = 12,
+                                      legend_title_size = 16,
+                                      strip_text_size = 16,
+                                      title_size = 18,
+                                      hline_alpha = 0.5,
+                                      boxplot_width = 0.4,
+                                      ncol = 3) {
+  
+  # Parameter symbols
+  param_expr <- if (param == "shape") quote(xi) else quote(sigma)
+
+  # --- Define axis labels (formula only) and plot titles (metric name) ---
+  metric_label <- switch(metric,
+    "bias" = bquote(E[.(param_expr)](hat(.(param_expr))) - .(param_expr)[0]),
+    "rmse" = bquote(sqrt(E[.(param_expr)]((hat(.(param_expr)) - .(param_expr)[0])^2))),
+    "sd"   = bquote(sqrt(Var(hat(.(param_expr)))))
+  )
+
+  metric_title <- toupper(metric)  # e.g. "RMSE", "BIAS", "SD"
+
+  df_plot <- eval_df %>%
+    filter(parameter == param) %>%
+    mutate(n = factor(n))
+  
+  if (!is.null(shape_filter)) {
+    df_plot <- df_plot %>%
+      filter(true_shape %in% shape_filter)
+  }
+
+  p <- ggplot(df_plot, aes(x = n, y = .data[[metric]], color = method, group = method)) +
+    geom_line(linewidth = 0.6) +
+    geom_point(size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "black", alpha = hline_alpha) +
+    facet_wrap(~ true_shape, labeller = label_bquote(xi == .(true_shape)), ncol = ncol) +
+    scale_color_manual(values = col_palette) +
+    labs(
+      x = "n",
+      y = metric_label,
+      color = "Method",
+      title = metric_title
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text = element_text(size = axis_text_size),
+      axis.title = element_text(size = axis_title_size),
+      legend.text = element_text(size = legend_text_size),
+      legend.title = element_text(size = legend_title_size),
+      strip.text = element_text(size = strip_text_size),
+      plot.title = element_text(size = title_size, face = "bold"),
+      axis.text.x = element_text(angle = -45, hjust = 0)
+    )
+  
+  return(p)
+}
+
+```
+
+#### All shape values
+
+```{r evaluation_metrics, fig.width = 10, fig.height = 10, dpi = 200}
+
+for (metric in c("bias", "sd", "rmse")) {
+  for (param in c("shape", "scale")) {
+    print(plot_eval_metric_by_shape(evaluation, param = param, metric = metric,
+                                    col_palette = my_cols))
+  }
+}
+```
+
+#### Selection of shape values
+
+```{r evaluation_metrics_sel, fig.width = 10, fig.height = 4, dpi = 200}
+
+for (metric in c("bias", "sd", "rmse")) {
+  for (param in c("shape", "scale")) {
+    print(plot_eval_metric_by_shape(evaluation, param = param, metric = metric,
+                                    shape_filter = c(-0.4, 0, 0.4),
+                                    ncol = 3, col_palette = my_cols))
+  }
+}
+```
+
+### Heatmaps
+
+```{r}
+plot_metric_heat <- function(evaluation,
+                             metric = c("bias","sd","rmse"),
+                             param  = c("shape","scale"),
+                             digits = 3,
+                             nrow = NULL,
+                             ncol = NULL,
+                             scale_mode = c("global", "row"),
+                             scale_low = 0.4,
+                             scale_mid = 0.7,
+                             scale_high = 0.95,
+                             outline_best = FALSE,
+                             highlight_method = "LME",
+                             title = NULL,
+                             axis_text_size = 12,
+                             axis_title_size = 16,
+                             legend_text_size = 12,
+                             legend_title_size = 13,
+                             strip_text_size = 14,
+                             title_size = 16) {
+
+  metric     <- match.arg(metric)
+  param      <- match.arg(param)
+  scale_mode <- match.arg(scale_mode)
+  
+  df <- evaluation %>%
+    filter(parameter == param) %>%
+    select(true_shape, n, method, value = all_of(metric)) %>%
+    mutate(n = factor(n),
+           method = as.character(method))
+  
+  # "Best" score: |bias| for bias, raw values otherwise
+  df <- df %>%
+    mutate(score = if (metric == "bias") abs(value) else value) %>%
+    group_by(true_shape, n) %>%
+    mutate(
+      row_min = min(score, na.rm = TRUE),
+      row_max = max(score, na.rm = TRUE),
+      is_best = !is.na(score) & (abs(score - row_min) <= .Machine$double.eps^0.5),
+      lab     = sprintf(paste0("%.", digits, "f"), value)
+    ) %>%
+    ungroup()
+
+    # Axis math labels
+  param_expr  <- if (param == "shape") quote(xi) else quote(sigma)
+  metric_title <- toupper(metric)
+  metric_label <- switch(metric,
+    "bias" = bquote(E[hat(.(param_expr))] - .(param_expr)[0]),
+    "rmse" = bquote(sqrt(E[(hat(.(param_expr)) - .(param_expr)[0])^2])),
+    "sd"   = bquote(sqrt(Var(hat(.(param_expr)))))
+  )
+  
+  # Fill mapping and legend according to scale_mode
+  if (scale_mode == "row") {
+    df <- df %>%
+      group_by(true_shape, n) %>%
+      mutate(
+        scaled = ifelse(row_max > row_min, (score - row_min)/(row_max - row_min), 0)
+      ) %>%
+      ungroup()
+    fill_aes   <- aes(fill = scaled)
+    fill_scale <- scale_fill_gradient(low = "yellow", high = "red",
+                                      name = "Per-row scale\n(relative)")
+  } else { # global
+    if (metric == "bias") {
+      # color by absolute bias
+      df <- df %>% mutate(abs_value = abs(value))
+      
+      vmin <- 0
+      vmax <- max(df$abs_value, na.rm = TRUE)
+      q_low  <- quantile(df$abs_value, probs = scale_low, na.rm = TRUE)  # e.g., 0.15
+      q_mid  <- quantile(df$abs_value, probs = scale_mid, na.rm = TRUE)  # e.g., 0.30
+      q_high <- quantile(df$abs_value, probs = scale_high, na.rm = TRUE)  # e.g., 0.30
+      
+      fill_aes <- aes(fill = abs_value)
+      fill_scale <- scale_fill_gradientn(
+        colours = c("white", "yellow", "orange", "red", "red3"),
+        values  = scales::rescale(c(vmin, q_low, q_mid, q_high, vmax), 
+                                   from = c(vmin, vmax)),
+        limits  = c(vmin, vmax),
+        name    = "|Bias|",
+        guide   = guide_colourbar(
+          frame.colour   = "black",
+          frame.linewidth = 0.3,
+          ticks.colour   = "black"
+        )
+      )
+    } else {
+      # SD / RMSE
+      vmin <- min(df$value, na.rm = TRUE)
+      vmax <- max(df$value, na.rm = TRUE)
+      q_low  <- quantile(df$value, probs = scale_low, na.rm = TRUE)
+      q_mid  <- quantile(df$value, probs = scale_mid, na.rm = TRUE)
+      q_high <- quantile(df$value, probs = scale_high, na.rm = TRUE)
+      
+      fill_aes <- aes(fill = value)
+      fill_scale <- scale_fill_gradientn(
+        colours = c("white", "yellow", "orange", "red", "red3"),
+        values  = scales::rescale(c(vmin, q_low, q_mid, q_high, vmax), 
+                                  from = c(vmin, vmax)),
+        limits  = c(vmin, vmax),
+        name    = metric_title,
+        guide   = guide_colourbar(
+          frame.colour   = "black",
+          frame.linewidth = 0.3,
+          ticks.colour   = "black"
+        )
+      )
+    }
+  }
+  
+  # Make one method bold
+  method_labels <- setNames(
+    lapply(levels(factor(df$method)), function(m) {
+      if (m == highlight_method) bquote(bold(.(m) * "*")) else m
+    }),
+    levels(factor(df$method))
+  )
+  
+  p <- ggplot(df, aes(x = method, y = n)) +
+    geom_tile(fill_aes, color = "grey30", linewidth = 0.3) +
+    { if (outline_best) geom_tile(data = subset(df, is_best),
+                                           color = "black", linewidth = 0.8, fill = NA) } +
+    geom_text(aes(label = lab), size = 3) +
+    fill_scale +
+    facet_wrap(~ true_shape,
+                         labeller = label_bquote(xi[0] == .(true_shape)),
+                         ncol = ncol, nrow = nrow) +
+    scale_x_discrete(labels = method_labels) +
+    labs(x = "Method", y = "n", #title = metric_title, subtitle = metric_label
+         title = title) +
+    theme_minimal() +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = axis_text_size),
+      axis.text.y = element_text(size = axis_text_size),
+      axis.title.x = element_text(size = axis_title_size),
+      axis.title.y = element_text(size = axis_title_size),
+      legend.text = element_text(size = legend_text_size),
+      legend.title = element_text(size = legend_title_size),
+      strip.text = element_text(size = strip_text_size, face = "bold")
+    )
+
+  return(p)
+}
+
+```
+
+#### All shapes
+
+```{r heat_shape_bias, fig.width=12, fig.height=5, dpi = 200}
+evaluation %>% 
+  filter(true_shape %in% c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)) %>%
+  plot_metric_heat(metric = "bias", param = "shape")
+```
+```{r heat_shape_sd, fig.width=12, fig.height=5, dpi = 200}
+evaluation %>% 
+  filter(true_shape %in% c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)) %>%
+  plot_metric_heat(metric = "sd", param = "shape")
+```
+
+```{r, fig.width=12, fig.height=5, dpi = 200, eval=FALSE}
+for (mid2 in seq(0.8, 0.9, 0.1)) {
+  for (mid1 in seq(0.3, 0.5, 0.1)) {
+    if (mid2 > mid1) {
+      title = paste0("mid1=", mid1, ", mid2=", mid2)
+      p <- evaluation %>% 
+        filter(true_shape %in% c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)) %>%
+        plot_metric_heat(metric = "rmse", param = "shape",
+                         scale_mode = "global", title = title,
+                         scale_mid1 = mid1, scale_mid2 = mid2)
+      print(p)
+    }
+  }
+}
+```
+
+```{r heat_shape_rmse, fig.width=12, fig.height=5, dpi = 200}
+evaluation %>% 
+  filter(true_shape %in% c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)) %>%
+plot_metric_heat(metric = "rmse", param = "shape")
+```
+
+```{r heat_scale_bias, fig.width=12, fig.height=5, dpi = 200}
+evaluation %>% 
+  filter(true_shape %in% c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)) %>%
+plot_metric_heat(metric = "bias", param = "scale")
+```
+```{r heat_scale_sd, fig.width=12, fig.height=5, dpi = 200}
+evaluation %>% 
+  filter(true_shape %in% c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)) %>%
+plot_metric_heat(metric = "sd", param = "scale")
+```
+
+```{r heat_scale_rmse, fig.width=12, fig.height=5, dpi = 200}
+evaluation %>% 
+  filter(true_shape %in% c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)) %>%
+plot_metric_heat(metric = "rmse", param = "scale")
+```
+
+### Tables
+
+```{r}
+make_metric_heat_kable <- function(evaluation, 
+                                   metric = c("bias","sd","rmse"),
+                                   param  = c("shape","scale"),
+                                   digits = 3,
+                                   methods_order = c("LME","MLE1D","MLE2D",
+                                                     "NLS2","WNLLSM","ZSE")) {
+  metric <- match.arg(metric)
+  param  <- match.arg(param)
+
+  df <- evaluation %>%
+    filter(parameter == param, method %in% methods_order) %>%
+    select(true_shape, n, method, val = all_of(metric)) %>%
+    tidyr::pivot_wider(names_from = method, values_from = val) %>%
+    arrange(true_shape, n)
+
+  method_cols <- intersect(methods_order, names(df))
+  pal <- colorRampPalette(c("yellow", "red"))
+
+  colorize_row <- function(v_num) {
+    # Use distance to zero for bias; raw values otherwise
+    score <- if (metric == "bias") abs(v_num) else v_num
+
+    if (all(is.na(score))) return(rep(NA_character_, length(score)))
+    vmin <- min(score, na.rm = TRUE)
+    vmax <- max(score, na.rm = TRUE)
+    scaled <- if (vmax > vmin) (score - vmin)/(vmax - vmin) else rep(0, length(score))
+    cols <- pal(1001)[floor(scaled*1000) + 1]
+
+    is_best <- !is.na(score) & (abs(score - vmin) <= .Machine$double.eps^0.5)
+    out_lab <- sprintf(paste0("%.", digits, "f"), v_num)
+    ifelse(is_best,
+           kableExtra::cell_spec(out_lab, bold = TRUE, background = cols),
+           kableExtra::cell_spec(out_lab, background = cols))
+  }
+
+  # apply row-wise
+  mat_vals <- as.matrix(df[, method_cols])
+  colored  <- t(apply(mat_vals, 1, function(r) colorize_row(as.numeric(r))))
+  colnames(colored) <- method_cols
+
+  df_print <- cbind("ξ₀" = df$true_shape, df["n"], 
+                    as.data.frame(colored, stringsAsFactors = FALSE))
+
+  kb <- kableExtra::kbl(df_print, escape = FALSE, booktabs = TRUE,
+                        align = c("c", "c", rep("c", length(method_cols))),
+                        caption = paste0(toupper(metric), 
+                                         " across methods (parameter: ", param, ")"))
+
+  # Group by shape with separators
+  row_idx <- split(seq_len(nrow(df)), df$true_shape)
+  for (lab in names(row_idx)) {
+    rng <- range(row_idx[[lab]])
+    kb <- kableExtra::group_rows(kb, label = paste0("ξ₀ = ", lab),
+                                 start = rng[1], end = rng[2], escape = FALSE)
+  }
+  kb %>% kableExtra::kable_styling(full_width = FALSE)
+}
+```
+
+
+```{r}
+make_metric_heat_kable(evaluation, metric = "bias", param = "shape")
+make_metric_heat_kable(evaluation, metric = "sd", param = "shape")
+make_metric_heat_kable(evaluation, metric = "rmse", param = "shape")
+make_metric_heat_kable(evaluation, metric = "bias", param = "scale")
+make_metric_heat_kable(evaluation, metric = "sd", param = "scale")
+make_metric_heat_kable(evaluation, metric = "rmse", param = "scale")
+```
+
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

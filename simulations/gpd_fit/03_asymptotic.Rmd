@@ -1,0 +1,551 @@
+---
+title: "Simulation study: Asymptotic behavior of constrained GPD estimation under boundary misspecification"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "03_asymptotic" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "cce9dcb1-e519-4e92-89e6-f629fd4cb7bc")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.width = 5, 
+                      fig.height = 3, 
+                      dpi = 200,
+                      fig.path = paste0('figures/', params, "/sim_GPD_asymp_"),
+                      echo = FALSE)
+```
+
+This simulation study investigates the behavior of constrained GPD parameter estimation with a fixed shape parameter and a fixed support constraint $s_c$. As the sample size increases, the maximum observed value approaches the true boundary, reducing the degree of misspecification induced by the constraint. We analyze how this convergence affects estimation accuracy across different GPD fitting methods.
+
+
+```{r packages, message=FALSE, warning=FALSE}
+library(conflicted)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(patchwork)
+library(kableExtra)
+library(eva)
+library(furrr)
+library(progressr)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Define parameters
+
+```{r}
+constraint <- 5
+scale <- 1
+shape <- -0.2
+true_bound <- -scale / shape
+sample_sizes <- c(50, 100, 200, 500, 1000, 5000, 10000, 50000)
+num_reps <- 500 # Number of repetitions
+method <- "LME"
+cores <- 8
+set.seed(123456)
+
+cat("Shape:", shape,
+    "\nScale: ", scale,
+    "\nBoundary: ", true_bound,
+    "\nSupport constraint: ", constraint,
+    "\nMethod: ", method,
+    "\nSample sizes: ", sample_sizes,
+    "\nRepetitions: ", num_reps)
+```
+
+## Setting
+
+```{r}
+estimation_settings <- tidyr::crossing(
+  n = sample_sizes
+) %>%
+  mutate(
+    shape = shape,
+    scale = scale,
+    bound = true_bound,
+    constraint = constraint
+  )
+
+estimation_settings %>% head()
+cat("Number of settings: ", nrow(estimation_settings))
+```
+
+
+## Perform estimations
+
+```{r}
+# Data directory
+data_dir <- file.path(path_source("01_data_gen"))
+
+# Directory setup for saving results
+results_dir <- file.path(path_target())
+dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+```{r, eval=FALSE}
+cores <- length(sample_sizes)
+
+# Set up progress handler
+handlers("txtprogressbar")
+
+# Set number of cores
+if (parallel::detectCores() < cores) {
+  cores <- parallel::detectCores() - 2
+}
+
+# Set up parallel plan
+plan(multisession, workers = cores)
+
+# Define estimation function
+estimate_one_setting <- function(i) {
+  
+  # Extract setting
+  setting <- estimation_settings[i, ]
+  n <- setting$n
+  data_shape <- setting$shape
+  data_scale <- setting$scale
+  data_bound <- setting$bound
+  constraint <- setting$constraint
+  
+  # Load data
+  data_file <- file.path(data_dir, 
+                         paste0("shape-", shape, "_n-", n, ".RDS"))
+  gpd_samples <- readRDS(data_file)
+  
+  # Construct output file path
+  result_file <- file.path(results_dir, 
+                           paste0("shape-", shape,
+                                  "_n-", n,
+                                  ".RDS"))
+  
+  if (!file.exists(result_file)) {
+    # Estimate parameters
+    fit_results <- purrr::imap_dfr(gpd_samples, ~ {
+      data <- .x
+      
+      data_max <- max(data)
+      
+      # Unconstrained fit
+      fit_uc <- fit_gpd(
+        data = data, 
+        thresh = 0,
+        fit_method = method,
+        tol = 1e-7, 
+        epsilon = 0,
+        constraint = "unconstrained",
+        support_boundary = NULL
+      )
+      
+      if (fit_uc$shape < 0) {
+        bound_uc <- -fit_uc$scale / fit_uc$shape
+        dgpd_uc <- POT::dgpd(constraint, 
+                             scale = fit_uc$scale, 
+                             shape = fit_uc$shape)
+      } else {
+        bound_uc <- dgpd_uc <- NA
+      }
+      
+      constr_active <- bound_uc < constraint
+      
+      # Constrained fit
+      fit_c <- fit_gpd(
+        data = data, 
+        thresh = 0,
+        fit_method = method,
+        tol = 1e-7, 
+        epsilon = 0,
+        constraint = "support_at_obs",
+        support_boundary = constraint
+      )
+      
+      if (fit_c$shape < 0) {
+        bound_c <- -fit_c$scale / fit_c$shape
+        dgpd_c <- POT::dgpd(constraint, 
+                            scale = fit_c$scale, 
+                            shape = fit_c$shape)
+      } else {
+        bound_c <- dgpd_c <- NA
+      }
+      
+      tibble(constraint = constraint,
+             data_bound = true_bound,
+             data_shape = shape,
+             data_scale = scale,
+             n = n,
+             method = method,
+             data_max = data_max,
+             constr_active = constr_active,
+             shape_uc = fit_uc$shape,
+             scale_uc = fit_uc$scale,
+             bound_uc = bound_uc,
+             dgpd_uc = dgpd_uc,
+             shape_c = fit_c$shape,
+             scale_c = fit_c$scale,
+             bound_c = bound_c,
+             dgpd_c = dgpd_c,
+             repetition = .y)
+    })
+    
+    # Save results
+    saveRDS(fit_results, file = result_file)
+  }
+}
+
+# Run estimation in parallel with progress
+with_progress({
+  pb <- progressor(steps = nrow(estimation_settings))
+  
+  gpdfitlist <- future_map(seq_len(nrow(estimation_settings)), function(i) {
+    pb()
+    estimate_one_setting(i)
+  })
+})
+
+# Optionally stop the plan (not necessary in most cases)
+plan(sequential)
+```
+
+## Combine results
+
+```{r}
+# List and load all result files
+all_result_files <- list.files(results_dir, full.names = TRUE)
+
+gpdfitlist <- purrr::map_dfr(all_result_files, ~ {
+  res <- readRDS(.x)
+  res %>% mutate(across(where(is.list), ~ unlist(base::unname(.))))
+}) %>%
+  dplyr::filter(n != 200)
+```
+
+## Results table
+
+```{r}
+gpdfitlist[1:20, ] %>%
+  kable
+```
+
+
+## Plots
+
+```{r}
+# Compute errors
+
+error_df <- gpdfitlist %>%
+  pivot_longer(
+    cols = c(shape_uc, shape_c, scale_uc, scale_c, bound_uc, bound_c),
+    names_to = c("param", "fit_type"),
+    names_pattern = "(.*)_(uc|c)",
+    values_to = "estimate"
+  ) %>%
+  mutate(
+    fit_type = recode(fit_type,
+                      "uc" = "Unconstrained",
+                      "c"  = "Constrained"),
+    true_value = case_when(
+      param == "shape" ~ data_shape,
+      param == "scale" ~ data_scale,
+      param == "bound" ~ data_bound
+    ),
+    error = estimate - true_value,
+    abs_error = abs(error)
+  )
+
+```
+
+
+### Shape error
+
+Difference between the estimated shape $\hat{\xi}$ and the true shape used for data generation $\xi_0$.
+
+```{r error_shape_boxplots}
+error_df %>%
+  dplyr::filter(param == "shape") %>%
+  ggplot(aes(x = factor(n), y = error, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    x = "n",
+    y = expression(hat(xi) - xi[0]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Scale error
+
+Difference between the estimated scale $\hat{\sigma}$ and the true scale used for data generation $\sigma_0$.
+
+```{r error_scale_boxplots}
+error_df %>%
+  dplyr::filter(param == "scale") %>%
+  ggplot(aes(x = factor(n), y = error, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    x = "n",
+    y = expression(hat(sigma) - sigma[0]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Boundary error
+
+Difference between the estimated support boundary $\hat{s} = \frac{-\hat{\sigma}}{\hat{\xi}}$ and the boundary that results from the true parameters used for data generation $s_0=\frac{-\sigma_0}{\xi_0}$.
+
+```{r error_bound_boxplots}
+error_df %>%
+  dplyr::filter(param == "bound") %>%
+  ggplot(aes(x = factor(n), y = error, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    x = "n",
+    y = expression(hat(s) - s[0]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Boundary error (log scale)
+
+Same as before but on log scale.
+
+```{r error_bound_log_boxplots}
+error_df %>%
+  dplyr::filter(param == "bound") %>%
+  ggplot(aes(x = factor(n), y = error, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    x = "n",
+    y = expression(hat(s) - s[0]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_y_log10()
+```
+
+
+### Difference between boundary and constraint
+
+Difference between the estimated boundary $\hat{s} = \frac{-\hat{\sigma}}{\hat{\xi}}$ and the support constraint (here **5**).
+
+```{r diff_bound_constraint_boxplots}
+delta_df <- gpdfitlist %>%
+  select(method, data_bound, constraint, bound_uc, bound_c, constr_active, n) %>%
+  pivot_longer(cols = c(bound_uc, bound_c),
+               names_to = "fit_type",
+               values_to = "estimated_bound") %>%
+  mutate(
+    fit_type = recode(fit_type,
+                      "bound_uc" = "Unconstrained",
+                      "bound_c"  = "Constrained"),
+    delta = estimated_bound - constraint
+  ) %>% 
+  dplyr::filter(data_bound <= 5)
+
+p <- ggplot(delta_df, aes(x = factor(n), y = delta, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2, position = position_dodge(width = 0.75)) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    title = expression("Difference between estimated boundary and constraint"),
+    x = "n",
+    y = expression(hat(s) - s[c]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "gray50")
+
+print(p)
+```
+
+
+
+## Plots (constraint active)
+
+In the following plots the results are filtered so that only replicates are used where the constraint is active. 
+
+The constraint is active if the unconstraint fit would lead to a boundary below the constraint. 
+
+```{r}
+# Compute errors
+
+error_df <- gpdfitlist %>%
+  dplyr::filter(constr_active == TRUE) %>%
+  pivot_longer(
+    cols = c(shape_uc, shape_c, scale_uc, scale_c, bound_uc, bound_c),
+    names_to = c("param", "fit_type"),
+    names_pattern = "(.*)_(uc|c)",
+    values_to = "estimate"
+  ) %>%
+  mutate(
+    fit_type = recode(fit_type,
+                      "uc" = "Unconstrained",
+                      "c"  = "Constrained"),
+    true_value = case_when(
+      param == "shape" ~ data_shape,
+      param == "scale" ~ data_scale,
+      param == "bound" ~ data_bound
+    ),
+    error = estimate - true_value,
+    abs_error = abs(error)
+  )
+
+```
+
+
+### Shape error
+
+Difference between the estimated shape $\hat{\xi}$ and the true shape used for data generation $\xi_0$.
+
+```{r error_shape_active_boxplots}
+error_df %>%
+  dplyr::filter(param == "shape") %>%
+  ggplot(aes(x = factor(n), y = error, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    x = "n",
+    y = expression(hat(xi) - xi[0]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Scale error
+
+Difference between the estimated scale $\hat{\sigma}$ and the true scale used for data generation $\sigma_0$.
+
+```{r error_scale_active_boxplots}
+error_df %>%
+  dplyr::filter(param == "scale") %>%
+  ggplot(aes(x = factor(n), y = error, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    x = "n",
+    y = expression(hat(sigma) - sigma[0]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Boundary error
+
+Difference between the estimated boundary $\hat{s} = \frac{-\hat{\sigma}}{\hat{\xi}}$ and the boundary that results from the true parameters used for data generation $s_0 = \frac{-\sigma_0}{\xi_0}$.
+
+```{r error_bound_active_boxplots}
+error_df %>%
+  dplyr::filter(param == "bound") %>%
+  ggplot(aes(x = factor(n), y = error, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    x = "n",
+    y = expression(hat(s) - s[0]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Difference between boundary and constraint
+
+Difference between the estimated boundary $\hat{s} = \frac{-\hat{\sigma}}{\hat{\xi}}$ and the support constraint (here **5**).
+
+```{r diff_bound_constraint_active_boxplots}
+delta_df <- gpdfitlist %>%
+  select(method, data_bound, constraint, bound_uc, bound_c, constr_active, n) %>%
+  pivot_longer(cols = c(bound_uc, bound_c),
+               names_to = "fit_type",
+               values_to = "estimated_bound") %>%
+  mutate(
+    fit_type = recode(fit_type,
+                      "bound_uc" = "Unconstrained",
+                      "bound_c"  = "Constrained"),
+    delta = estimated_bound - constraint
+  ) %>% 
+  dplyr::filter(data_bound <= 5)
+
+p <- ggplot(delta_df, aes(x = factor(n), y = delta, fill = fit_type)) +
+  geom_boxplot(outlier.alpha = 0.2, position = position_dodge(width = 0.75)) +
+  scale_fill_manual(
+    values = c("Unconstrained" = "#1F78B4", "Constrained" = "#FF7F00")
+  ) +
+  labs(
+    #title = expression("Difference between estimated boundary and constraint"),
+    x = "n",
+    y = expression(hat(s) - s[c]),
+    fill = "Fit type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "gray50")
+
+print(p)
+```
+
+```{r diff_bound_constraint_active_boxplots_ylim}
+p + coord_cartesian(ylim = c(-3, 10))
+```
+
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

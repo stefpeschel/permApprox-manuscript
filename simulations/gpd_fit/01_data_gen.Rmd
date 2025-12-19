@@ -1,0 +1,223 @@
+---
+title: "Generate GPD data for simulation studies"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output: github_document
+params:
+  name: "01_data_gen" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "bd977ab5-754a-40a8-a775-cdac50375411")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.width = 10, 
+                      fig.height = 5, 
+                      dpi = 200,
+                      fig.path = paste0('figures/', params, "/"),
+                      echo = FALSE)
+```
+
+This script generates random samples from the Generalized Pareto Distribution (GPD).
+
+## Load packages
+
+```{r packages, message=FALSE, warning=FALSE}
+library(conflicted)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(patchwork)
+library(kableExtra)
+library(eva)
+library(furrr)
+library(progressr)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+## Data generation for unconstrained study
+
+We draw random samples from the GPD distribution. The following parameter settings are considered:
+
+```{r}
+shapes <- c(-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6)
+scale <- 1
+sample_sizes <- c(25, 50, 75, 100, 250, 500, 750, 1000)
+num_reps <- 500
+
+cat("Shape values: ", shapes,
+    "\nScale: ", scale,
+    "\nSample sizes: ", sample_sizes,
+    "\nRepetitions: ", num_reps)
+```
+
+```{r}
+# Create directories for saving data
+data_dir <- file.path(path_target())
+dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r, eval=FALSE}
+# Generate seeds
+set.seed(123456)
+seeds <- sample(10000000:99999999, num_reps*length(shapes))
+stopifnot(!anyDuplicated(seeds))
+
+# Simulate and save GPD data
+for(shape_idx in seq_along(shapes)){
+  
+  # Current seed
+  seeds_tmp <- seeds[(1:num_reps)+(num_reps*(shape_idx-1))]
+  
+  # Current shape
+  shape <- shapes[shape_idx]
+  
+  for (n in sample_sizes) {
+    result_file <- file.path(data_dir, paste0("shape-", shape, "_n-", n, ".RDS"))
+    
+    if (!file.exists(result_file)) {
+          sim_data <- lapply(
+      seq_len(num_reps), function(r) {
+        set.seed(seeds_tmp[r])
+        eva::rgpd(n = n, scale = scale, shape = shape)
+      })
+    
+    # Save each combination as a separate file
+    saveRDS(sim_data, file = result_file)
+    }
+  }
+}
+```
+
+## Data generation for boundary misspecification study
+
+```{r}
+true_boundaries <- seq(6, 2, by = -0.5)  # from edge case to strong misspecification
+shapes <- (-scale / true_boundaries)
+scale <- 1
+boundaries <- -scale / shapes
+sample_sizes <- c(1000)
+num_reps <- 500
+
+cat("\nBoundaries: ", boundaries,
+    "\nShape values: ", shapes,
+    "\nScale: ", scale,
+    "\nSample sizes: ", sample_sizes,
+    "\nRepetitions: ", num_reps)
+```
+
+```{r}
+# Create directories for saving data
+data_dir <- file.path(path_target())
+dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r, eval=FALSE}
+# Generate seeds
+set.seed(123456)
+seeds <- sample(10000000:99999999, num_reps*length(shapes))
+stopifnot(!anyDuplicated(seeds))
+
+# Simulate and save GPD data
+for(bound_idx in seq_along(true_boundaries)){
+  
+  # Current seed
+  seeds_tmp <- seeds[(1:num_reps)+(num_reps*(shape_idx-1))]
+  
+  # Boundary and shape
+  bound <- true_boundaries[bound_idx]
+  shape <- -scale / bound
+  
+  for (n in sample_sizes) {
+    result_file <- file.path(data_dir, paste0("bound-", bound, "_n-", n, ".RDS"))
+    
+    if (!file.exists(result_file)) {
+      sim_data <- lapply(
+        seq_len(num_reps), function(r) {
+          set.seed(seeds_tmp[r])
+          eva::rgpd(n = n, scale = scale, shape = shape)
+        })
+      
+      # Save each combination as a separate file
+      saveRDS(
+        sim_data,
+        file = result_file
+      )
+    }
+  }
+}
+```
+
+## Data generation for asymptotic behavior study
+
+```{r}
+shapes <- -0.2
+scale <- 1
+sample_sizes <- c(50, 100, 200, 500, 1000, 5000, 10000, 50000)
+num_reps <- 500
+
+cat("Shape: ", shapes,
+    "\nScale: ", scale,
+    "\nSample sizes: ", sample_sizes,
+    "\nRepetitions: ", num_reps)
+```
+
+```{r}
+# Create directories for saving data
+data_dir <- file.path(path_target())
+dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r, eval=FALSE}
+# Generate seeds
+set.seed(123456)
+seeds <- sample(10000000:99999999, num_reps*length(shapes))
+stopifnot(!anyDuplicated(seeds))
+
+# Simulate and save GPD data
+for(shape_idx in seq_along(shapes)){
+  
+  # Current seed
+  seeds_tmp <- seeds[(1:num_reps)+(num_reps*(shape_idx-1))]
+  
+  # Current shape
+  shape <- shapes[shape_idx]
+  
+  for (n in sample_sizes) {
+    result_file <- file.path(data_dir, paste0("shape-", shape, "_n-", n, ".RDS"))
+    
+    if (!file.exists(result_file)) {
+      sim_data <- lapply(
+        seq_len(num_reps), function(r) {
+          set.seed(seeds_tmp[r])
+          eva::rgpd(n = n, scale = scale, shape = shape)
+        })
+      
+      # Save each combination as a separate file
+      saveRDS(
+        sim_data,
+        file = result_file
+      )
+    }
+  }
+}
+```
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```
