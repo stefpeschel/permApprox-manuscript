@@ -1,0 +1,314 @@
+Generate exponential data for permutation p-value simulations
+(Mann–Whitney U)
+================
+Compiled at 2025-12-19 15:57:34 UTC
+
+``` r
+library(conflicted)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(furrr)
+library(progressr)
+
+conflicts_prefer(dplyr::filter, dplyr::select)
+```
+
+``` r
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+# Parameter settings
+
+``` r
+# Which part to generate this run: "accuracy" or "error"
+part <- "accuracy"
+
+# ---------------- Accuracy ----------------
+acc_n_fix      <- 100                    # per-group size
+acc_n_vec      <- c(25, 50, 75, 100, 250, 500, 750, 1000)
+acc_d_fix      <- 1.0                    # delta on the *mean* scale (mean2 = 1 + d)
+acc_d_vec      <- c(0.5, 1.0, 1.5, 2.0)
+acc_n_perm_fix <- 1000
+acc_n_perm_vec <- c(500, 1000, 5000, 10000)
+acc_n_test     <- 1
+acc_n_rep      <- 1000
+
+# ---------------- Error rates ----------------
+err_n_fix      <- 100
+err_n_vec      <- c(25, 50, 75, 100, 250, 500, 750, 1000)
+err_d_fix      <- 1.0
+err_d_vec      <- c(0.5, 1.0, 1.5, 2.0)
+err_n_perm_fix <- 1000
+err_n_perm_vec <- c(500, 1000, 5000, 10000)
+err_pi1_fix    <- 0.05
+err_pi1_vec    <- c(0.00, 0.01, 0.05, 0.10)  # non-null fractions
+err_n_test     <- 1000
+err_n_rep      <- 100
+
+cores <- 8
+```
+
+This script generates **exponential** data for two groups:
+
+- Group 1: Exp(rate = 1) ⇒ mean = 1
+- Group 2: Exp(rate = 1/(1 + δ)) ⇒ mean = 1 + δ
+
+We use the **Mann–Whitney U** statistic (via ranks; U = W − n(n+1)/2)
+and store:
+
+- `1:n_perm` = permutation U-statistics,
+- `uobs` = observed U-statistic,
+- `p_wilcox` = asymptotic Wilcoxon p-value (two-sided;
+  `exact = FALSE, correct = FALSE`).
+
+# Helpers
+
+``` r
+# One two-sample Wilcoxon/Mann–Whitney (U) test on exponentials:
+# returns observed U, vector of permuted U's (length n_perm), and classical p
+get_one_test_U <- function(n, delta, n_perm = 1000) {
+  # Data: Exp(rate1 = 1), Exp(rate2 = 1/(1+delta))  ⇒ means 1 vs 1+delta
+  x1 <- rexp(n, rate = 1)
+  x2 <- rexp(n, rate = 1 / (1 + delta))
+
+  # Pooled ranks
+  x  <- c(x1, x2)
+  nn <- length(x)
+  r  <- rank(x, ties.method = "average")
+
+  # Wilcoxon rank-sum for group 1, then shift to U
+  W_obs <- sum(r[seq_len(n)])
+  shift <- n * (n + 1) / 2
+  U_obs <- W_obs - shift
+
+  # Permutation: sample group-1 indices; compute W_perm and U_perm
+  # (matrix sampling is faster than a loop for moderate sizes)
+  idx_mat <- replicate(n_perm, sample.int(nn, n, replace = FALSE))
+  W_perm  <- colSums(matrix(r[idx_mat], nrow = n, ncol = n_perm))
+  U_perm  <- W_perm - shift
+
+  # Classical Wilcoxon p-value (asymptotic, no cont. correction)
+  p_wcx <- stats::wilcox.test(x1, x2,
+                              alternative = "two.sided",
+                              exact = FALSE, correct = FALSE)$p.value
+
+  list(U_obs = U_obs, U_perm = U_perm, p_wilcox = p_wcx)
+}
+
+# Build matrix [n_test x (n_perm+2)] with columns 1:n_perm, "uobs", "p_wilcox"
+# If delta_vec has length n_test, it can mix H0/H1; otherwise a scalar delta for all tests.
+make_panel_matrix_U <- function(n, delta_vec, n_perm = 1000) {
+  if (length(delta_vec) == 1L) delta_vec <- rep(delta_vec, length.out = 1L)
+  n_test <- length(delta_vec)
+
+  M <- matrix(NA_real_, nrow = n_test, ncol = n_perm + 2)
+  colnames(M) <- c(as.character(seq_len(n_perm)), "uobs", "p_wilcox")
+
+  for (t in seq_len(n_test)) {
+    rs <- get_one_test_U(n = n, delta = delta_vec[t], n_perm = n_perm)
+    M[t, 1:n_perm]     <- rs$U_perm
+    M[t, "uobs"]       <- rs$U_obs
+    M[t, "p_wilcox"]   <- rs$p_wilcox
+  }
+  M
+}
+
+# Reproducible seed streams per (setting, rep) using L'Ecuyer-CMRG
+make_seed_stream <- function(n_streams, master_seed) {
+  set.seed(master_seed, kind = "L'Ecuyer-CMRG")
+  s <- .Random.seed
+  streams <- vector("list", n_streams)
+  for (i in seq_len(n_streams)) {
+    s <- parallel::nextRNGStream(s)
+    streams[[i]] <- s
+  }
+  streams
+}
+```
+
+## Accuracy
+
+We vary **n** at **d = 1**, vary **d** at **n = 100**, and vary
+**n_perm** at (n=100, d=1).
+
+``` r
+acc_grid_vary_n <- tidyr::crossing(
+  n      = acc_n_vec,
+  d      = acc_d_fix,
+  n_perm = acc_n_perm_fix
+)
+acc_grid_vary_d <- tidyr::crossing(
+  n      = acc_n_fix,
+  d      = acc_d_vec,
+  n_perm = acc_n_perm_fix
+)
+acc_grid_vary_nperm <- tibble(
+  n      = acc_n_fix,
+  d      = acc_d_fix,
+  n_perm = acc_n_perm_vec
+)
+
+acc_grid <- bind_rows(acc_grid_vary_n, acc_grid_vary_d, acc_grid_vary_nperm) %>%
+  distinct() %>%
+  mutate(n_test = acc_n_test,
+         n_rep  = acc_n_rep)
+```
+
+``` r
+out_path <- path_target("sim_accuracy_data")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+with_progress({
+  p <- progressor(steps = nrow(acc_grid))
+
+  invisible(furrr::future_walk(
+    split(acc_grid, seq_len(nrow(acc_grid))),
+    function(row) {
+      row <- tibble::as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      n_rep  <- row$n_rep[[1]]
+
+      out_file <- file.path(
+        out_path,
+        sprintf("sim_acc_n%d_d%.1f_nperm%d.rds", n, d, n_perm)
+      )
+      if (file.exists(out_file)) { p(); return(invisible()) }
+
+      streams  <- make_seed_stream(n_streams = n_rep, master_seed = 987654)
+      res_list <- vector("list", n_rep)
+
+      # Accuracy: 1 test per rep; if d>0 it's H1 (shift in means), if d==0 it's H0
+      for (r in seq_len(n_rep)) {
+        .Random.seed <<- streams[[r]]
+        mat <- make_panel_matrix_U(n = n, delta_vec = d, n_perm = n_perm)
+        res_list[[r]] <- mat
+      }
+
+      saveRDS(res_list, file = out_file)
+      p()
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  ))
+})
+
+plan(sequential)
+```
+
+## Error rates
+
+Here, we vary **n** at **d = 1**; vary **d** at **n = 100**; plus
+focused **(n=100, d=1)** with multiple **n_perm** and **pi1**.
+
+``` r
+err_grid_vary_n <- tidyr::crossing(
+  n      = err_n_vec,
+  d      = err_d_fix,
+  n_perm = err_n_perm_fix,
+  pi1    = err_pi1_fix
+)
+
+err_grid_vary_d <- tidyr::crossing(
+  n      = err_n_fix,
+  d      = err_d_vec,
+  n_perm = err_n_perm_fix,
+  pi1    = err_pi1_fix
+)
+
+err_grid_vary_nperm <- tibble(
+  n      = err_n_fix,
+  d      = err_d_fix,
+  n_perm = err_n_perm_vec,
+  pi1    = err_pi1_fix
+)
+
+err_grid_vary_pi1 <- tibble(
+  n      = err_n_fix,
+  d      = err_d_fix,
+  n_perm = err_n_perm_fix,
+  pi1    = err_pi1_vec
+)
+
+err_grid <- bind_rows(err_grid_vary_n, err_grid_vary_d, 
+                      err_grid_vary_nperm, err_grid_vary_pi1) %>%
+  distinct() %>%
+  mutate(n_test = err_n_test,
+         n_rep  = err_n_rep)
+```
+
+``` r
+out_path <- path_target("sim_error_data")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+with_progress({
+  p <- progressor(steps = nrow(err_grid))
+
+  invisible(furrr::future_walk(
+    split(err_grid, seq_len(nrow(err_grid))),
+    function(row) {
+      row <- tibble::as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      pi1    <- row$pi1[[1]]
+      n_test <- row$n_test[[1]]
+      n_rep  <- row$n_rep[[1]]
+
+      out_file <- file.path(
+        out_path,
+        sprintf("sim_err_n%d_d%.1f_nperm%d_pi1%.2f.rds", n, d, n_perm, pi1)
+      )
+      if (file.exists(out_file)) { p(); return(invisible()) }
+
+      streams  <- make_seed_stream(n_streams = n_rep, master_seed = 987654)
+      res_list <- vector("list", n_rep)
+
+      n_alt    <- round(n_test * pi1)
+      # Non-nulls have delta = d (mean2 = 1 + d); nulls have delta = 0
+      delta_vec <- c(rep(d, n_alt), rep(0, n_test - n_alt))
+
+      for (r in seq_len(n_rep)) {
+        .Random.seed <<- streams[[r]]
+        mat <- make_panel_matrix_U(n = n, delta_vec = delta_vec, n_perm = n_perm)
+        res_list[[r]] <- mat
+      }
+
+      saveRDS(res_list, file = out_file)
+      p()
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  ))
+})
+
+plan(sequential)
+```
+
+## Files written
+
+These files have been written to the target directory,
+`data/01_data_gen`:
+
+``` r
+projthis::proj_dir_info(path_target())
+```
+
+    ## # A tibble: 2 × 4
+    ##   path              type             size modification_time  
+    ##   <fs::path>        <fct>     <fs::bytes> <dttm>             
+    ## 1 sim_accuracy_data directory           0 2025-12-18 14:08:41
+    ## 2 sim_error_data    directory           0 2025-10-22 16:43:59

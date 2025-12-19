@@ -1,0 +1,1363 @@
+---
+title: "Accuracy study (Exponential data, Mann-Whitney U) - Compare p-value approximation methods"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "02_p_approx_methods" # change if you rename file
+---
+
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "b522dc4f-d47c-4984-b4b6-16d9e59a185e")
+```
+
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 6, dpi = 200,
+  fig.path = paste0('figures/', params$name, "/sim_wilcox_papprox_")
+)
+```
+
+```{r packages}
+library(conflicted)
+library(dplyr)
+library(rlang) # For global plot theme
+library(tidyr)
+library(tibble)
+library(purrr)
+library(stringr)
+library(ggplot2)
+library(patchwork)
+library(progressr)
+library(future)
+library(furrr)
+library(readr)
+library(knitr)
+library(kableExtra)
+
+conflicts_prefer(base::intersect, dplyr::filter, dplyr::select)
+```
+
+```{r}
+# Global parameters
+cores <- 8
+set.seed(123456)
+```
+
+
+## Load permApprox functions
+
+```{r permapprox-load}
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+
+# Load permApprox functions
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$",
+                                   full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+
+# Load epsilon functions
+eps_rule_path <- file.path(proj_path, 
+                           "functions/permApprox_eps_fct/slls_eps_rule.R")
+source(eps_rule_path)
+```
+
+## Method registry, file helpers, and per-method runner
+
+```{r helpers}
+# Root where generated data are stored
+path_data <- path_source("01_data_gen")
+
+path_acc <- file.path(path_data, "sim_accuracy_data")
+path_err <- file.path(path_data, "sim_error_data")
+
+stopifnot(dir.exists(path_acc), dir.exists(path_err))
+
+parse_acc_file <- function(fn) {
+  # sim_acc_n{n}_d{d}_nperm{nperm}.rds
+  m <- stringr::str_match(basename(fn), 
+                          "^sim_acc_n(\\d+)_d([0-9.]+)_nperm(\\d+)\\.rds$")
+  tibble(n = as.integer(m[,2]),
+         d = as.numeric(m[,3]),
+         n_perm = as.integer(m[,4]),
+         file = fn)
+}
+
+parse_err_file <- function(fn) {
+  # sim_err_n{n}_d{d}_nperm{nperm}_pi1{pi1}.rds
+  m <- stringr::str_match(basename(fn), 
+                          "^sim_err_n(\\d+)_d([0-9.]+)_nperm(\\d+)_pi1([0-9.]+)\\.rds$")
+  tibble(n = as.integer(m[,2]),
+         d = as.numeric(m[,3]),
+         n_perm = as.integer(m[,4]),
+         pi1 = as.numeric(m[,5]),
+         file = fn)
+}
+
+list_acc <- function() {
+  fs <- list.files(path_acc, pattern = "\\.rds$", full.names = TRUE)
+  purrr::map_dfr(fs, parse_acc_file) %>% arrange(n, d, n_perm)
+}
+
+list_err <- function() {
+  fs <- list.files(path_err, pattern = "\\.rds$", full.names = TRUE)
+  purrr::map_dfr(fs, parse_err_file) %>% arrange(n, d, n_perm, pi1)
+}
+```
+
+### Relabeling helper
+
+```{r}
+# --- Dynamic relabeling helper (order-preserving) ----------------------------
+# df: data frame containing a column 'method' (factor or character)
+# label_map: named character vector (old -> new labels)
+# my_cols: named color vector (method -> color)
+# drop_unused: if TRUE, drop colors not present after relabeling
+# keep_order: if TRUE, preserve the original my_cols order positions for relabeled names
+rename_methods_and_colors <- function(df, label_map = NULL, my_cols,
+                                      drop_unused = TRUE, keep_order = TRUE) {
+
+  stopifnot("method" %in% names(df))
+  df <- df %>% dplyr::mutate(method = as.character(.data$method))
+
+  # --- Relabel method names in the data (old -> new) ---
+  if (!is.null(label_map)) {
+    df$method <- ifelse(df$method %in% names(label_map),
+                        label_map[df$method], df$method)
+  }
+
+  # Keep the factor order as "first appearance in df" (independent of color order)
+  df <- df %>% dplyr::mutate(method = factor(.data$method, levels = unique(.data$method)))
+
+  # --- Build new color mapping ---
+  cols_new <- my_cols
+
+  if (!is.null(label_map)) {
+    matched_old <- intersect(names(label_map), names(my_cols))
+    # For every old label that exists in my_cols, move its color to the new name
+    for (old in matched_old) {
+      new <- label_map[[old]]
+      cols_new[new] <- cols_new[old]
+      if (drop_unused) {
+        cols_new <- cols_new[setdiff(names(cols_new), old)]
+      }
+    }
+  }
+
+  # Optionally drop colors not present in the data
+  if (drop_unused) {
+    present <- unique(as.character(df$method))
+    cols_new <- cols_new[names(cols_new) %in% present]
+  }
+
+  # --- Preserve original order positions for relabeled entries ---
+  if (keep_order) {
+    # Original order reference
+    order_ref <- names(my_cols)
+    # Map the original order through label_map: old -> new (if relabeled)
+    order_mapped <- vapply(order_ref,
+                           function(nm) if (!is.null(label_map) && nm %in% names(label_map)) label_map[[nm]] else nm,
+                           FUN.VALUE = character(1))
+    # Final order = order_mapped, but keep only those present in cols_new, de-duplicated in order
+    final_order <- order_mapped[order_mapped %in% names(cols_new)]
+    final_order <- final_order[!duplicated(final_order)]
+    cols_new <- cols_new[final_order]
+  }
+
+  list(data = df, colors = cols_new)
+}
+```
+
+
+### Method registry
+
+Methods, we will consider in this study:
+
+* **Wilcoxon**: Wilcoxon test (Mann-Whitney U statistic is used here) (considered as ground truth)
+* **Empirical**: Empirical p-values.
+* **Empirical (pow3)**: Empirical p-values where the test statistics are raised to the power 3 (just to double-check the implementation).
+* **Gamma**: Gamma approximation of the complete permutation distribution, as suggested by *Winkler et al.* (2016).
+* **GPD (Knijnen)**: GPD approximation as suggested by *Knijnenburg et al. (2009)*:
+  + GPD parameter estimation with one-parameter maximum likelihood estimation.
+  + Threshold: Failure to reject (FTR), starting with 250 exceedances.
+* **GPD (Knijnen, pow3)**: Like GPD(KB), but all test statistics are raised to the power 3 before GPD approximation, as suggested by Knijnenburg et al. (2009).
+* **GPD (Winkler, +obs)**: Like GPD(KB), but $t_{obs}$ is included in the permutation distribution, as suggested by *Winkler et al.* (2016).
+* **GPD (pApprox, UC)**: GPD approximation with permApprox as follows:
+  + GPD parameter estimation using Likelihood-Moment-Estimation (LME).
+  + Unconstrained (UC) parameter estimation.
+  + Threshold: Robust failure to reject (robFTR), starting with 25% exceedances.
+* **GPD(pApprox, ξ≥0)**: GPD approximation with permApprox as follows:
+  + GPD parameter estimation with one-parameter maximum likelihood estimation.
+  + Constraint: The shape parameter $\xi$ must be non-negative.
+  + Threshold: Robust failure to reject (robFTR), starting with 25% exceedances.
+* **GPD (pApprox, s>obs)**: Our proposed GPD approximation:
+  + GPD parameter estimation using Likelihood-Moment-Estimation (LME).
+  + Constraint: The support boundary $s$ must lie above the observed test statistic.
+  + Threshold: Robust failure to reject (robFTR), starting with 25% exceedances.
+
+For comparability, we use a **fitting threshold of 0.1** in all Gamma and GPD approximation settings, which is two times the classical $\alpha$ level of 0.05. That means, the fit is done if the empirical p-value is smaller than 0.1.
+
+
+```{r, echo=TRUE}
+# --- General method registry --------------------------------
+# Edit here to add/remove methods or change labels/controls.
+# Labels must match the plotting color names.
+methods_registry <- list(
+  wilcoxon = list(
+    label  = "Wilcoxon",
+    engine = "wilcoxon",
+    params = list()
+  ),
+  
+  empirical = list(
+    label = "Empirical",
+    engine = "empirical",
+    params = list(
+      power = 1
+    )
+  ),
+
+  gamma = list(
+    label  = "Gamma",
+    engine = "gamma",
+    params = list(
+      gamma_ctrl = make_gamma_ctrl(
+        include_obs   = FALSE,
+        gof_test      = "none",
+        gof_alpha     = 0.05
+      )
+    )
+  ),
+
+  gpd_knijnen = list(
+    label  = "GPD (Knijnen)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "MLE1D",
+        tol           = 1e-10,
+        include_obs   = FALSE,
+        constraint    = "unconstrained",
+        thresh_method = "ftr", # Failure to reject
+        exceed0       = 250, # Start at 250 exceedances
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10, # Increment by 10 if gof test fails
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_knijnen_pow3 = list(
+    label  = "GPD (Knijnen, pow3)",
+    engine = "gpd",
+    params = list(
+      power = 3,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "MLE1D",
+        tol           = 1e-10,
+        include_obs   = FALSE,
+        constraint    = "unconstrained",
+        thresh_method = "ftr", # Failure to reject
+        exceed0       = 250, # Start at 250 exceedances
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10, # Increment by 10 if gof test fails
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_incl_obs = list(
+    label  = "GPD (Winkler, +obs)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "MLE1D",
+        tol           = 1e-10,
+        include_obs   = TRUE,
+        constraint    = "unconstrained",
+        thresh_method = "ftr", # Failure to reject
+        exceed0       = 0.25, # Start at 0.25B exceedances
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10, # Increment by 10 if gof test fails
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+  
+  gpd_papprox_uc = list(
+    label  = "GPD (pApprox, UC)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "unconstrained",
+        thresh_method = "rob_ftr", # Failure to reject
+        exceed0       = 0.25, # Start with 25% exceedances
+        exceed0_min   = 250, # Use minimum 250 exceedances
+        exceed_min    = 10,
+        thresh_step   = 10, # Increment by 10 if gof test fails
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_papprox_xi_pos = list(
+    label  = "GPD (pApprox, ξ≥0)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "MLE1D",
+        tol           = 1e-10,
+        include_obs   = FALSE,
+        constraint    = "shape_nonneg",
+        thresh_method = "rob_ftr", # Failure to reject
+        exceed0       = 0.25, # Start with 25% exceedances
+        exceed0_min   = 250, # Use minimum 250 exceedances
+        exceed_min    = 10,
+        thresh_step   = 10, # Increment by 10 if gof test fails
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_papprox_supp_at_obs = list(
+    label  = "GPD (pApprox, s>obs)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "support_at_obs",
+        thresh_method = "rob_ftr", # Failure to reject
+        exceed0       = 0.25, # Start with 25% exceedances
+        exceed0_min   = 250, # Use minimum 250 exceedances
+        exceed_min    = 10,
+        thresh_step   = 10, # Increment by 10 if gof test fails
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  )
+)
+
+# Labels (used later for factor order)
+method_labels <- vapply(methods_registry, `[[`, "", "label")
+
+# move "t-test" label to the end
+i_wilcox <- which(method_labels == "Wilcoxon")
+method_labels <- c(method_labels[-i_wilcox], method_labels[i_wilcox])
+
+# Filter method(s)
+# methods_registry_sub <- list(
+#   gamma = methods_registry$gamma
+# )
+# methods_registry <- methods_registry_sub
+```
+
+### Engines
+
+```{r, echo=TRUE}
+# Engine for the Wilcoxon / Mann-Whitney U test
+.engine_wilcox <- function(lst_panels, n, d, n_perm, study_str, label, 
+                           method_key, pi1 = NA_real_) {
+  purrr::imap_dfr(lst_panels, function(panel, rep_id) {
+    n_test <- nrow(panel)
+    stopifnot(ncol(panel) == n_perm + 2)
+    # U data: columns 1:n_perm, "uobs", "p_wilcox"
+    colnames(panel) <- c(as.character(seq_len(n_perm)), "uobs", "p_wilcox")
+    
+    tibble(
+      study    = gsub("^acc_", "", study_str),
+      n, d, n_perm, pi1,
+      rep      = rep_id,
+      test_idx = seq_len(n_test),
+      method   = label,
+      pval     = as.numeric(panel[, "p_wilcox"]),  # asymptotic Wilcoxon p
+      gpd_shape = NA_real_,
+      gpd_scale = NA_real_,
+      gpd_bound = NA_real_,
+      meth_used = NA_character_,
+      n_exceed  = NA_integer_
+    )
+  })
+}
+
+
+.engine_empirical <- function(lst_panels, n, d, n_perm, study_str, label, 
+                              method_key, params, pi1 = NA_real_) {
+  power <- params$power
+  
+  purrr::imap_dfr(lst_panels, function(panel, rep_id) {
+    n_test <- nrow(panel)
+    stopifnot(ncol(panel) == n_perm + 2)
+    colnames(panel) <- c(as.character(seq_len(n_perm)), "uobs", "p_wilcox")
+    
+    perm_mat <- t(as.matrix(panel[, seq_len(n_perm), drop = FALSE]))  # (B x m)
+    tobs_vec <- as.numeric(panel[, "uobs"])
+    
+    fit <- compute_p_values(
+      obs_stats     = tobs_vec,
+      perm_stats    = perm_mat,
+      alternative   = "two_sided",
+      null_center   = "mean",
+      method        = "empirical",
+      power         = power,
+      adjust_method = "none"
+    )
+    
+    tibble(
+      study     = gsub("^acc_", "", study_str),
+      n, d, n_perm, pi1,
+      rep       = rep_id,
+      test_idx  = seq_len(n_test),
+      method    = label,
+      pval      = fit$p_unadjusted,
+      gpd_shape = NA_real_,
+      gpd_scale = NA_real_,
+      gpd_bound = NA_real_,
+      meth_used = fit$method_used,
+      n_exceed  = NA_integer_
+    )
+  })
+}
+
+.engine_gamma <- function(lst_panels, n, d, n_perm, study_str, label, 
+                              method_key, params, pi1 = NA_real_) {
+  gamma_ctrl <- params$gamma_ctrl
+  purrr::imap_dfr(lst_panels, function(panel, rep_id) {
+    n_test <- nrow(panel)
+    stopifnot(ncol(panel) == n_perm + 2)
+    colnames(panel) <- c(as.character(seq_len(n_perm)), "uobs", "p_wilcox")
+    
+    perm_mat <- t(as.matrix(panel[, seq_len(n_perm), drop = FALSE]))  # (B x m)
+    tobs_vec <- as.numeric(panel[, "uobs"])
+    
+    fit <- compute_p_values(
+      obs_stats     = tobs_vec,
+      perm_stats    = perm_mat,
+      alternative   = "two_sided",
+      null_center   = "mean", 
+      method        = "gamma",
+      fit_thresh    = 0.1, # Twice the standard alpha level
+      gamma_ctrl    = gamma_ctrl, 
+      adjust_method = "none"
+    )
+    
+    tibble(
+      study     = gsub("^acc_", "", study_str),
+      n, d, n_perm, pi1,
+      rep       = rep_id,
+      test_idx  = seq_len(n_test),
+      method    = label,
+      pval      = fit$p_unadjusted,
+      gpd_shape = NA_real_,
+      gpd_scale = NA_real_,
+      gpd_bound = NA_real_,
+      meth_used = fit$method_used,
+      n_exceed  = NA_integer_
+    )
+  })
+}
+
+.engine_gpd <- function(lst_panels, n, d, n_perm, study_str, label, 
+                        method_key, params, pi1 = NA_real_) {
+  gpd_ctrl <- params$gpd_ctrl
+  power <- params$power
+  
+  purrr::imap_dfr(lst_panels, function(panel, rep_id) {
+    n_test <- nrow(panel)
+    stopifnot(ncol(panel) == n_perm + 2)
+    colnames(panel) <- c(as.character(seq_len(n_perm)), "uobs", "p_wilcox")
+    
+    perm_mat <- t(as.matrix(panel[, seq_len(n_perm), drop = FALSE]))  # (B x m)
+    tobs_vec <- as.numeric(panel[, "uobs"])
+
+    fit <- compute_p_values(
+      obs_stats     = tobs_vec,
+      perm_stats    = perm_mat,
+      eps_fct       = eps_slls_perm,
+      sampsize      = n,
+      alternative   = "two_sided",
+      null_center   = "mean",
+      method        = "gpd",
+      fit_thresh    = 0.1, # Twice the alpha level
+      power         = power,
+      gpd_ctrl      = gpd_ctrl,
+      adjust_method = "none"
+    )
+    
+    if(!is.null(fit$gpd_fit)) {
+      shape <- fit$gpd_fit$shape
+      scale <- fit$gpd_fit$scale
+      bound <- ifelse(shape < 0, -scale / shape, NA_real_)
+    } else {
+      shape <- scale <- bound <- NA_real_
+    }
+    
+    tibble(
+      study     = gsub("^acc_", "", study_str),
+      n, d, n_perm, pi1,
+      rep       = rep_id,
+      test_idx  = seq_len(n_test),
+      method    = label,
+      pval      = fit$p_unadjusted,
+      gpd_shape = shape,
+      gpd_scale = scale,
+      gpd_bound = bound,
+      meth_used = fit$method_used,
+      n_exceed  = fit$gpd_fit$n_exceed
+    )
+  })
+}
+
+# (Other engines like empirical/custom can be added here)
+
+# --- Dispatcher ---------------------------------------------------------------
+run_method_engine <- function(method_key, def, lst_panels, n, d, n_perm, 
+                              study_str, pi1 = NA_real_) {
+  engine <- def$engine
+  label  <- def$label
+  params <- def$params %||% list()
+  
+  switch(engine,
+         wilcoxon  = .engine_wilcox(lst_panels, n, d, n_perm, study_str, 
+                                   label, method_key, pi1),
+         empirical = .engine_empirical(lst_panels, n, d, n_perm, study_str, 
+                                       label, method_key, params, pi1),
+         gamma     = .engine_gamma(lst_panels, n, d, n_perm, study_str, 
+                                   label, method_key, params, pi1),
+         gpd       = .engine_gpd(lst_panels, n, d, n_perm, study_str, 
+                                 label, method_key, params, pi1),
+         stop(sprintf("Unknown engine: %s", engine))
+  )
+}
+```
+
+### Output path builders
+
+```{r}
+path_results <- path_target()
+
+.method_out_file <- function(study_str, method_key, n, d, n_perm, 
+                             pi1 = NA_real_) {
+  dir.create(file.path(path_results, study_str, method_key), 
+             recursive = TRUE, showWarnings = FALSE)
+  if (is.na(pi1)) {
+    file.path(path_results, study_str, method_key,
+              sprintf("%s_pvals_%s_n%d_d%.1f_nperm%d.rds", study_str, 
+                      method_key, n, d, n_perm))
+  } else {
+    file.path(path_results, study_str, method_key,
+              sprintf("%s_pvals_%s_n%d_d%.1f_nperm%d_pi1%.3f.rds", 
+                      study_str, method_key, n, d, n_perm, pi1))
+  }
+}
+```
+
+## ACCURACY
+
+### Compute p-values and save
+
+```{r accuracy-run, eval=FALSE}
+# grid with settings
+acc_grid <- list_acc()
+
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+base_out <- file.path(path_results, "accuracy")
+dir.create(base_out, recursive = TRUE, showWarnings = FALSE)
+
+with_progress({
+  p <- progressor(steps = nrow(acc_grid) * length(methods_registry))
+
+  furrr::future_walk(
+    split(acc_grid, seq_len(nrow(acc_grid))),
+    function(row) {
+      row <- as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      f_in   <- row$file[[1]]
+      study_str <- "accuracy"
+
+      lst <- readRDS(f_in)
+
+      purrr::iwalk(methods_registry, function(def, key) {
+        f_out <- .method_out_file(study_str, key, n, d, n_perm)
+        if (!file.exists(f_out)) {
+          res <- run_method_engine(
+            method_key = key, def = def,
+            lst_panels = lst, n = n, d = d, n_perm = n_perm,
+            study_str = study_str
+          )
+          saveRDS(res, f_out)
+        }
+        p()
+      })
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+})
+
+plan(sequential)
+```
+
+### Collect & reshape
+
+```{r accuracy-collect}
+# Collect all method files for ACCURACY
+acc_method_root <- file.path(path_results, "accuracy") 
+acc_files <- list.files(acc_method_root, pattern = "\\.rds$", 
+                        recursive = TRUE, full.names = TRUE) 
+
+acc_res <- purrr::map_dfr(acc_files, readRDS) %>% 
+  mutate(method = factor(method, levels = unname(method_labels)))
+
+# Data frame used for plotting 
+acc_all <- acc_res %>% 
+  select(study, n, d, n_perm, rep, test_idx, method, pval) %>%
+  rename(B = n_perm) # n_perm is denoted as B in the following
+```
+
+### Plotting helper
+
+```{r}
+plot_permapprox <- function(acc_df,
+                            type = c("pval", "ratio"),
+                            x = c("n", "d", "B"),
+                            xlab = NULL,
+                            fixed = list(),            # e.g. list(d = 1, B = 1000)
+                            my_cols,
+                            theme_params = list(),
+                            # --- zero handling / display (shared) ---
+                            zero_floor_factor = 1e-3,
+                            breaks = NULL,
+                            breaks_incl = NULL,
+                            y_min = 1e-300,
+                            y_max = 1e+300,
+                            y_step_size = 20,
+                            jitter_width = 0.08,
+                            dodge_width  = 0.75,
+                            point_size = 2,
+                            boxplot_median_linewidth = 1,
+                            show_zero_labels = TRUE,
+                            zero_anchor_mode = c("min","bottom","top","fixed"),
+                            zero_vshift_decades = 0.0,
+                            zero_stack_direction = c("down","up"),
+                            zero_gap_decades = 0.35,
+                            zero_text_size = 5.5,
+                            zero_text_hjust = 0,       # 0 = left aligned
+                            zero_fixed_value = NULL,   # if anchor_mode == "fixed"
+                            auto_expand_limits = TRUE,
+                            legend_position = "bottom",
+                            legend_point_size = 3.5,
+                            legend_rows = NULL,
+                            legend_box = TRUE,
+                            # --- p-value branch only ---
+                            include_zeros_in_boxplot = TRUE) {
+
+  stopifnot(all(c("n","d","B","method","pval") %in% names(acc_df)))
+  type <- match.arg(type); x <- match.arg(x)
+  zero_anchor_mode     <- match.arg(zero_anchor_mode)
+  zero_stack_direction <- match.arg(zero_stack_direction)
+
+  # ---------------- Shared helpers ----------------
+  .apply_slice <- function(df, x, fixed) {
+    defaults <- list(n = 100, d = 1, B = 1000)
+    fixed <- utils::modifyList(defaults, fixed)
+    if (x != "n") df <- dplyr::filter(df, .data$n == fixed$n)
+    if (x != "d") df <- dplyr::filter(df, .data$d == fixed$d)
+    if (x != "B") df <- dplyr::filter(df, .data$B == fixed$B)
+    df
+  }
+
+  .breaks <- function(y_min, y_max, y_step_size, base_breaks = NULL) {
+    if (!is.null(base_breaks)) {
+      b <- base_breaks
+    } else {
+      max_exp <- 300
+      exps <- c(seq(-y_step_size, -max_exp, by = -y_step_size),
+                0,
+                seq( y_step_size,  max_exp, by =  y_step_size))
+      b <- 10^exps
+      b <- c(breaks_incl, b)
+    }
+    sort(unique(b[b <= y_max & b >= y_min]))
+  }
+
+  .stack_y <- function(tbl, anchor_tbl, xcol, line_col = "line",
+                       vshift_dec = 0, gap_dec = 0.35,
+                       direction = c("down","up")) {
+    direction <- match.arg(direction)
+    j <- dplyr::left_join(tbl, anchor_tbl, by = xcol) # adds y_anchor
+    if (!"y_anchor" %in% names(j) || all(!is.finite(j$y_anchor))) return(NULL)
+    if (direction == "down") {
+      j$y <- j$y_anchor * 10^(- (j[[line_col]] * gap_dec + vshift_dec))
+    } else {
+      j$y <- j$y_anchor * 10^(  (j[[line_col]] * gap_dec + vshift_dec))
+    }
+    j
+  }
+
+  .anchor_tbl <- function(anchor_mode, df_vals, x, y_col, brks = numeric(),
+                          fixed_value = NULL) {
+    switch(anchor_mode,
+      min = df_vals %>%
+        dplyr::group_by(.data[[x]]) %>%
+        dplyr::summarise(y_anchor = min(.data[[y_col]], na.rm = TRUE), 
+                         .groups = "drop"),
+      bottom = tibble::tibble(
+        !!x := sort(unique(df_vals[[x]])),
+        y_anchor = if (length(brks)) min(brks) else min(df_vals[[y_col]], 
+                                                        na.rm = TRUE)
+      ),
+      top = tibble::tibble(
+        !!x := sort(unique(df_vals[[x]])),
+        y_anchor = if (length(brks)) max(brks) else max(df_vals[[y_col]], 
+                                                        na.rm = TRUE)
+      ),
+      fixed = {
+        stopifnot(is.numeric(fixed_value), length(fixed_value) == 1L, is.finite(fixed_value))
+        tibble::tibble( !!x := sort(unique(df_vals[[x]])), y_anchor = fixed_value)
+      }
+    )
+  }
+
+  .zero_counts <- function(df, x, method_levels, baseline = NULL) {
+    z <- df
+    if (!is.null(baseline)) z <- dplyr::filter(z, .data$method != baseline)
+    z %>%
+      dplyr::group_by(.data[[x]], .data$method) %>%
+      dplyr::summarise(n_zero = sum(.data$pval == 0, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::filter(.data$n_zero > 0) %>%
+      dplyr::mutate(method = factor(.data$method, levels = method_levels)) %>%
+      dplyr::arrange(.data[[x]], .data$method) %>%
+      dplyr::group_by(.data[[x]]) %>%
+      dplyr::mutate(line = dplyr::row_number() - 1L) %>%
+      dplyr::ungroup()
+  }
+
+  # ---------------- Prep slice ----------------
+  df <- .apply_slice(acc_df, x, fixed)
+  if (!nrow(df)) stop("No rows after filtering. Adjust 'fixed = list(...)' to existing settings.")
+  df <- dplyr::mutate(df, method = factor(.data$method, levels = names(my_cols)))
+
+  # ---------- Legend alignment across branches (identical scales) -------------
+  method_levels <- names(my_cols)
+  
+  legend_rows <- ifelse(is.null(legend_rows), length(method_levels), legend_rows)
+  
+  # legend_breaks: show all methods in pval plot, but exclude ground truth in ratio plot
+  if (type == "pval") {
+    legend_breaks <- method_levels
+  } else {
+    legend_breaks <- setdiff(method_levels, "Ground truth (Wilcoxon)")
+  }
+  
+  # ---------- Bold selected legend labels -------------------------------------
+  bold_methods <- c("GPD (permApprox)", "Ground truth (Wilcoxon)")
+  legend_labels <- setNames(
+    lapply(method_levels, function(m) {
+      if (m %in% bold_methods) {
+        bquote(bold(.(m)))
+      } else {
+        m
+      }
+    }),
+    method_levels
+  )
+  
+  # Reusable guides (same in both branches)
+  guide_common <- guides(
+    color = guide_legend(
+      title = NULL, 
+      nrow = ifelse(is.null(legend_rows), length(legend_breaks), legend_rows), 
+      byrow = FALSE,
+      override.aes = list(size = legend_point_size)
+    ),
+    fill = guide_legend(
+      title = NULL, 
+      nrow = ifelse(is.null(legend_rows), length(legend_breaks), legend_rows), 
+      byrow = FALSE,
+      override.aes = list(size = legend_point_size)
+    )
+  )
+
+  # ============================================================
+  # P-VALUE PLOT
+  # ============================================================
+  if (type == "pval") {
+    min_nonzero <- suppressWarnings(min(df$pval[df$pval > 0], na.rm = TRUE))
+    if (!is.finite(min_nonzero)) min_nonzero <- 1e-320
+    p_floor <- min_nonzero * zero_floor_factor
+
+    df <- dplyr::mutate(df, pval_plot = dplyr::if_else(pval == 0, p_floor, pval, missing = pval))
+
+    df_points <- df
+    df_boxes  <- if (include_zeros_in_boxplot) df else dplyr::filter(df, .data$pval > 0)
+
+    brks <- .breaks(y_min, y_max, y_step_size, breaks)
+    has_zero <- any(df$pval == 0, na.rm = TRUE)
+    if (has_zero) brks <- sort(unique(c(p_floor, brks)))
+    y_labs <- function(v) if (has_zero) {
+      ifelse(v < p_floor * 1.1, "0", paste0("1e", as.integer(log10(v))))
+    } else paste0("1e", as.integer(log10(v)))
+
+    p <- ggplot(mapping = aes(x = factor(.data[[x]]))) +
+      geom_point(
+        data = df_points,
+        aes(y = .data$pval_plot, color = .data$method, fill = .data$method),
+        size = point_size, alpha = 0.9,
+        position = position_jitterdodge(jitter.width = jitter_width,
+                                        dodge.width  = dodge_width)
+      ) +
+      geom_boxplot(
+        data = df_boxes,
+        aes(y = .data$pval_plot, group = interaction(.data$method, .data[[x]])),
+        fill = NA, color = "black", width = 0.65, 
+        median.linewidth = boxplot_median_linewidth,
+        outlier.shape = NA, position = position_dodge(width = dodge_width),
+        show.legend = FALSE
+      )
+
+    # stacked zero labels
+    stacked <- NULL
+    if (show_zero_labels) {
+      zero_counts <- .zero_counts(df %>% dplyr::select(dplyr::all_of(c(x,"method","pval"))),
+                                  x, method_levels = method_levels)
+      if (nrow(zero_counts)) {
+        anchor_tbl <- .anchor_tbl(zero_anchor_mode,
+                                  df_vals = df, x = x, y_col = "pval_plot",
+                                  brks = brks, fixed_value = zero_fixed_value)
+        stacked <- .stack_y(zero_counts, anchor_tbl, xcol = x,
+                            vshift_dec = zero_vshift_decades,
+                            gap_dec    = zero_gap_decades,
+                            direction  = zero_stack_direction)
+        if (!is.null(stacked) && nrow(stacked)) {
+          p <- p + geom_text(
+            data = stacked,
+            aes(x = factor(.data[[x]]), y = .data$y,
+                label = paste0("0s=", .data$n_zero), color = .data$method),
+            inherit.aes = FALSE, show.legend = FALSE, size = zero_text_size, 
+            hjust = zero_text_hjust
+          )
+        }
+      }
+    }
+
+    if (auto_expand_limits && !is.null(stacked) && nrow(stacked)) {
+      y_min <- min(c(y_min, stacked$y), na.rm = TRUE)
+      y_max <- max(c(y_max, stacked$y), na.rm = TRUE)
+    }
+
+    p <- p +
+      scale_fill_manual(
+        "Method",
+        values = my_cols,
+        limits = method_levels,
+        breaks = legend_breaks,
+        labels = legend_labels[legend_breaks],
+        drop = FALSE
+      ) +
+      scale_color_manual(
+        "Method",
+        values = my_cols,
+        limits = method_levels,
+        breaks = legend_breaks,
+        labels = legend_labels[legend_breaks],
+        drop = FALSE
+      ) +
+      scale_y_log10(breaks = brks, labels = y_labs, limits = c(y_min, y_max)) +
+      labs(title = "",
+           x = ifelse(is.null(xlab), x, xlab),
+           y = expression(hat(p))) +
+      theme_minimal(base_size = 13) +
+      do.call(theme, c(theme_params, list(
+        legend.position = legend_position,
+        panel.grid.minor = element_blank()
+      ))) +
+      guide_common
+    
+    if (isTRUE(legend_box)) {
+      p <- p + theme(
+        legend.background     = element_rect(fill = "white", colour = "black"),
+        legend.key            = element_rect(fill = "white", colour = NA),
+        legend.box.background = element_rect(fill = "white", colour = "black")
+      )
+    }
+    
+    return(p)
+  }
+
+  # ============================================================
+  # RATIO PLOT (method / Wilcoxon), with constant zero marker
+  # ============================================================
+  df_base <- df %>%
+    dplyr::select(.data$n, .data$d, .data$B,
+                  !!rlang::sym(x), .data$rep, .data$test_idx,
+                  .data$method, .data$pval)
+  
+  zero_counts_r_orig <- .zero_counts(df_base, x, method_levels = method_levels, 
+                                     baseline = "Ground truth (Wilcoxon)")
+  
+  min_nonzero_all <- suppressWarnings(min(df_base$pval[df_base$pval > 0], na.rm = TRUE))
+  if (!is.finite(min_nonzero_all)) min_nonzero_all <- 1e-320
+  p_floor_all <- min_nonzero_all * zero_floor_factor
+  
+  ratio_zero_value <- p_floor_all
+  
+  df_wide_p <- tidyr::pivot_wider(df_base, names_from = .data$method, values_from = .data$pval)
+  df_wide_z <- tidyr::pivot_wider(
+    df_base,
+    names_from = .data$method,
+    values_from = .data$pval,
+    values_fn = list(pval = function(v) any(v == 0)),
+    values_fill = FALSE
+  )
+  nf <- !(names(df_wide_z) %in% c("n","d","B",x,"rep","test_idx"))
+  names(df_wide_z)[nf] <- paste0(names(df_wide_z)[nf], "__iszero")
+
+  methods_to_compare <- intersect(method_levels, 
+                                  setdiff(unique(as.character(df$method)), 
+                                          "Ground truth (Wilcoxon)"))
+  if (!length(methods_to_compare)) 
+    stop("No methods to compare against Wilcoxon in this subset.")
+
+  join_keys <- unique(c("n","d","B", x, "rep","test_idx","method"))
+
+  df_ratio <- df_wide_p %>%
+    tidyr::pivot_longer(cols = tidyselect::all_of(methods_to_compare),
+                        names_to = "method", values_to = "p_method") %>%
+    dplyr::rename(p_wilcox = `Ground truth (Wilcoxon)`) %>%
+    dplyr::left_join(
+      df_wide_z %>%
+        tidyr::pivot_longer(cols = tidyselect::all_of(paste0(methods_to_compare,"__iszero")),
+                            names_to = "method_z", 
+                            values_to = "is_zero_method") %>%
+        dplyr::mutate(method = sub("__iszero$","", .data$method_z)) %>%
+        dplyr::select(-method_z),
+      by = join_keys
+    ) %>%
+    dplyr::mutate(
+      p_method_plot = dplyr::if_else(.data$p_method == 0, p_floor_all, .data$p_method),
+      p_wilcox_plot = dplyr::if_else(.data$p_wilcox == 0, p_floor_all, .data$p_wilcox),
+      ratio_raw     = .data$p_method_plot / .data$p_wilcox_plot,
+      ratio         = dplyr::if_else(.data$is_zero_method, ratio_zero_value, ratio_raw),
+      method        = factor(.data$method, levels = method_levels)
+    )
+  
+  if (!nrow(df_ratio))
+    stop("No pairs for ratio plot after filtering. Try a different 'fixed' combination.")
+  
+  brks_r <- .breaks(y_min, y_max, y_step_size, breaks)
+  brks_r <- sort(unique(c(ratio_zero_value, brks_r)))
+  lab_plain <- function(v) ifelse(v <= ratio_zero_value * 1.1, "0",
+                                  paste0("1e", as.integer(log10(v))))
+  
+  p <- ggplot(mapping = aes(x = factor(.data[[x]]))) +
+    geom_hline(yintercept = 1, linewidth = 0.5, linetype = 2, color = "grey50") +
+    geom_point(
+      data = df_ratio,
+      aes(y = .data$ratio, color = .data$method, fill = .data$method),
+      size = point_size, alpha = 0.9,
+      position = position_jitterdodge(jitter.width = jitter_width,
+                                      dodge.width  = dodge_width)
+    ) +
+    geom_boxplot(
+      data = df_ratio,
+      aes(y = .data$ratio, group = interaction(.data$method, .data[[x]])),
+      fill = NA, color = "black", width = 0.65,
+      median.linewidth = boxplot_median_linewidth,
+      outlier.shape = NA, position = position_dodge(width = dodge_width),
+      show.legend = FALSE
+    )
+  
+  # Zero annotations
+  stacked_r <- NULL
+  if (show_zero_labels && nrow(zero_counts_r_orig)) {
+    anchor_tbl_r <- .anchor_tbl(zero_anchor_mode,
+                                df_vals = df_ratio %>% dplyr::select(!!rlang::sym(x), 
+                                                                     value = ratio),
+                                x = x, y_col = "value",
+                                brks = brks_r, fixed_value = zero_fixed_value)
+    stacked_r <- .stack_y(zero_counts_r_orig, anchor_tbl_r, xcol = x,
+                          vshift_dec = zero_vshift_decades,
+                          gap_dec    = zero_gap_decades,
+                          direction  = zero_stack_direction)
+    if (!is.null(stacked_r) && nrow(stacked_r)) {
+      p <- p + geom_text(
+        data = stacked_r,
+        aes(x = factor(.data[[x]]), y = .data$y,
+            label = paste0("0s=", .data$n_zero), color = .data$method),
+        inherit.aes = FALSE, show.legend = FALSE, size = zero_text_size,
+        hjust = zero_text_hjust
+      )
+    }
+  }
+
+  if (auto_expand_limits && !is.null(stacked_r) && nrow(stacked_r)) {
+    y_min <- min(c(y_min, stacked_r$y), na.rm = TRUE)
+    y_max <- max(c(y_max, stacked_r$y), na.rm = TRUE)
+  }
+  
+  p <- p +
+    scale_fill_manual(
+      "Method",
+      values = my_cols,
+      limits = method_levels,
+      breaks = legend_breaks,
+      labels = legend_labels[legend_breaks],
+      drop = FALSE
+    ) +
+    scale_color_manual(
+      "Method",
+      values = my_cols,
+      limits = method_levels,
+      breaks = legend_breaks,
+      labels = legend_labels[legend_breaks],
+      drop = FALSE
+    ) +
+    scale_y_log10(breaks = brks_r, labels = lab_plain, limits = c(y_min, y_max)) +
+    labs(title = "",
+         x = ifelse(is.null(xlab), x, xlab),
+         y = expression(hat(p)[Method] / hat(p)[Wilcoxon])) +
+    theme_minimal(base_size = 13) +
+    do.call(theme, c(theme_params, list(
+      legend.position = legend_position,
+      panel.grid.minor = element_blank()
+    ))) +
+    guides(
+      color = guide_legend(title = NULL,
+                           nrow = ifelse(is.null(legend_rows), 
+                                         length(legend_breaks), 
+                                         legend_rows), byrow = FALSE,
+                           override.aes = list(alpha = 1, 
+                                               size = legend_point_size,
+                                               shape = 21, 
+                                               stroke = 0)),
+      fill  = guide_legend(title = NULL,
+                           nrow = ifelse(is.null(legend_rows), 
+                                         length(legend_breaks), 
+                                         legend_rows), byrow = FALSE,
+                           override.aes = list(alpha = 1,
+                                               size = legend_point_size,
+                                               shape = 21, stroke = 0))
+    )
+  
+  if (isTRUE(legend_box)) {
+    p <- p + theme(
+      legend.background     = element_rect(fill = "white", colour = "black"),
+      legend.key            = element_rect(fill = "white", colour = NA),
+      legend.box.background = element_rect(fill = "white", colour = "black")
+    )
+  }
+  
+  return(p)
+}
+
+
+```
+
+
+### Filter, rename +  colors
+
+```{r pvals_by_n_permapprox}
+my_cols <- c(
+  "Gamma"                   = "#009E73", 
+  "GPD (Knijnenburg)"       = "#56B4E9", 
+  "GPD (Knijnenburg, pow3)" = "#0072B2",
+  "GPD (Winkler, +obs)"     = "#E69F00", 
+  "GPD (permApprox)"        = "#CC79A7",
+  "Ground truth (Wilcoxon)" = "gray30"
+)
+
+# Rename permApprox methods for the plots (old = new)
+label_map <- c(
+  "GPD (pApprox, s>obs)"      = "GPD (permApprox)",
+  "GPD (Knijnen)"             = "GPD (Knijnenburg)",
+  "GPD (Knijnen, pow3)"       = "GPD (Knijnenburg, pow3)",
+  "Wilcoxon"                  = "Ground truth (Wilcoxon)"
+)
+
+renamed <- rename_methods_and_colors(acc_all, label_map = label_map, 
+                                     my_cols = my_cols, drop_unused = FALSE)
+acc_renamed  <- renamed$data
+
+# Filter methods
+acc_filt <- acc_renamed %>% 
+  filter(method %in% c("Ground truth (Wilcoxon)", "Gamma", 
+                       "GPD (Knijnenburg)", "GPD (Knijnenburg, pow3)",
+                       "GPD (Winkler, +obs)", "GPD (permApprox)"))
+
+col_palette <- c(black       = "black", 
+                 lightgray   = "gray70",
+                 gray        = "#6C6C6C",
+                 darkgray    = "gray30",
+                 yellow      = "#F0E442",
+                 lightorange = "#E69F00",
+                 darkorange  = "#D55E00",
+                 lightblue   = "#56B4E9", 
+                 darkblue    = "#0072B2",
+                 lightgreen  = "#B2DF8A", # no okabe ito
+                 green       = "#009E73",
+                 green2      = "#33A02C", # no okabe ito
+                 pink        = "#CC79A7")
+
+theme_params <- list(
+  axis.text       = element_text(size = 16),
+  axis.text.x     = element_text(angle = 0, hjust = 0.5),
+  axis.title      = element_text(size = 18),
+  legend.text     = element_text(size = 17),
+  legend.title    = element_text(size = 16, face = "bold"),
+  plot.title      = element_text(size = 1)
+)
+```
+
+### By sample size (n)
+
+#### P-values
+
+```{r pvals_by_n, fig.width = 14, fig.height = 6, dpi = 200}
+acc_filt %>%
+  plot_permapprox(type = "pval", x = "n",
+                  fixed = list(d = 1, B = 1000),
+                  my_cols = my_cols, theme_params = theme_params,
+                  y_min = 1e-60, y_max = 1, y_step_size = 10,
+                  zero_vshift_decades = 2, zero_gap_decades = 3,
+                  legend_position = c(0.22, 0.35))
+```
+
+
+#### Ratios (method vs. Wilcoxon)
+
+Ratios ($p_{method}$ / $p_{wilcox}$) for non-zero p-values, with sample size on the x axis.
+
+```{r ratios_by_n, fig.width = 14, fig.height = 6, dpi = 200}
+acc_filt %>%
+  plot_permapprox(type = "ratio", x = "n",
+                  fixed = list(d = 1, B = 1000),
+                  my_cols = my_cols, theme_params = theme_params,
+                  y_min = 1e-50, y_max = 1e60, y_step_size = 10,
+                  zero_vshift_decades = 4, zero_gap_decades = 6,
+                  legend_position = c(0.22, 0.8), legend_rows = 5)
+```
+
+### P-values by d and B
+
+```{r pvals_by_d_and_B, fig.width = 14, fig.height = 6.2, dpi = 200}
+pvals_by_d <- acc_filt %>%
+  plot_permapprox(type = "pval", x = "d",
+                  fixed = list(n = 100, B = 1000),
+                  my_cols = my_cols, theme_params = theme_params,
+                  y_min = 1e-45, y_max = 1, y_step_size = 10,
+                  zero_vshift_decades = 2, zero_gap_decades = 3,
+                  legend_rows = 2, legend_box = FALSE)
+
+pvals_by_B <- acc_filt %>%
+  filter(n %in% c(50, 100, 250, 500, 750, 1000)) %>%
+  plot_permapprox(type = "pval", x = "B",
+                  fixed = list(n = 100, d = 1),
+                  my_cols = my_cols, theme_params = theme_params,
+                  y_min = 1e-29, y_max = 1, y_step_size = 5,
+                  zero_vshift_decades = 1, zero_gap_decades = 2,
+                  legend_rows = 2, legend_box = FALSE)
+
+pvals_by_d + pvals_by_B +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+### Ratios by d and B
+
+
+```{r ratios_by_d_and_B, fig.width = 14, fig.height = 6, dpi = 200}
+ratios_by_d <- acc_filt %>%
+  plot_permapprox(type = "ratio", x = "d",
+                  fixed = list(n = 100, B = 1000),
+                  my_cols = my_cols, theme_params = theme_params,
+                  y_min = 1e-40, y_max = 1e20, y_step_size = 10,
+                  zero_vshift_decades = 2.5, zero_gap_decades = 3.5,
+                  legend_rows = 1, legend_box = FALSE)
+
+ratios_by_B <- acc_filt %>%
+  plot_permapprox(type = "ratio", x = "B",
+                  fixed = list(n = 100, d = 1),
+                  my_cols = my_cols, theme_params = theme_params,
+                  y_min = 1e-28, y_max = 1e10, y_step_size = 5,
+                  zero_vshift_decades = 1.5, zero_gap_decades = 2.2,
+                  legend_rows = 1, legend_box = FALSE)
+
+ratios_by_d + ratios_by_B +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+### Table: Accuracy metrics
+
+```{r}
+# --- Accuracy metrics helper (Wilcoxon = ground truth) --------------------------
+# data_methods: data frame with columns n,d,B,rep,test_idx,method,pval
+# baseline: (optional) rows containing the Wilcoxon baseline with the same keys.
+#           If NULL, the function tries to find baseline inside data_methods.
+acc_metrics_summary <- function(data_methods,
+                                group_vars = c("n","method"),
+                                baseline = NULL) {
+
+  keys <- c("n","d","B","rep","test_idx")
+  stopifnot(all(c(keys,"method","pval") %in% names(data_methods)))
+
+  # Prepare/locate baseline (Wilcoxon)
+  if (is.null(baseline)) {
+    baseline <- data_methods %>% dplyr::filter(method == "Ground truth (Wilcoxon)")
+    if (nrow(baseline) == 0L)
+      stop("No Wilcoxon baseline found. Pass it via `baseline=` or include it in `data_methods`.")
+  } else {
+    stopifnot(all(c(keys,"pval") %in% names(baseline)))
+  }
+
+  # Methods (exclude Wilcoxon)
+  df_m <- data_methods %>%
+    dplyr::filter(method != "Ground truth (Wilcoxon)") %>%
+    dplyr::select(dplyr::all_of(keys), method, p_method = pval)
+
+  # Baseline
+  df_t <- baseline %>%
+    dplyr::select(dplyr::all_of(keys), p_wilcox = pval)
+  
+  # Pair up by keys
+  long <- dplyr::inner_join(df_m, df_t, by = keys) %>%
+    dplyr::filter(is.finite(p_method), is.finite(p_wilcox)) %>%
+    dplyr::mutate(diff = p_method - p_wilcox)
+
+  # Ratios on strictly positive pairs
+  long_pos <- long %>%
+    dplyr::filter(p_method > 0, p_wilcox > 0) %>%
+    dplyr::mutate(log10_ratio = log10(p_method / p_wilcox))
+
+  sum_core <- long %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::summarise(
+      N         = dplyr::n(),
+      bias      = mean(diff),
+      sd        = stats::sd(diff),
+      rmse      = sqrt(mean(diff^2)),
+      cor_spear = suppressWarnings(stats::cor(p_method, p_wilcox, method = "spearman")),
+      .groups   = "drop"
+    )
+
+  sum_ratio <- long_pos %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::summarise(
+      N_pos          = dplyr::n(),
+      .groups = "drop"
+    )
+
+  dplyr::left_join(sum_core, sum_ratio, by = group_vars)
+}
+```
+
+
+```{r accuracy-metrics-by-n}
+# setting: d=1, B=1000
+acc_for_metrics <- acc_filt %>% dplyr::filter(d == 1, B == 1000)
+
+tab_metrics_by_n <- acc_metrics_summary(
+  data_methods = acc_for_metrics,
+  group_vars   = c("n","method")
+) %>% dplyr::arrange(n, method)
+
+tab_metrics_by_n_fmt <- tab_metrics_by_n %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(bias, sd, rmse),
+      ~ format(.x, scientific = TRUE, digits = 3)
+    ),
+    dplyr::across(
+      c(cor_spear),
+      ~ format(round(.x, 3), nsmall = 3)
+    )
+  )
+
+knitr::kable(tab_metrics_by_n_fmt,
+  caption = "Accuracy vs. Wilcoxon by n (d=1, B=1000).") %>%
+  kableExtra::kable_classic(full_width = FALSE)
+```
+
+```{r accuracy-metrics-all}
+tab_metrics_all <- acc_metrics_summary(
+  data_methods = acc_filt,                    # contains Wilcoxon too
+  group_vars   = c("n","d","B","method")
+) %>% dplyr::arrange(n, d, B, method)
+
+tab_metrics_all_fmt <- tab_metrics_all %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(bias, sd, rmse),
+      ~ format(.x, scientific = TRUE, digits = 3)
+    ),
+    dplyr::across(
+      c(cor_spear),
+      ~ format(round(.x, 3), nsmall = 3)
+    )
+  )
+
+knitr::kable(tab_metrics_all_fmt,
+  caption = "Accuracy vs. Wilcoxon across all settings.") %>%
+  kableExtra::kable_classic(full_width = FALSE)
+```
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```
