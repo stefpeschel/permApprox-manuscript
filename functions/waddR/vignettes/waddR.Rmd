@@ -1,0 +1,113 @@
+---
+title: "The `waddR` package"
+output: rmarkdown::html_vignette
+vignette: >
+    %\VignetteIndexEntry{waddR}
+    %\VignetteEngine{knitr::rmarkdown}
+    %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>"
+)
+```
+
+
+## Introduction
+
+The `waddR` package offers statistical tests based on the 2-Wasserstein distance for detecting and characterizing
+differences between two distributions given in the form of samples. Functions for calculating
+the 2-Wasserstein distance and testing for differential distributions are provided, as well as a specifically
+tailored test for differential expression in single-cell RNA sequencing data.
+
+`waddR` provides tools to address the following tasks, each described in a separate vignette:
+
+* [Calculation of the  2-Wasserstein distance](wasserstein_metric.html),
+
+* [Two-sample tests](wasserstein_test.html) to check for differences between two
+distributions,
+
+* Detection of 
+[differential gene expression distributions](wasserstein_singlecell.html)
+in single-cell RNA sequencing (scRNAseq) data.
+
+These are bundled into one package, because they are internally dependent:
+The procedure for detecting differential distributions in scRNAseq data is an
+adaptation of the general two-sample test, which itself uses the 2-Wasserstein
+distance to compare two distributions.
+
+
+### 2-Wasserstein distance functions
+
+The 2-Wasserstein distance is a metric to describe the distance between two
+distributions, representing e.g. two diferent conditions $A$ and $B$. The `waddR` package
+specifically considers the squared 2-Wasserstein distance which can be decomposed into location, size, and shape terms, thus providing
+a characterization of potential differences.
+
+The `waddR` package offers three functions to calculate the (squared)
+2-Wasserstein distance, which are implemented in C++ and exported to R with Rcpp for faster
+computation.
+The function `wasserstein_metric` is a Cpp reimplementation of the
+`wasserstein1d` function from the R package `transport`.
+The functions `squared_wass_approx` and `squared_wass_decomp` compute
+approximations of the squared 2-Wasserstein distance, with `squared_wass_decomp`
+also returning the decomposition terms for location, size, and shape. 
+
+See `?wasserstein_metric`, `?squared_wass_aprox`, and `?squared_wass_decomp` for more details.
+
+### Testing for differences between two distributions
+
+The `waddR` package provides two testing procedures using the 2-Wasserstein distance
+to test whether two distributions $F_A$ and $F_B$ given in the form of samples are
+different by testing the null hypothesis $H_0: F_A = F_B$ against the
+alternative hypothesis $H_1: F_A != F_B$.
+
+The first, semi-parametric (SP), procedure uses a permutation-based test combined with a generalized
+Pareto distribution approximation to estimate small p-values accurately.
+
+The second procedure uses a test based on asymptotic theory (ASY) which is valid only if the
+samples can be assumed to come from continuous distributions.
+
+See `?wasserstein.test` for more details.
+
+### Testing for differences between two distributions in the context of scRNAseq data
+
+The `waddR` package provides an adaptation of the semi-parametric testing procedure based on the
+2-Wasserstein distance which is specifically tailored to identify differential distributions in scRNAseq
+data. In particular, a two-stage (TS) approach is implemented that takes account of the specific
+nature of scRNAseq data by separately testing for differential proportions of zero gene expression
+(using a logistic regression model) and differences in non-zero gene expression (using the semiparametric
+2-Wasserstein distance-based test) between two conditions.
+
+See `?wasserstein.sc` and `?testZeroes` for more details.
+
+
+## Installation
+
+To install `waddR` from Bioconductor, use `BiocManager` with the following commands:
+
+```{r install, eval=FALSE, echo=TRUE}
+if (!requireNamespace("BiocManager"))
+ install.packages("BiocManager")
+BiocManager::install("waddR")
+```
+
+Using `BiocManager`, the package can also be installed from GitHub directly:
+
+```{r install-github, eval=FALSE, echo=TRUE}
+BiocManager::install("goncalves-lab/waddR")
+```
+
+The package `waddR` can then be used in R:
+
+```{r load-package}
+library("waddR")
+```
+
+## Session info
+
+```{r session-info}
+sessionInfo()
+```

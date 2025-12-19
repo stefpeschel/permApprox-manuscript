@@ -1,0 +1,145 @@
+---
+title: "Detection of differential gene expression distributions in single-cell RNA sequencing data"
+output: rmarkdown::html_vignette
+vignette: >
+    %\VignetteIndexEntry{wasserstein_singlecell}
+    %\VignetteEngine{knitr::rmarkdown}
+    %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>"
+)
+```
+
+
+
+The [`waddR`](waddR.html) package provides an adaptation of the semi-parametric
+testing procedure based on the 2-Wasserstein distance which is specifically
+tailored to identify differential distributions in single-cell RNA seqencing
+(scRNAseq) data. 
+
+In particular, a two-stage (TS) approach is implemented that takes account
+of the specific nature of scRNAseq data by separately testing for differential
+proportions of zero gene expression (using a logistic regression model) and
+differences in non-zero gene expression (using the semi-parametric
+2-Wasserstein distance-based test) between two conditions.
+
+## Application to an example data set
+
+As an example on how to analyze scRNAseq gene expression data for two different
+conditions, we look at decidua and blood samples from a data set by Vento-Tormo et al. (2018) 
+(https://doi.org/10.1038/s41586-018-0698-6).
+For our purpose here, we use one a pre-processed and normalized replicate for the two conditions, which is available for download on
+[GitHub](https://github.com/goncalves-lab/waddR-data/).
+
+First, we load all required packages:
+
+```{r}
+suppressPackageStartupMessages({
+    library("waddR")
+    library("SingleCellExperiment")
+    library("BiocFileCache")
+})
+
+library(BiocParallel)
+```
+
+Then, we download the example data set:
+
+```{r}
+url.base <- "https://github.com/goncalves-lab/waddR-data/blob/master/data/"
+sce.blood.url <- paste0(url.base, "data_blood.rda?raw=true")
+sce.decidua.url <- paste0(url.base, "data_decidua.rda?raw=true")
+
+getCachedPath <- function(url, rname){
+    bfc <- BiocFileCache() # fire up cache
+    res <- bfcquery(bfc, url, field="fpath", exact=TRUE)
+    if (bfccount(res) == 0L)
+        cachedFilePath <- bfcadd(bfc, rname=rname, fpath=url)
+    else
+        cachedFilePath <- bfcpath(bfc, res[["rid"]])
+    cachedFilePath
+}
+
+load(getCachedPath(sce.blood.url, "data_blood"))
+load(getCachedPath(sce.decidua.url, "data_decidua"))
+```
+
+Having downloaded the two `SingleCellExperiment` objects `data_blood` and
+`data_decidua`, we randomly select a subset of 1000 genes which we proceed with, as a
+whole analysis would be out of the scope of this vignette.
+
+```{r}
+set.seed(28)
+randgenes <- sample(rownames(data_blood), 1000, replace=FALSE)
+sce.blood <- data_blood[randgenes, ]
+sce.decidua <- data_decidua[randgenes, ]
+```
+
+The input data to the main function `wasserstein.sc` can be supplied either as an overall data matrix and a vector specifying the condition
+of each column (cell), or in the form of two `SingleCellExperiment` objects, one for each condition. Note that the input data matrix or the input `SingleCellExperiment` objects should ideally contain data that has been normalized for cell- or gene-specific biases, as is the case for our example data here.
+
+We here proceed using the two loaded `SingleCellExperiment` objects. Note that the `SingleCellExperiment` objects supplied to `wasserstein.sc` must contain a `counts` assay each, which contains the corresponding (ideally normalized) expression data matrix.
+
+```{r}
+assays(sce.blood)
+assays(sce.decidua)
+```
+The test is then performed using the `wasserstein.sc` function. To obtain reproducible results, a `seed` is set when calling `wasserstein.sc`. For convenience with repect to computation time, we employ `permnum=1000` permutations in our example here, while typically the use of more than 1000 permutations is recommended. We specifically consider a two-stage (TS) procedure here (`method="TS"`), which includes a test for differential proportions of zero gene expression (DPZ) and a test for differential distributions for non-zero gene expression. The TS procedure is applied to all genes in the data set, with one row of the output corresponding to the test result of one specific gene. Note that the DPZ test in the TS procedure takes account of the cellular detection rate and thus depends on the number of considered genes. Hence, the DPZ test results for our exemplary subset of genes differ from that when the test is applied to the whole set of genes.  
+
+```{r}
+register(SerialParam())  # Disable parallelism
+
+res <- wasserstein.sc(sce.blood, sce.decidua, method="TS", permnum=1000, seed=24)
+head(res, n=10L)
+
+saveRDS(res, file = "wasserstein_sc_result.rds")
+```
+
+: Output of the 2-Wasserstein distance-based two-stage test for scRNAseq data 
+
+| Output column | Description                                                 |
+|:--------------|:------------------------------------------------------------|
+| d.wass        | 2-Wasserstein distance between the two samples: quantile approximation              |
+| d.wass^2      | squared 2-Wasserstein distance between the two samples: quantile approximation      |
+| d.comp^2      | squared 2-Wasserstein distance: decomposition approximation |
+| d.comp        | 2-Wasserstein distance: decomposition approximation         |
+| location      | location term in the decomposition of the squared 2-Wasserstein distance     |
+| size          | size term in the decomposition of the squared 2-Wasserstein distance        |
+| shape         | shape term in the decomposition of the squared 2-Wasserstein distance       |
+| rho           | correlation coefficient in the quantile-quantile plot       |
+| p.nonzero          | p-value of the semi-parametric 2-Wasserstein distance-based test                         |
+| p.ad.gpd      | p-value of the Anderson-Darling test to check whether the GPD actually fits the data well \* |
+| N.exc         | number of exceedances (starting with 250 and iteratively decreased by 10 if necessary) that are required to obtain a good GPD fit (i.e. p-value of Anderson-Darling test greater than or equal to 0.05) \* |
+| perc.loc      | fraction (in %) of the location part with respect to the overall squared 2-Wasserstein distance obtained by the decomposition approximation |
+| perc.size     | fraction (in %) of the size part with respect to the overall squared 2-Wasserstein distance obtained by the decomposition approximation |
+| perc.shape    | fraction (in %) of the shape part with respect to the overall squared 2-Wasserstein distance obtained by the decomposition approximation |
+| decomp.error | relative error between the squared 2-Wasserstein distance computed by the quantile approximation and the squared 2-Wasserstein distance computed by the decomposition approximation |
+| p.zero        | p-value of the test for differential proportions of zero expression (logistic regression model) |
+| p.combined    | combined p-value of p.nonzero and p.zero obtained by Fisher’s method |
+| pval.adj      | adjusted p-value of the semi-parametric 2-Wasserstein distance-based test according to the method of Benjamini-Hochberg |
+| p.adj.zero    | adjusted p-value of the test for differential proportions of zero expression (logistic regression model) according to the method of Benjamini-Hochberg |
+|  p.adj.combined | adjusted combined p-value of p.nonzero and p.zero obtained by Fisher’s method according to the method of Benjamini-Hochberg |
+
+*\* only if GPD fitting is performed (otherwise NA)* 
+
+For further details of the testing procedure for scRNAseq data, see `?wasserstein.sc`.
+
+## See also
+
+* The [`waddR` package](waddR.html)
+
+* [Calculation of the  Wasserstein distance](wasserstein_metric.html)
+
+* [Two-sample tests](wasserstein_test.html) to check for differences between two
+distributions
+
+
+## Session info
+
+```{r session-info}
+sessionInfo()
+```
