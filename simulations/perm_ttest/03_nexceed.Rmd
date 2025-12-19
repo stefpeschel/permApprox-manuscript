@@ -1,0 +1,836 @@
+---
+title: "Assess the optimal number of starting exceedances"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "03_nexceed" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "907ec83f-a14f-4333-abdd-a7b00d861428")
+```
+
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 6, dpi = 200,
+  fig.path = paste0('figures/', params$name, "/sim_ttest_nexc_")
+)
+```
+
+```{r packages}
+library(conflicted)
+library(dplyr); conflicts_prefer(dplyr::filter, dplyr::select)
+library(tidyr)
+library(tibble)
+library(purrr)
+library(stringr)
+library(ggplot2)
+library(patchwork)
+library(progressr)
+library(future)
+library(furrr)
+library(readr)
+library(rlang) # For global plot theme
+library(knitr)
+library(kableExtra)
+library(forcats)
+
+conflicts_prefer(base::intersect, base::unname)
+```
+
+```{r}
+# Global parameters
+cores <- 8
+set.seed(123456)
+```
+
+
+## Load permApprox functions
+
+```{r permapprox-load}
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+
+# Load permApprox functions
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$",
+                                   full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+
+# Load epsilon functions
+eps_rule_path <- file.path(proj_path, 
+                           "functions/permApprox_eps_fct/slls_eps_rule.R")
+source(eps_rule_path)
+```
+
+## Method registry, file helpers, and per-method runner
+
+```{r helpers}
+# Root where generated data are stored
+path_data <- path_source("01_data_gen")
+
+path_acc <- file.path(path_data, "sim_accuracy_data")
+path_err <- file.path(path_data, "sim_error_data")
+
+stopifnot(dir.exists(path_acc), dir.exists(path_err))
+
+parse_acc_file <- function(fn) {
+  # sim_acc_n{n}_d{d}_nperm{nperm}.rds
+  m <- stringr::str_match(basename(fn), 
+                          "^sim_acc_n(\\d+)_d([0-9.]+)_nperm(\\d+)\\.rds$")
+  tibble(n = as.integer(m[,2]),
+         d = as.numeric(m[,3]),
+         n_perm = as.integer(m[,4]),
+         file = fn)
+}
+
+list_acc <- function() {
+  fs <- list.files(path_acc, pattern = "\\.rds$", full.names = TRUE)
+  purrr::map_dfr(fs, parse_acc_file) %>% arrange(n, d, n_perm)
+}
+```
+
+### General method registry
+
+```{r}
+# --- General method registry (threshold study) --------------------------------
+# Edit here to add/remove methods or change labels/controls.
+# Labels must match the plotting color names.
+methods_registry <- list(
+  ttest = list(
+    label  = "t-test",
+    engine = "ttest",
+    params = list()
+  ),
+
+  gpd_100ex = list(
+    label  = "GPD(100ex)",
+    engine = "gpd",
+    params = list(
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "support_at_obs",
+        thresh_method = "ftr",
+        exceed0       = 100,
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_250ex = list(
+    label  = "GPD(250ex)",
+    engine = "gpd",
+    params = list(
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "support_at_obs",
+        thresh_method = "ftr",
+        exceed0       = 250,
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_01ex = list(
+    label  = "GPD(10%ex)",
+    engine = "gpd",
+    params = list(
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "support_at_obs",
+        thresh_method = "ftr",
+        exceed0       = 0.1,
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_025ex = list(
+    label  = "GPD(25%ex)",
+    engine = "gpd",
+    params = list(
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "support_at_obs",
+        thresh_method = "ftr",
+        exceed0       = 0.25,
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+
+  gpd_05ex = list(
+    label  = "GPD(50%ex)",
+    engine = "gpd",
+    params = list(
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "support_at_obs",
+        thresh_method = "ftr",
+        exceed0       = 0.5,
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  )
+)
+
+# Labels (used later for factor order)
+method_labels <- vapply(methods_registry, `[[`, "", "label")
+```
+
+### Engines
+
+```{r}
+.engine_ttest <- function(lst_panels, n, d, n_perm, study_str, label, 
+                          method_key, pi1 = NA_real_) {
+  purrr::imap_dfr(lst_panels, function(panel, rep_id) {
+    n_test <- nrow(panel)
+    stopifnot(ncol(panel) == n_perm + 2)
+    colnames(panel) <- c(as.character(seq_len(n_perm)), "tobs", "pttest")
+    tibble(
+      study    = gsub("^acc_", "", study_str),
+      n, d, n_perm, pi1,
+      rep      = rep_id,
+      test_idx = seq_len(n_test),
+      method   = label,
+      pval     = as.numeric(panel[, "pttest"]),
+      meth_used = NA_character_,
+      n_exceed  = NA_integer_
+    )
+  })
+}
+
+.engine_gpd <- function(lst_panels, n, d, n_perm, study_str, label, 
+                        method_key, params, pi1 = NA_real_) {
+  
+  gpd_ctrl <- params$gpd_ctrl
+  purrr::imap_dfr(lst_panels, function(panel, rep_id) {
+    n_test <- nrow(panel)
+    stopifnot(ncol(panel) == n_perm + 2)
+    colnames(panel) <- c(as.character(seq_len(n_perm)), "tobs", "pttest")
+
+    perm_mat <- t(as.matrix(panel[, seq_len(n_perm), drop = FALSE]))  # (B x m)
+    tobs_vec <- as.numeric(panel[, "tobs"])
+
+    fit <- compute_p_values(
+      obs_stats     = tobs_vec,
+      perm_stats    = perm_mat,
+      eps_fct       = eps_slls_perm,
+      sampsize      = n,
+      alternative   = "two_sided",
+      method        = "gpd",
+      fit_thresh    = 1,
+      gpd_ctrl      = gpd_ctrl,
+      adjust_method = "none"
+    )
+
+    tibble(
+      study    = gsub("^acc_", "", study_str),
+      n, d, n_perm, pi1,
+      rep      = rep_id,
+      test_idx = seq_len(n_test),
+      method   = label,
+      pval     = fit$p_unadjusted,
+      meth_used = fit$method_used,
+      n_exceed  = fit$gpd_fit$n_exceed
+    )
+  })
+}
+
+# (Other engines like empirical/custom can be added here)
+
+# --- Dispatcher ---------------------------------------------------------------
+run_method_engine <- function(method_key, def, lst_panels, n, d, n_perm, 
+                              study_str, pi1 = NA_real_) {
+  engine <- def$engine
+  label  <- def$label
+  params <- def$params %||% list()
+
+  switch(engine,
+    ttest = .engine_ttest(lst_panels, n, d, n_perm, study_str, label, 
+                          method_key, pi1),
+    gpd   = .engine_gpd(lst_panels, n, d, n_perm, study_str, label, 
+                        method_key, params, pi1),
+    stop(sprintf("Unknown engine: %s", engine))
+  )
+}
+```
+
+### Output path builders
+
+```{r}
+path_results <- path_target()
+
+.method_out_file <- function(study_str, method_key, n, d, n_perm, 
+                             pi1 = NA_real_) {
+  dir.create(file.path(path_results, study_str, method_key), 
+             recursive = TRUE, showWarnings = FALSE)
+  if (is.na(pi1)) {
+    file.path(path_results, study_str, method_key,
+              sprintf("%s_pvals_%s_n%d_d%.1f_nperm%d.rds", study_str, 
+                      method_key, n, d, n_perm))
+  } else {
+    file.path(path_results, study_str, method_key,
+              sprintf("%s_pvals_%s_n%d_d%.1f_nperm%d_pi1%.3f.rds", 
+                      study_str, method_key, n, d, n_perm, pi1))
+  }
+}
+```
+
+## Compute p-values and save
+
+```{r accuracy-run, eval=FALSE}
+# --- ACCURACY: compute per method, each into its own file ---------------------
+acc_grid <- list_acc() %>% filter(n == 100, d == 1)
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+base_out <- file.path(path_results, "accuracy")
+dir.create(base_out, recursive = TRUE, showWarnings = FALSE)
+
+with_progress({
+  p <- progressor(steps = nrow(acc_grid) * length(methods_registry))
+
+  furrr::future_walk(
+    split(acc_grid, seq_len(nrow(acc_grid))),
+    function(row) {
+      row <- as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      f_in   <- row$file[[1]]
+      study_str <- "accuracy"
+
+      lst <- readRDS(f_in)
+
+      purrr::iwalk(methods_registry, function(def, key) {
+        f_out <- .method_out_file(study_str, key, n, d, n_perm)
+        if (!file.exists(f_out)) {
+          res <- run_method_engine(
+            method_key = key, def = def,
+            lst_panels = lst, n = n, d = d, n_perm = n_perm,
+            study_str = study_str
+          )
+          saveRDS(res, f_out)
+        }
+        p()
+      })
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+})
+
+plan(sequential)
+```
+
+## Collect & reshape
+
+```{r accuracy-collect}
+# --- Collect all method files for ACCURACY -----------------------------------
+acc_method_root <- file.path(path_results, "accuracy")
+acc_files <- list.files(acc_method_root, pattern = "\\.rds$", 
+                        recursive = TRUE, full.names = TRUE)
+
+acc_res <- purrr::map_dfr(acc_files, readRDS) %>%
+  mutate(method = factor(method, levels = unname(method_labels)))
+
+# What the plotting/tables expect:
+acc_long <- acc_res %>%
+  select(study, n, d, n_perm, rep, test_idx, method, pval)
+
+```
+
+## P-value plots
+
+### Colors
+
+```{r}
+# Okabe Ito palette (colorblind-friendly)
+okabe_ito_cols <- c("black",   "#E69F00", "#56B4E9", 
+                    "#009E73", "#F0E442", "#0072B2",
+                    "#D55E00", "#CC79A7", "gray60")
+
+my_cols <- c(
+  "t-test"    = "#6C6C6C",
+  "GPD(100ex)" = "#56B4E9", 
+  "GPD(250ex)" = "#0072B2",
+  "GPD(10%ex)" = "#E69F00",
+  "GPD(25%ex)" = "#D55E00",
+  "GPD(50%ex)" = "#CC79A7"
+)
+```
+
+```{r}
+theme_params <- list(
+  axis.text       = element_text(size = 12),
+  axis.text.x     = element_text(angle = 0, hjust = 0.5),
+  axis.title      = element_text(size = 16),
+  legend.text     = element_text(size = 14),
+  legend.title    = element_text(size = 16),
+  plot.title      = element_text(size = 16),
+  strip.text      = element_text(size = 16)
+)
+```
+
+### Plot function
+
+```{r}
+#==========================
+# Helper functions
+#==========================
+
+# Parse "GPD(100ex)" / "GPD(10%ex)" into nex/pex
+.parse_exceed_from_label <- function(method, n_perm) {
+  m <- as.character(method)
+  hit_fixed <- str_match(m, "^GPD\\((\\d+)ex\\)$")
+  hit_pct   <- str_match(m, "^GPD\\((\\d+)%ex\\)$")
+
+  nex <- rep(NA_integer_, length(m))
+  pex <- rep(NA_real_,    length(m))
+
+  idx_f <- !is.na(hit_fixed[, 2])
+  if (any(idx_f)) {
+    nex[idx_f] <- as.integer(hit_fixed[idx_f, 2])
+    pex[idx_f] <- nex[idx_f] / n_perm[idx_f]
+  }
+
+  idx_p <- !is.na(hit_pct[, 2])
+  if (any(idx_p)) {
+    pex[idx_p] <- as.numeric(hit_pct[idx_p, 2]) / 100
+    nex[idx_p] <- as.integer(round(pex[idx_p] * n_perm[idx_p]))
+  }
+
+  tibble(nex = nex, pex = pex)
+}
+
+# Build label + order key per (n_perm, method)
+.build_exceed_labels <- function(df, include_ttest = FALSE) {
+  base <- df %>%
+    dplyr::distinct(n_perm, method) %>%
+    dplyr::arrange(n_perm, method)
+  
+  gpd_base   <- base %>% dplyr::filter(grepl("^GPD\\(", method))
+  other_base <- base %>% dplyr::filter(!grepl("^GPD\\(", method))
+  
+  # helper: two-line plotmath label with conditional bold/asterisk
+  .make_label_expr <- function(n_perm, nex, pex) {
+    perc_chr <- sub("\\.?0+$", "", format(round(100 * pex, 1), trim = TRUE))
+    
+    if (n_perm == 500 && !is.na(nex) && nex == 250) {
+      # Bold TOP line (absolute), with literal * → treat number as TEXT
+      nex_chr <- as.character(nex)
+      bquote(
+        atop(
+          bold(.(nex_chr) *"*"),
+          "(" * .(perc_chr) * "%)"
+        )
+      )
+    } else if (n_perm != 500 && !is.na(pex) && abs(pex - 0.25) < 1e-8) {
+      # Bold BOTTOM line (percentage), asterisk included on that line
+      bquote(
+        atop(
+          .(nex),
+          bold("(" * .(perc_chr) * "%)" * "*")
+        )
+      )
+    } else {
+      bquote(atop(.(nex), "(" * .(perc_chr) * "%)"))
+    }
+  }
+  
+  
+  gpd_parsed <- if (nrow(gpd_base)) {
+    dplyr::bind_cols(
+      gpd_base,
+      .parse_exceed_from_label(gpd_base$method, gpd_base$n_perm)
+    ) %>%
+      dplyr::mutate(
+        x_label = sprintf("%d\n(%s%%)",
+                          nex,
+                          sub("\\.?0+$", "", format(round(100 * pex, 1), trim = TRUE))),
+        label_expr = Map(.make_label_expr, n_perm, nex, pex),
+        ord_key = nex
+      )
+  } else tibble::tibble(n_perm=integer(), method=character(),
+                        nex=integer(), pex=double(), x_label=character(),
+                        label_expr=list(), ord_key=double())
+
+  tt_parsed <- if (include_ttest && any(other_base$method == "t-test")) {
+    other_base %>%
+      dplyr::filter(method == "t-test") %>%
+      dplyr::mutate(
+        nex = NA_integer_, pex = NA_real_,
+        x_label = "t-test",
+        label_expr = list(as.expression(bquote("t-test"))),
+        ord_key = -Inf
+      )
+  } else tibble::tibble(n_perm=integer(), method=character(),
+                        nex=integer(), pex=double(), x_label=character(),
+                        label_expr=list(), ord_key=double())
+
+  lab <- dplyr::bind_rows(tt_parsed, gpd_parsed) %>%
+    dplyr::group_by(n_perm) %>%
+    dplyr::arrange(ord_key, .by_group = TRUE) %>%
+    dplyr::mutate(
+      x_key = paste(n_perm, x_label, sep = "::"),
+      x_key = factor(x_key, levels = unique(x_key))
+    ) %>%
+    dplyr::ungroup()
+
+  lab %>% dplyr::select(n_perm, method, x_label, x_key, nex, pex, label_expr)
+}
+
+# Pretty log-scale labels
+.pretty_log_labels <- function(has_zero, p_floor) {
+  function(v) {
+    if (has_zero) {
+      ifelse(v < p_floor * 1.1, "0", paste0("1e", as.integer(log10(v))))
+    } else paste0("1e", as.integer(log10(v)))
+  }
+}
+
+# Custom facet labeller
+.lab_B <- function(n_perm) sprintf("B = %s", n_perm)
+.facet_labeller <- as_labeller(function(v) .lab_B(v))
+
+#==========================
+# 1) P-VALUE plot
+#==========================
+
+plot_permapprox_pval_by_exceed <- function(acc_long,
+                                           my_cols,
+                                           theme_params = list(),
+                                           zero_floor_factor = 1e-3,
+                                           y_min = 1e-300,
+                                           y_max = 1e+300,
+                                           y_step_size = 20,
+                                           jitter_width = 0.18,
+                                           dodge_width = 0.75,
+                                           show_zero_labels = TRUE,
+                                           legend_point_size = 2.5) {
+
+  # Keep t-test and GPD methods; we’ll display t-test once per facet
+  df <- acc_long %>%
+    filter(method == "t-test" | grepl("^GPD\\(", method)) %>%
+    mutate(method = factor(method, levels = names(my_cols)))
+
+  stopifnot(nrow(df) > 0)
+
+  # Add axis labels+ordering; include t-test leftmost
+  lab_tbl <- .build_exceed_labels(df, include_ttest = TRUE)
+  lab_lookup <- setNames(lab_tbl$label_expr, lab_tbl$x_key)
+
+  df <- df %>% left_join(lab_tbl, by = c("n_perm", "method"))
+
+  # Floor zeros for plotting
+  min_nonzero <- suppressWarnings(min(df$pval[df$pval > 0], na.rm = TRUE))
+  if (!is.finite(min_nonzero)) min_nonzero <- 1e-320
+  p_floor <- min_nonzero * zero_floor_factor
+  has_zero <- any(df$pval == 0, na.rm = TRUE)
+
+  df <- df %>%
+    mutate(pval_plot = if_else(pval == 0, p_floor, pval, missing = pval))
+
+  df_points <- df
+  df_boxes  <- filter(df, pval > 0)
+
+  zero_counts <- df %>%
+    group_by(n_perm, x_key, method) %>%
+    summarise(n_zero = sum(pval == 0, na.rm = TRUE), .groups = "drop") %>%
+    filter(n_zero > 0)
+
+  # y-axis breaks
+  base_breaks <- c(1e-2, 10^seq(-20, -300, by = -y_step_size))
+  brks <- base_breaks[base_breaks <= y_max & base_breaks >= y_min]
+  if (has_zero) brks <- sort(unique(c(p_floor, brks)))
+
+  ggplot(mapping = aes(x = x_key)) +
+    facet_wrap(~ n_perm, scales = "free_x", nrow = 1, labeller = .facet_labeller) +
+    geom_point(
+      data = df_points,
+      aes(y = pval_plot, color = method, fill = method),
+      size = 0.9, alpha = 0.9,
+      position = position_jitterdodge(jitter.width = jitter_width,
+                                      dodge.width = dodge_width)
+    ) +
+    geom_boxplot(
+      data = df_boxes,
+      aes(y = pval_plot, group = interaction(method, x_key)),
+      fill = NA, color = "black", width = 0.65,
+      outlier.shape = NA, position = position_dodge(width = dodge_width),
+      show.legend = FALSE
+    ) +
+    {if (show_zero_labels && nrow(zero_counts)) geom_text(
+      data = zero_counts,
+      aes(x = x_key,
+          y = if (length(brks)) min(brks) else p_floor,
+          label = paste0("0s=", n_zero), color = method, group = method),
+      position = position_dodge(width = dodge_width),
+      vjust = 1.6, size = 3.5, inherit.aes = FALSE, show.legend = FALSE
+    )} +
+    scale_fill_manual("Method", values = my_cols) +
+    scale_color_manual("Method", values = my_cols) +
+    scale_y_log10(breaks = brks, labels = .pretty_log_labels(has_zero, p_floor)) +
+    scale_x_discrete(labels = function(keys) lapply(keys, function(k) lab_lookup[[k]])) +
+    labs(
+      x = "Number (percentage) of start exceedances",
+      y = expression(hat(p))
+    ) +
+    theme_minimal(base_size = 13) +
+    do.call(theme, c(theme_params, list(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    ))) +
+    guides(color = guide_legend(override.aes = list(size = legend_point_size)),
+           fill  = guide_legend(override.aes = list(size = legend_point_size)))
+}
+
+#==========================
+# 2) RATIO plot
+#==========================
+
+plot_permapprox_ratio_by_exceed <- function(acc_long,
+                                            my_cols,
+                                            theme_params = list(),
+                                            y_min = 1e-300,
+                                            y_max = 1e+300,
+                                            y_step_size = 20,
+                                            jitter_width = 0.18,
+                                            dodge_width = 0.75,
+                                            legend_point_size = 2.5) {
+
+  df_all <- acc_long %>%
+    filter(method == "t-test" | grepl("^GPD\\(", method)) %>%
+    mutate(method = as.character(method))
+
+  stopifnot(any(df_all$method == "t-test"),
+            any(grepl("^GPD\\(", df_all$method)))
+
+  lab_tbl <- .build_exceed_labels(df_all %>% filter(grepl("^GPD\\(", method)))
+  lab_lookup <- setNames(lab_tbl$label_expr, lab_tbl$x_key)
+
+  df_wide <- df_all %>%
+    select(n, d, n_perm, rep, test_idx, method, pval) %>%
+    pivot_wider(names_from = method, values_from = pval)
+
+  gpd_methods <- intersect(unique(lab_tbl$method),
+                           setdiff(colnames(df_wide), "t-test"))
+  if (!length(gpd_methods)) stop("No GPD methods found after reshaping.")
+
+  df_ratio <- df_wide %>%
+    pivot_longer(cols = all_of(gpd_methods),
+                 names_to = "method", values_to = "p_method") %>%
+    rename(p_ttest = `t-test`) %>%
+    filter(p_ttest > 0, p_method > 0) %>%
+    mutate(ratio = p_method / p_ttest)
+
+  df_ratio <- df_ratio %>%
+    left_join(lab_tbl, by = c("n_perm", "method")) %>%
+    mutate(method = factor(method, levels = names(my_cols)))
+
+  base_breaks <- sort(c(10^seq(300, -300, by = -y_step_size), 1))
+  brks_r <- base_breaks[base_breaks <= y_max & base_breaks >= y_min]
+  lab_plain <- function(v) ifelse(v == 1, "1", paste0("1e", as.integer(log10(v))))
+
+  ggplot(mapping = aes(x = x_key)) +
+    facet_wrap(~ n_perm, scales = "free_x", nrow = 1, labeller = .facet_labeller) +
+    geom_hline(yintercept = 1, linewidth = 0.5, linetype = 2, color = "grey50") +
+    geom_point(
+      data = df_ratio,
+      aes(y = ratio, color = method, fill = method),
+      size = 0.9, alpha = 0.9,
+      position = position_jitterdodge(jitter.width = jitter_width,
+                                      dodge.width = dodge_width)
+    ) +
+    geom_boxplot(
+      data = df_ratio,
+      aes(y = ratio, group = interaction(method, x_key)),
+      fill = NA, color = "black", width = 0.65,
+      outlier.shape = NA, position = position_dodge(width = dodge_width),
+      show.legend = FALSE
+    ) +
+    scale_fill_manual("Method", values = my_cols) +
+    scale_color_manual("Method", values = my_cols) +
+    scale_y_log10(breaks = brks_r, labels = lab_plain) +
+    scale_x_discrete(labels = function(keys) lapply(keys, function(k) lab_lookup[[k]])) +
+    labs(
+      x = "Number (percentage) of start exceedances",
+      y = expression(hat(p)[method] / hat(p)[ttest])
+    ) +
+    theme_minimal(base_size = 13) +
+    do.call(theme, c(theme_params, list(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    ))) +
+    guides(color = guide_legend(override.aes = list(size = legend_point_size)),
+           fill  = guide_legend(override.aes = list(size = legend_point_size)))
+}
+```
+
+### P-values
+
+```{r pvals_by_B, fig.width = 14, fig.height = 5, dpi = 200}
+# P-values (faceted by n_perm)
+plot_permapprox_pval_by_exceed(
+  acc_long,
+  my_cols = my_cols,
+  theme_params = theme_params,
+  y_step_size = 10,
+  y_min = 1e-40
+)
+```
+
+### Ratios (approximated vs. t-test)
+
+```{r pval_ratios_by_B, fig.width = 12, fig.height = 5, dpi = 200}
+# Ratios vs. t-test (faceted by n_perm)
+plot_permapprox_ratio_by_exceed(
+  acc_long,
+  my_cols = my_cols,
+  theme_params = theme_params,
+  y_step_size = 5,
+  y_min = 1e-30
+)
+```
+
+## nExceed plots
+
+```{r}
+plot_permapprox_nex_boxplot_by_exceed <- function(acc_res,
+                                                  my_cols,
+                                                  theme_params = list(),
+                                                  show_points = TRUE,
+                                                  jitter_width = 0.18,
+                                                  dodge_width = 0.75,
+                                                  legend_point_size = 2.5) {
+  # Only GPD methods; we display realized n_exceed
+  df <- acc_res %>%
+    filter(grepl("^GPD\\(", method)) %>%
+    mutate(method = factor(method, levels = names(my_cols)))
+
+  stopifnot(nrow(df) > 0, "n_exceed" %in% names(df))
+
+  # Build axis labels/order (“250 (10%)”) and facet-specific x order
+  lab_tbl <- .build_exceed_labels(df)
+  df <- df %>% left_join(lab_tbl, by = c("n_perm", "method"))
+
+  # Split for points/boxes (boxes use all rows; points optional)
+  df_points <- df
+  df_boxes  <- df
+
+  p <- ggplot(mapping = aes(x = x_key)) +
+    facet_wrap(~ n_perm, scales = "free_x", nrow = 1,
+                        labeller = .facet_labeller) +
+    { if (show_points) geom_point(
+        data = df_points,
+        aes(y = n_exceed, color = method, fill = method),
+        size = 0.9, alpha = 0.9,
+        position = position_jitterdodge(jitter.width = jitter_width,
+                                                 dodge.width  = dodge_width)
+      )
+    } +
+    geom_boxplot(
+      data = df_boxes,
+      aes(y = n_exceed, group = interaction(method, x_key)),
+      fill = NA, color = "black", width = 0.65,
+      outlier.shape = NA, position = position_dodge(width = dodge_width),
+      show.legend = FALSE
+    ) +
+    scale_fill_manual("Method", values = my_cols) +
+    scale_color_manual("Method", values = my_cols) +
+    scale_x_discrete(labels = function(s) sub("^[^:]+::", "", s)) +
+    scale_y_log10(breaks = c(50, 100, 250, 500, 1250, 2500, 5000),
+                  labels = c("50", "100", "250", "500", "1250", "2500", "5000")) +
+    labs(
+      x = "Number (percentage) of start exceedances",
+      y = "Actual number of exceedances"
+    ) +
+    theme_minimal(base_size = 13) +
+    do.call(theme, c(theme_params, list(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    ))) +
+    guides(
+      color = guide_legend(override.aes = list(size = legend_point_size)),
+      fill  = guide_legend(override.aes = list(size = legend_point_size))
+    )
+
+  p
+}
+
+```
+
+```{r nexceed_by_B, fig.width = 12, fig.height = 5, dpi = 200}
+plot_permapprox_nex_boxplot_by_exceed(
+  acc_res,                    # must include columns: method, n_perm, n_exceed
+  my_cols = my_cols,
+  theme_params = theme_params,
+  show_points = TRUE          # set FALSE for boxplots only
+)
+```
+
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

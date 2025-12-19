@@ -1,0 +1,1323 @@
+---
+title: "Accuracy and error-rate study - Unconstrained vs. constrained (fact, SLLS)"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "02_constr_vs_unconstr" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "7146734b-7152-4fe6-a555-ed990432b2bd")
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 6, dpi = 200,
+  fig.path = paste0('figures/', params$name, "/")
+)
+```
+
+```{r packages}
+library(conflicted)
+library(dplyr); conflicts_prefer(dplyr::filter, dplyr::select)
+library(tidyr)
+library(tibble)
+library(purrr)
+library(stringr)
+library(ggplot2)
+library(patchwork)
+library(progressr)
+library(future)
+library(furrr)
+library(readr)
+library(rlang) # For global plot theme
+library(knitr)
+library(kableExtra)
+
+conflicts_prefer(base::intersect, dplyr::rename, base::as.factor)
+```
+
+```{r}
+# Global parameters
+cores <- 8
+```
+
+
+## Load permApprox functions
+
+```{r permapprox-load}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Epsilon rule
+
+```{r eps-rule, echo=TRUE}
+# Build T_cap from choice: "perm" or "tmax"
+# - cap_base = "tmax": uses observed maximum across tests
+# - cap_base = "perm": uses high quantile of |perm_stats| inflated by g(n)
+.build_Tcap <- function(cap_base, t_obs, perm_stats, n, 
+                        q_ref = 0.99, alpha = 0.5) {
+  if (identical(cap_base, "tmax")) {
+    # Observed cap (same for all tests)
+    T_cap <- rep(max(abs(t_obs), na.rm = TRUE), length(t_obs))
+
+  } else if (identical(cap_base, "perm")) {
+    # Permutation cap: high quantile of |perm|, inflated by g(n)
+    if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+    Tabs <- abs(perm_stats)
+    Tq <- apply(Tabs, 2, stats::quantile, probs = q_ref, na.rm = TRUE, names = FALSE)
+    
+    # Inflation g(n) = max(1, alpha * sqrt(n))
+    infl <- pmax(1, alpha * sqrt(n))
+    T_cap <- Tq * infl
+
+    # Broadcast if needed
+    if (length(T_cap) == 1L) T_cap <- rep(T_cap, length(t_obs))
+    if (length(T_cap) != length(t_obs)) T_cap <- rep(T_cap[1L], length(t_obs))
+
+  } else {
+    stop("cap_base must be 'perm' or 'tmax'.")
+  }
+
+  # Guardrails: enforce positive finite caps
+  bad <- !is.finite(T_cap) | T_cap <= 0
+  if (any(bad)) {
+    fallback <- max(T_cap[!bad], 1)
+    T_cap[bad] <- fallback
+  }
+  T_cap
+}
+
+# Standardized Lifted Log-Saturation (SLLS) using unified Z-cap
+# - Standardize to Z using permutation mean/sd per test
+# - Build the cap on the Z-scale via .build_Tcap (cap_base = "perm" or "tmax")
+# - Apply simplified LLS on Z
+# - Map epsilon back to T-scale via sigma_j
+eps_slls <- function(obs_stats,
+                     perm_stats,
+                     sampsize,
+                     cap_base      = "tmax",  # Z-cap choice
+                     alpha         = 0.5, # g(n) = max(1, alpha*sqrt(n))
+                     q_ref         = 0.99, # quantile of |Z_perm|
+                     rho_lift      = 3,
+                     k_factor      = 1000,
+                     target_factor = 0.25,
+                     floor_epsZ    = 1e-6,
+                     ...) {
+  cap_base <- match.arg(cap_base, choices = c("perm", "tmax"))
+  n <- sampsize
+  stopifnot(n > 0)
+  
+  # Shape inputs --------------------------------------------------------------
+  # Allow vector perm_stats for single test
+  if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+  Tobs <- as.numeric(obs_stats)
+  
+  # Z-standardization per test -----------------------------------------------
+  mu  <- colMeans(perm_stats, na.rm = TRUE)
+  sig <- apply(perm_stats, 2, sd, na.rm = TRUE)
+  
+  # Guard against non-finite or zero SDs: replace with a small positive fallback
+  valid_sig <- sig[is.finite(sig) & sig > 0]
+  sig_fallback <- if (length(valid_sig)) max(min(valid_sig), 1e-12) else 1e-12
+  sig_ok <- sig
+  sig_ok[!is.finite(sig_ok) | sig_ok <= 0] <- sig_fallback
+
+  Zobs  <- abs((Tobs - mu) / sig_ok)
+  Zperm <- sweep(sweep(perm_stats, 2, mu, "-"), 2, sig_ok, "/")  # same shape as perm_stats
+
+  # Build Z-cap (unified) -----------------------------------------------------
+  # Uses: "tmax" => max(Zobs); "perm" => Q_q(|Zperm|) * g(n) with g(n)=max(1, alpha*sqrt(n))
+  T_cap_Z <- .build_Tcap(cap_base = cap_base,
+                         t_obs    = Zobs,
+                         perm_stats = Zperm,
+                         n        = n,
+                         q_ref    = q_ref,
+                         alpha    = alpha)
+
+  # LLS core on Z -------------------------------------------------------------
+  k        <- k_factor      * (500 / n)
+  E_target <- target_factor * (500 / n)
+
+  if (!any(is.finite(T_cap_Z)) || all(T_cap_Z <= 0)) {
+    # Conservative constant if the cap failed
+    epsZ <- rep(max(E_target + rho_lift, floor_epsZ), length(Zobs))
+  } else {
+    s   <- pmin(Zobs / T_cap_Z, 1)        # scale-free index in [0,1]
+    psi <- (1 - s)^4 * (1 + 4*s)          # Wendland C^2 lift
+    epsZ_core <- E_target * log1p(k * s) / log1p(k) + rho_lift * psi
+    epsZ <- pmax(epsZ_core, floor_epsZ)
+  }
+
+  # Map back to T-scale -------------------------------------------------------
+  epsT <- epsZ * sig_ok
+  epsT
+}
+
+```
+
+## Helpers: listing files, parsing settings, estimator runner
+
+```{r helpers}
+# Root where generated data are stored
+path_data <- path_source("01_data_gen")
+
+path_acc <- file.path(path_data, "sim_accuracy_data")
+path_err <- file.path(path_data, "sim_error_data")
+
+stopifnot(dir.exists(path_acc), dir.exists(path_err))
+
+parse_acc_file <- function(fn) {
+  # sim_acc_n{n}_d{d}_nperm{nperm}.rds
+  m <- stringr::str_match(basename(fn), 
+                          "^sim_acc_n(\\d+)_d([0-9.]+)_nperm(\\d+)\\.rds$")
+  tibble(n = as.integer(m[,2]),
+         d = as.numeric(m[,3]),
+         n_perm = as.integer(m[,4]),
+         file = fn)
+}
+
+parse_err_file <- function(fn) {
+  # sim_err_n{n}_d{d}_nperm{nperm}_pi1{pi1}.rds
+  m <- stringr::str_match(basename(fn), 
+                          "^sim_err_n(\\d+)_d([0-9.]+)_nperm(\\d+)_pi1([0-9.]+)\\.rds$")
+  tibble(n = as.integer(m[,2]),
+         d = as.numeric(m[,3]),
+         n_perm = as.integer(m[,4]),
+         pi1 = as.numeric(m[,5]),
+         file = fn)
+}
+
+list_acc <- function() {
+  fs <- list.files(path_acc, pattern = "\\.rds$", full.names = TRUE)
+  purrr::map_dfr(fs, parse_acc_file) %>% arrange(n, d, n_perm)
+}
+
+list_err <- function() {
+  fs <- list.files(path_err, pattern = "\\.rds$", full.names = TRUE)
+  purrr::map_dfr(fs, parse_err_file) %>% arrange(n, d, n_perm, pi1)
+}
+
+# Build gpd control for (un)constrained
+make_ctrl <- function(constraint = c("unconstrained","support_at_obs", 
+                                     "support_at_max")) {
+  constraint <- match.arg(constraint)
+  make_gpd_ctrl(
+    fit_method   = "LME",
+    include_obs  = FALSE,
+    constraint   = constraint,
+    thresh_method= "ftr",
+    exceed0      = 0.25,
+    exceed_min   = 10,
+    thresh_step  = 10,
+    gof_test     = "ad",
+    gof_alpha    = 0.05,
+    cores        = 1,
+    verbose      = FALSE
+  )
+}
+
+# Compute p-values for one *panel matrix* (n_test x (n_perm+2))
+# Columns 1:n_perm = perm t's, "tobs", "pttest"
+estimate_panel <- function(panel, n, d, n_perm, study, pi1 = NA_real_) {
+  n_test <- nrow(panel)
+  stopifnot(ncol(panel) == n_perm + 2)
+  colnames(panel) <- c(as.character(seq_len(n_perm)), "tobs", "pttest")
+
+  # Controls (only keep the ones we actually use)
+  ctrl_un  <- make_ctrl("unconstrained")
+  ctrl_con <- make_ctrl("support_at_obs")
+
+  # Prepare full inputs (vectorized across tests)
+  # perm matrix shape must be B x m (columns = tests)
+  perm_mat <- t(as.matrix(panel[, seq_len(n_perm), drop = FALSE]))  # (n_perm x n_test)
+  tobs_vec <- as.numeric(panel[, "tobs"])
+  ptt_vec  <- as.numeric(panel[, "pttest"])
+
+  # Optional truth labels for error runs
+  truth_vec <- if (is.finite(pi1) && !is.na(pi1)) {
+    n_alt <- round(n_test * pi1)
+    factor(c(rep("alt", n_alt), rep("null", n_test - n_alt)), levels = c("null","alt"))
+  } else {
+    factor(rep(NA_character_, n_test), levels = c("null","alt"))
+  }
+
+  # Unconstrained GPD
+  res_un <- compute_p_values(
+    obs_stats    = tobs_vec,
+    perm_stats   = perm_mat,
+    alternative  = "two_sided",
+    method       = "gpd",
+    fit_thresh   = 1,
+    gpd_ctrl     = ctrl_un,
+    adjust_method= "none"
+  )
+
+  # Constrained with SLLS rule
+  res_slls <- compute_p_values(
+    obs_stats    = tobs_vec,
+    perm_stats   = perm_mat,
+    eps_fct      = eps_slls,
+    sampsize     = n,
+    alternative  = "two_sided",
+    method       = "gpd",
+    fit_thresh   = 1,
+    gpd_ctrl     = ctrl_con,
+    adjust_method= "none"
+  )
+
+  tibble(
+    study      = study,
+    n          = n,
+    d          = d,
+    n_perm     = n_perm,
+    pi1        = pi1,
+    test_idx   = seq_len(n_test),
+    truth      = truth_vec,
+    p_ttest    = ptt_vec,
+    p_gpd_un   = res_un$p_unadjusted,
+    p_gpd_slls = res_slls$p_unadjusted,
+    meth_un    = res_un$method_used,
+    meth_slls  = res_slls$method_used
+  )
+}
+```
+
+## ACCURACY
+
+### Compute p-values and save
+
+```{r accuracy-run, eval=FALSE}
+acc_grid <- list_acc()
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+acc_out_dir <- path_target("acc_results")
+dir.create(acc_out_dir, showWarnings = FALSE, recursive = TRUE)
+
+with_progress({
+  p <- progressor(steps = nrow(acc_grid))
+
+  furrr::future_walk(
+    split(acc_grid, seq_len(nrow(acc_grid))),
+    function(row) {
+      row <- as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      f_in   <- row$file[[1]]
+
+      f_out  <- file.path(acc_out_dir,
+                          sprintf("acc_results_pvals_n%d_d%.1f_nperm%d.rds", 
+                                  n, d, n_perm))
+      if (file.exists(f_out)) { p(); return(invisible()) }
+
+      # each RDS: list of length n_rep; each element: matrix [n_test x (n_perm+2)]
+      lst <- readRDS(f_in)
+
+      res <- purrr::imap_dfr(lst, function(panel, rep_id) {
+        estimate_panel(panel, n=n, d=d, n_perm=n_perm, study="accuracy") %>%
+          mutate(rep = rep_id)
+      })
+
+      saveRDS(res, f_out)
+      p()
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+})
+
+plan(sequential)
+```
+
+### Collect & reshape
+
+```{r accuracy-collect}
+acc_files <- list.files(path_target("acc_results"), 
+                        pattern="\\.rds$", full.names = TRUE)
+acc_res   <- purrr::map_dfr(acc_files, readRDS)
+
+acc_long <- acc_res %>%
+  select(study, n, d, n_perm, rep, test_idx, 
+         p_ttest, p_gpd_un, p_gpd_slls) %>%
+  pivot_longer(
+    cols = c(p_ttest, p_gpd_un, p_gpd_slls),
+    names_to = "method", values_to = "pval"
+  ) %>%
+  mutate(
+    method = factor(method,
+      levels = c("p_ttest","p_gpd_un", "p_gpd_slls"),
+      labels = c("t-test","GPD(U)", "GPD(C,SLLS)")
+    )
+  )
+```
+
+```{r colors}
+my_cols <- c(
+  "t-test"          = "gray40",
+  "GPD(U)"          = "#56B4E9",  
+  "GPD(C,SLLS)"     = "orange2",  
+  "GPD(C)"  = "#F8766D"
+)
+
+theme_params <- list(
+  axis.text       = element_text(size = 12),
+  axis.text.x     = element_text(angle = 0, hjust = 0.5),
+  axis.title      = element_text(size = 16),
+  legend.text     = element_text(size = 14),
+  legend.title    = element_text(size = 16),
+  plot.title      = element_text(size = 16)
+)
+```
+
+### P-values by n (boxplots only)
+
+```{r}
+## Prepare data frame for plotting (global zero replacement)
+
+# Smallest nonzero p across everything shown in the plot
+min_nonzero_global <- suppressWarnings(min(acc_long$pval[acc_long$pval > 0], na.rm = TRUE))
+if (!is.finite(min_nonzero_global)) min_nonzero_global <- 1e-320
+
+# Choose a floor (a few orders smaller than the min nonzero)
+p_floor <- min_nonzero_global * 1e-3
+
+acc_long <- acc_long %>%
+  mutate(pval_plot = ifelse(pval == 0, p_floor, pval))
+
+# Y-axis breaks + label "0" at the floor
+base_breaks <- c(1e-1, 10^seq(-20, -300, by = -20))
+yrange_max  <- max(acc_long$pval_plot, na.rm = TRUE)
+brks <- sort(unique(c(p_floor, base_breaks[base_breaks <= yrange_max])))
+```
+
+
+```{r accuracy_by_n_boxplot, fig.width = 10, fig.height = 6, dpi = 200}
+df_plot <- acc_long %>%
+  filter(n_perm == 1000, d == 1)
+
+# Accuracy boxplot using the replaced values
+gg_acc <- ggplot(df_plot, aes(x = factor(n), y = pval_plot, fill = method)) +
+  geom_boxplot(
+    outlier.size = 0.3, width = 0.75,
+    position = position_dodge2(preserve = "single", padding = 0.2)
+  ) +
+  scale_fill_manual("Method", values = my_cols) +
+  scale_y_log10(
+    breaks = brks,
+    labels = function(x) {
+      ifelse(x < p_floor * 1.1, "0",
+             paste0("1e", log10(x)))
+    })+  
+  labs(title = "", x = "n", y = expression(hat(p))) +
+  theme_minimal(base_size = 13) +
+  theme(
+    !!!theme_params,
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+gg_acc
+```
+
+### P-values by n
+
+```{r}
+# Plot function
+plot_permapprox <- function(acc_long,
+                            type = c("pval", "ratio"),
+                            x = c("n", "d", "n_perm"),
+                            xlab = NULL,
+                            fixed = list(),            # e.g. list(d = 1, n_perm = 1000)
+                            my_cols,
+                            theme_params = list(),
+                            zero_floor_factor = 1e-3,  # p-values: 0 -> min_nonzero * factor
+                            y_min = 1e-300,
+                            y_max = 1e+300,
+                            y_step_size = 20,
+                            jitter_width = 0.18,
+                            dodge_width = 0.75,
+                            show_zero_labels = TRUE,   # annotate "0s=…"
+                            legend_point_size = 2.5) {
+
+  stopifnot(all(c("n","d","n_perm","method","pval") %in% names(acc_long)))
+
+  type <- match.arg(type)
+  x    <- match.arg(x)
+
+  # ---- Decide needed fixed filters based on x ----
+  # default anchors if not provided
+  defaults <- list(n = 100, d = 1, n_perm = 1000)
+  fixed <- modifyList(defaults, fixed)
+
+  # build filter
+  filt <- dplyr::quo(TRUE)
+  if (x != "n")      filt <- rlang::expr(!!filt & n      == !!fixed$n)
+  if (x != "d")      filt <- rlang::expr(!!filt & d      == !!fixed$d)
+  if (x != "n_perm") filt <- rlang::expr(!!filt & n_perm == !!fixed$n_perm)
+
+  df <- acc_long %>%
+    dplyr::filter(!!filt)
+
+  if (!nrow(df)) stop("No rows after filtering. Adjust 'fixed = list(...)' to existing settings.")
+
+  # order methods to match colors provided
+  df <- df %>%
+    dplyr::mutate(method = factor(method, levels = names(my_cols)))
+
+  # helper for legend guides
+  guide_bump <- list(
+    ggplot2::guide_legend(override.aes = list(size = legend_point_size)),
+    ggplot2::guide_legend(override.aes = list(size = legend_point_size))
+  )
+
+  # ---------------------------
+  # P-VALUE PLOT
+  # ---------------------------
+  if (type == "pval") {
+    # compute global floor for zeros (across the plotted subset)
+    min_nonzero <- suppressWarnings(min(df$pval[df$pval > 0], na.rm = TRUE))
+    if (!is.finite(min_nonzero)) min_nonzero <- 1e-320
+    p_floor <- min_nonzero * zero_floor_factor
+
+    df <- df %>%
+      dplyr::mutate(
+        pval_plot = dplyr::if_else(pval == 0, p_floor, pval, missing = pval)
+      )
+
+    # jitter points: use all values; boxplots: exclude zeros to avoid huge IQR
+    df_points <- df
+    df_boxes  <- dplyr::filter(df, pval > 0)
+
+    # zero counts per x × method
+    zero_counts <- df %>%
+      dplyr::group_by(.data[[x]], method) %>%
+      dplyr::summarise(n_zero = sum(pval == 0, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::filter(n_zero > 0)
+
+    # y-scale breaks + "0" tick only if there are zeros present
+    has_zero <- any(df$pval == 0, na.rm = TRUE)
+    # y_min <- min(df$pval_plot, na.rm = TRUE)
+    # y_max <- max(df$pval_plot, na.rm = TRUE)
+    
+    # A tick every 20 powers
+    base_breaks <- c(1e-2, 10^seq(-20, -300, by = -y_step_size))
+    brks <- base_breaks[base_breaks <= (y_max) & 
+                          base_breaks >= (y_min)]
+    
+    if (has_zero) brks <- sort(unique(c(p_floor, brks)))
+    
+    y_labs <- function(v) {
+      if (has_zero) {
+        ifelse(v < p_floor * 1.1, "0", paste0("1e", as.integer(log10(v))))
+      } else {
+        paste0("1e", as.integer(log10(v)))
+      }
+    }
+    
+    p <- ggplot(mapping = aes(x = factor(.data[[x]]))) +
+      # jitter (colored)
+      geom_point(
+        data = df_points,
+        aes(y = pval_plot, color = method, fill = method),
+        size = 0.9, alpha = 0.9,
+        position = position_jitterdodge(jitter.width = jitter_width, 
+                                        dodge.width = dodge_width)
+      ) +
+      # box (transparent outline) on non-zeros only
+      geom_boxplot(
+        data = df_boxes,
+        aes(y = pval_plot, group = interaction(method, .data[[x]])),
+        fill = NA, color = "black", width = 0.65,
+        outlier.shape = NA, position = position_dodge(width = dodge_width),
+        show.legend = FALSE
+      ) +
+      # annotate zero counts (optional)
+      {if (show_zero_labels && nrow(zero_counts)) geom_text(
+        data = zero_counts,
+        aes(x = factor(.data[[x]]), y = if (length(brks)) min(brks) else p_floor,
+                     label = paste0("0s=", n_zero), color = method, group = method),
+        position = position_dodge(width = dodge_width),
+        vjust = 1.6, size = 3.5, inherit.aes = FALSE, show.legend = FALSE
+      )}
+
+    p <- p +
+      scale_fill_manual("Method", values = my_cols) +
+      scale_color_manual("Method", values = my_cols) +
+      scale_y_log10(breaks = brks, labels = y_labs) +
+      labs(title = "", 
+           x = ifelse(is.null(xlab), x, xlab), 
+           y = expression(hat(p))) +
+      theme_minimal(base_size = 13) +
+      do.call(theme, c(theme_params, list(
+        legend.position = "bottom",
+        panel.grid.minor = element_blank()
+      ))) +
+      guides(color = guide_bump[[1]], fill = guide_bump[[2]])
+
+    return(p)
+  }
+
+  # ---------------------------
+  # RATIO PLOT (method / t-test), non-zero pairs only
+  # ---------------------------
+  # For ratio, we need tests aligned with t-test baseline
+  df_base <- df %>%
+    dplyr::select(n, d, n_perm, !!rlang::sym(x), rep, test_idx, method, pval)
+
+  # Count zeros for annotation (exclude t-test)
+  zero_counts_r <- df_base %>%
+    dplyr::filter(method != "t-test") %>%
+    dplyr::group_by(.data[[x]], method) %>%
+    dplyr::summarise(n_zero = sum(pval == 0, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::filter(n_zero > 0)
+
+  # Wide join to get t-test next to each method
+  df_wide <- tidyr::pivot_wider(df_base, names_from = method, values_from = pval)
+
+  methods_to_compare <- intersect(names(my_cols), setdiff(unique(acc_long$method), "t-test"))
+  if (length(methods_to_compare) == 0) {
+    methods_to_compare <- c("GPD(U)", "GPD(C,f=0.05)", "GPD(C,SLLS)") # fallback
+  }
+
+  df_ratio <- df_wide %>%
+    tidyr::pivot_longer(cols = tidyselect::all_of(methods_to_compare),
+                        names_to = "method", values_to = "p_method") %>%
+    dplyr::rename(p_ttest = `t-test`) %>%
+    dplyr::filter(p_ttest > 0, p_method > 0) %>%
+    dplyr::mutate(
+      method = factor(method, levels = names(my_cols)),
+      ratio  = p_method / p_ttest
+    )
+  
+  if (!nrow(df_ratio)) 
+    stop("No non-zero pairs for ratio plot after filtering. Try a different 'fixed' combination.")
+  
+  r_min <- min(df_ratio$ratio, na.rm = TRUE)
+  r_max <- max(df_ratio$ratio, na.rm = TRUE)
+  
+  base_breaks <- sort(c(10^seq(300, -300, by = -y_step_size)))
+  # brks_r <- base_breaks[base_breaks <= (r_max * 10^y_step_size) & 
+  #                         base_breaks >= (r_min * 10^-y_step_size)]
+  brks_r <- base_breaks[base_breaks <= y_max & base_breaks >= y_min]
+  
+  lab_plain <- function(v) ifelse(v == 1, "1", paste0("1e", as.integer(log10(v))))
+
+  p <- ggplot(mapping = aes(x = factor(.data[[x]]))) +
+    geom_hline(yintercept = 1, linewidth = 0.5, linetype = 2, color = "grey50") +
+    geom_point(
+      data = df_ratio,
+      aes(y = ratio, color = method, fill = method),
+      size = 0.9, alpha = 0.9,
+      position = position_jitterdodge(jitter.width = jitter_width, dodge.width = dodge_width)
+    ) +
+    geom_boxplot(
+      data = df_ratio,
+      aes(y = ratio, group = interaction(method, .data[[x]])),
+      fill = NA, color = "black", width = 0.65,
+      outlier.shape = NA, position = position_dodge(width = dodge_width),
+      show.legend = FALSE
+    ) +
+    {if (show_zero_labels && nrow(zero_counts_r)) geom_text(
+      data = zero_counts_r,
+      aes(x = factor(.data[[x]]), y = min(brks_r),
+                   label = paste0("0s=", n_zero),
+                   color = method, group = method),
+      position = position_dodge(width = dodge_width),
+      vjust = 1.6, size = 3.5, inherit.aes = FALSE, show.legend = FALSE
+    )} +
+    scale_fill_manual("Method", values = my_cols) +
+    scale_color_manual("Method", values = my_cols) +
+    scale_y_log10(breaks = brks_r, labels = lab_plain) +
+    labs(title = "", 
+         x = ifelse(is.null(xlab), x, xlab), 
+         y = expression(hat(p)[method] / hat(p)[ttest])) +
+    theme_minimal(base_size = 13) +
+    do.call(theme, c(theme_params, list(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    ))) +
+    guides(color = guide_bump[[1]], fill = guide_bump[[2]])
+
+  return(p)
+}
+```
+
+
+Approximated p-values with sample size on the x axis. The boxplots represent non-zero p-values only.
+
+```{r accuracy_pval_by_n_boxplot, fig.width = 10, fig.height = 6, dpi = 200}
+# P-values by n (fix d=1, B=1000)
+plot_permapprox(acc_long, type = "pval", x = "n",
+                fixed = list(d = 1, n_perm = 1000),
+                my_cols = my_cols, theme_params = theme_params,
+                y_min = 1e-130, y_max = 1)
+```
+
+### Ratios by n
+
+Ratios ($p_{method}$ / $p_{ttest}$) for non-zero p-values, with sample size on the x axis.
+
+```{r accuracy_ratio_by_n_boxplot, fig.width = 10, fig.height = 6, dpi = 200}
+# P-values by n (fix d=1, B=1000)
+plot_permapprox(acc_long, type = "ratio", x = "n",
+                fixed = list(d = 1, n_perm = 1000),
+                my_cols = my_cols, theme_params = theme_params,
+                y_min = 1e-40)
+```
+
+
+### P-values by d
+
+Approximated p-values with effect size on the x axis. The boxplots represent non-zero p-values only.
+
+```{r accuracy_pval_by_d_boxplot, fig.width = 10, fig.height = 6, dpi = 200}
+plot_permapprox(acc_long, type = "pval", x = "d",
+                fixed = list(d = 1, n_perm = 1000),
+                my_cols = my_cols, theme_params = theme_params,
+                y_min = 1e-50)
+```
+
+### Ratios by d
+
+Ratios ($p_{method}$ / $p_{ttest}$) for non-zero p-values, with effect size on the x axis.
+
+```{r accuracy_ratio_by_d_boxplot, fig.width = 10, fig.height = 6, dpi = 200}
+plot_permapprox(acc_long, type = "ratio", x = "d",
+                fixed = list(n = 100, n_perm = 1000),
+                my_cols = my_cols, theme_params = theme_params,
+                y_step_size = 5, y_min = 1e-20)
+```
+
+### P-values by B
+
+Approximated p-values with number of permutations on the x axis. The boxplots represent non-zero p-values only.
+
+```{r accuracy_pval_by_B_boxplot, fig.width = 10, fig.height = 6, dpi = 200}
+plot_permapprox(acc_long, type = "pval", x = "n_perm",
+                fixed = list(d = 1, n = 100),
+                my_cols = my_cols, theme_params = theme_params,
+                y_step_size = 10, y_min = 1e-30)
+```
+
+### Ratios by B
+
+Ratios ($p_{method}$ / $p_{ttest}$) for non-zero p-values, with number of permutations on the x axis.
+
+```{r accuracy_ratio_by_B_boxplot, fig.width = 10, fig.height = 6, dpi = 200}
+plot_permapprox(acc_long, type = "ratio", x = "n_perm",
+                fixed = list(d = 1, n = 100),
+                my_cols = my_cols, theme_params = theme_params,
+                y_step_size = 5, y_min = 1e-30)
+```
+
+### Table: Zeros and times where method p-value < t-test p-value
+
+```{r}
+df_base <- acc_long %>%
+  filter(n_perm == 1000, d == 1) %>%
+  select(n, rep, test_idx, method, pval)
+
+# wide: get t-test alongside each method's p
+df_wide <- df_base %>%
+  pivot_wider(names_from = method, values_from = pval)
+
+# methods to compare
+method_levels <- c("GPD(U)", "GPD(C,SLLS)")
+
+# long with comparison & indicators
+cmp_long <- df_wide %>%
+  pivot_longer(cols = all_of(method_levels),
+               names_to = "method", values_to = "p_method") %>%
+  rename(p_ttest = `t-test`) %>%
+  mutate(
+    is_zero   = p_method == 0,
+    below_tt  = p_method < p_ttest
+  )
+
+# summary table
+tab_zero_below <- cmp_long %>%
+  group_by(n, method) %>%
+  summarise(
+    zeros       = sum(is_zero,   na.rm = TRUE),
+    below_ttest = sum(below_tt,  na.rm = TRUE),
+    total       = sum(!is.na(p_method) & !is.na(p_ttest)),
+    pct_zeros        = scales::percent(zeros / pmax(total, 1), accuracy = 0.1),
+    pct_below_ttest  = scales::percent(below_ttest / pmax(total, 1), accuracy = 0.1),
+    .groups = "drop"
+  ) %>%
+  arrange(n, factor(method, levels = method_levels)) %>%
+  select(n, method, zeros, pct_zeros, below_ttest, pct_below_ttest, total) %>%
+  rename('zeros (%)' = pct_zeros,
+         '< t-test' = below_ttest,
+         '< t-test (%)' = pct_below_ttest
+         )
+
+# print nicely
+tab_zero_below %>%
+  kableExtra::kable()
+```
+
+### Table: Accuracy metrics
+
+```{r}
+# --- Accuracy metrics helper (t-test = ground truth) --------------------------
+# data_methods: data frame with columns n,d,n_perm,rep,test_idx,method,pval
+# baseline: (optional) rows containing the t-test baseline with the same keys.
+#           If NULL, the function tries to find baseline inside data_methods.
+acc_metrics_summary <- function(data_methods,
+                                group_vars = c("n","method"),
+                                baseline = NULL) {
+
+  keys <- c("n","d","n_perm","rep","test_idx")
+  stopifnot(all(c(keys,"method","pval") %in% names(data_methods)))
+
+  # Prepare/locate baseline (t-test)
+  if (is.null(baseline)) {
+    baseline <- data_methods %>% dplyr::filter(method == "t-test")
+    if (nrow(baseline) == 0L)
+      stop("No t-test baseline found. Pass it via `baseline=` or include it in `data_methods`.")
+  } else {
+    stopifnot(all(c(keys,"pval") %in% names(baseline)))
+  }
+
+  # Methods (exclude t-test)
+  df_m <- data_methods %>%
+    dplyr::filter(method != "t-test") %>%
+    dplyr::select(dplyr::all_of(keys), method, p_method = pval)
+
+  # Baseline
+  df_t <- baseline %>%
+    dplyr::select(dplyr::all_of(keys), p_ttest = pval)
+
+  # Pair up by keys
+  long <- dplyr::inner_join(df_m, df_t, by = keys) %>%
+    dplyr::filter(is.finite(p_method), is.finite(p_ttest)) %>%
+    dplyr::mutate(diff = p_method - p_ttest)
+
+  # Ratios on strictly positive pairs
+  long_pos <- long %>%
+    dplyr::filter(p_method > 0, p_ttest > 0) %>%
+    dplyr::mutate(log10_ratio = log10(p_method / p_ttest))
+
+  sum_core <- long %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::summarise(
+      N         = dplyr::n(),
+      bias      = mean(diff),
+      sd        = stats::sd(diff),
+      rmse      = sqrt(mean(diff^2)),
+      cor_spear = suppressWarnings(stats::cor(p_method, p_ttest, method = "spearman")),
+      .groups   = "drop"
+    )
+
+  sum_ratio <- long_pos %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::summarise(
+      N_pos          = dplyr::n(),
+      .groups = "drop"
+    )
+
+  dplyr::left_join(sum_core, sum_ratio, by = group_vars)
+}
+```
+
+
+```{r accuracy-metrics-by-n}
+# setting: d=1, B=1000
+acc_for_metrics <- acc_long %>% dplyr::filter(d == 1, n_perm == 1000)
+
+tab_metrics_by_n <- acc_metrics_summary(
+  data_methods = acc_for_metrics,
+  group_vars   = c("n","method")
+) %>% dplyr::arrange(n, method)
+
+tab_metrics_by_n_fmt <- tab_metrics_by_n %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(bias, sd, rmse),
+      ~ format(.x, scientific = TRUE, digits = 3)
+    ),
+    dplyr::across(
+      c(cor_spear),
+      ~ format(round(.x, 3), nsmall = 3)
+    )
+  )
+
+knitr::kable(tab_metrics_by_n_fmt,
+  caption = "Accuracy vs. t-test by n (d=1, B=1000).") %>%
+  kableExtra::kable_classic(full_width = FALSE)
+```
+
+```{r accuracy-metrics-all}
+tab_metrics_all <- acc_metrics_summary(
+  data_methods = acc_long,                    # contains t-test too
+  group_vars   = c("n","d","n_perm","method")
+) %>% dplyr::arrange(n, d, n_perm, method)
+
+tab_metrics_all_fmt <- tab_metrics_all %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(bias, sd, rmse),
+      ~ format(.x, scientific = TRUE, digits = 3)
+    ),
+    dplyr::across(
+      c(cor_spear),
+      ~ format(round(.x, 3), nsmall = 3)
+    )
+  )
+
+knitr::kable(tab_metrics_all_fmt,
+  caption = "Accuracy vs. t-test across all settings.") %>%
+  kableExtra::kable_classic(full_width = FALSE)
+```
+
+### Correlation plot (t-test vs. methods)
+
+```{r corr_scatter_n100_d1_B1000, fig.width=10, fig.height=5, dpi=200}
+# Filter the setting
+df_set <- acc_long %>%
+  dplyr::filter(n == 100, d == 1, n_perm == 1000) %>%
+  dplyr::select(n, d, n_perm, rep, test_idx, method, pval)
+
+# Wide join to get baseline next to methods
+df_wide <- df_set %>%
+  tidyr::pivot_wider(names_from = method, values_from = pval)
+
+# Reshape to long with two methods vs baseline
+methods_to_plot <- c("GPD(U)", "GPD(C,SLLS)")
+df_long <- df_wide %>%
+  tidyr::pivot_longer(cols = tidyselect::all_of(methods_to_plot),
+                      names_to = "method", values_to = "p_method") %>%
+  dplyr::rename(p_ttest = `t-test`) %>%
+  dplyr::filter(!is.na(p_ttest), !is.na(p_method)) %>%
+  dplyr::mutate(method = factor(method, levels = methods_to_plot))
+
+# Correlations on strictly positive pairs (no zero replacement here)
+corr_tab <- df_long %>%
+  dplyr::filter(p_ttest > 0, p_method > 0) %>%
+  dplyr::group_by(method) %>%
+  dplyr::summarise(
+    pearson  = suppressWarnings(stats::cor(p_method, p_ttest, method = "pearson")),
+    spearman = suppressWarnings(stats::cor(p_method, p_ttest, method = "spearman")),
+    .groups = "drop"
+  )
+
+# Prepare plotting values (replace zeros by floor ONLY for plotting)
+min_pos <- suppressWarnings(min(c(df_long$p_ttest[df_long$p_ttest > 0],
+                                  df_long$p_method[df_long$p_method > 0]), na.rm = TRUE))
+if (!is.finite(min_pos)) min_pos <- 1e-320
+p_floor <- min_pos * 1e-3
+
+df_plot <- df_long %>%
+  dplyr::mutate(
+    p_ttest_plot  = dplyr::if_else(p_ttest  > 0, p_ttest,  p_floor),
+    p_method_plot = dplyr::if_else(p_method > 0, p_method, p_floor)
+  )
+
+# Subtitle with correlations
+sub_txt <- corr_tab %>%
+  dplyr::mutate(
+    pearson  = format(round(pearson,  3), nsmall = 3),
+    spearman = format(round(spearman, 3), nsmall = 3),
+    label = paste0(method, ": r=", pearson, ", r_s=", spearman)
+  ) %>%
+  dplyr::pull(label) %>%
+  paste(collapse = "   |   ")
+
+# Colors to match your palette
+corr_cols <- c("GPD(U)" = my_cols[["GPD(U)"]], "GPD(C,SLLS)" = my_cols[["GPD(C,SLLS)"]])
+
+ggplot(df_plot, aes(x = p_ttest_plot, y = p_method_plot, color = method)) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, linewidth = 0.5, color = "grey50") +
+  geom_point(alpha = 0.6, size = 0.8) +
+  scale_color_manual(values = corr_cols, name = "Method") +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(
+    title = "Correlation of approximated p-values vs. t-test (n=100, d=1, B=1000)",
+    subtitle = sub_txt,
+    x = expression(paste("t-test ", hat(p))),
+    y = expression(paste(hat(p), " (method)"))
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+
+
+
+## ERROR RATES
+
+### Compute p-values and save
+
+```{r error-run, eval=FALSE}
+# Grid from generated files
+err_grid <- list_err()
+
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+err_out_dir <- path_target("err_results")
+dir.create(err_out_dir, showWarnings = FALSE, recursive = TRUE)
+
+with_progress({
+  p <- progressor(steps = nrow(err_grid))
+
+  furrr::future_walk(
+    split(err_grid, seq_len(nrow(err_grid))),
+    function(row) {
+      row <- as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      pi1    <- row$pi1[[1]]
+      f_in   <- row$file[[1]]
+
+      f_out <- file.path(
+        err_out_dir,
+        sprintf("err_results_pvals_n%d_d%.1f_nperm%d_pi1%.2f.rds",
+                n, d, n_perm, pi1)
+      )
+      if (file.exists(f_out)) { p(); return(invisible()) }
+
+      # Each RDS is a list of length n_rep; element: matrix [n_test x (n_perm+2)]
+      lst <- readRDS(f_in)
+
+      res <- purrr::imap_dfr(lst, function(panel, rep_id) {
+        estimate_panel(panel, n=n, d=d, n_perm=n_perm, pi1=pi1, study="error") %>%
+          mutate(rep = rep_id)
+      })
+
+      saveRDS(res, f_out)
+      p()
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+})
+
+plan(sequential)
+```
+
+### Collect & reshape
+
+```{r}
+# Collect all error panels' results
+err_files <- list.files(path_target("err_results"), 
+                        pattern="\\.rds$", full.names = TRUE)
+err_res   <- purrr::map_dfr(err_files, readRDS)
+
+# Long format with method labels for downstream metrics/plots
+err_long <- err_res %>%
+  select(study, n, d, n_perm, pi1, rep, test_idx, truth, 
+         p_ttest, p_gpd_un, p_gpd_slls) %>%
+  pivot_longer(
+    cols = c(p_ttest, p_gpd_un, p_gpd_slls),
+    names_to = "method", values_to = "pval"
+  ) %>%
+  mutate(
+    method = factor(method,
+      levels = c("p_ttest","p_gpd_un", "p_gpd_slls"),
+      labels = c("t-test","GPD(U)", "GPD(C,SLLS)")
+    )
+  )
+
+my_cols <- c(
+  "t-test"          = "gray40",
+  "GPD(U)"          = "#56B4E9",  
+  "GPD(C,SLLS)"     = "orange2",  
+  "GPD(C)"  = "#F8766D"
+)
+
+theme_params <- list(
+  axis.text       = element_text(size = 12),
+  axis.text.x     = element_text(angle = 0, hjust = 0.5),
+  axis.title      = element_text(size = 16),
+  legend.text     = element_text(size = 14),
+  legend.title    = element_text(size = 16),
+  plot.title      = element_text(size = 16)
+)
+```
+
+### Compute unadjusted & adjusted metrics
+
+```{r}
+# Helper: compute BH-adjusted p-values per (setting × replicate × method)
+err_long_adj <- err_long %>%
+  group_by(n, d, n_perm, pi1, rep, method) %>%
+  mutate(pval_bh = p.adjust(pval, method = "BH")) %>%
+  ungroup()
+
+# Metric engine ---------------------------------------------------------------
+# Returns tidy rows per alpha with: rejection_rate, false_positive_rate, power,
+# FDR_unadj, FDR_adj
+compute_metrics <- function(df, alphas = c(0.05, 0.01)) {
+  # df: rows from a single (n,d,n_perm,pi1,rep,method) group with pval and pval_bh
+  stopifnot(all(c("pval","pval_bh","truth") %in% names(df)))
+  m0 <- sum(df$truth == "null", na.rm = TRUE)
+  m1 <- sum(df$truth == "alt",  na.rm = TRUE)
+  out <- map_dfr(alphas, function(a) {
+    # Unadjusted decisions
+    dec_u  <- df$pval <= a
+    R_u    <- sum(dec_u, na.rm = TRUE)
+    FP_u   <- sum(dec_u & df$truth == "null", na.rm = TRUE)
+    TP_u   <- sum(dec_u & df$truth == "alt",  na.rm = TRUE)
+
+    # BH-adjusted decisions
+    dec_bh <- df$pval_bh <= a
+    R_bh   <- sum(dec_bh, na.rm = TRUE)
+    FP_bh  <- sum(dec_bh & df$truth == "null", na.rm = TRUE)
+    TP_bh  <- sum(dec_bh & df$truth == "alt",  na.rm = TRUE)
+
+    tibble(
+      alpha               = a,
+      rejection_rate      = R_u / (m0 + m1),
+      false_positive_rate = if (m0 > 0) FP_u / m0 else NA_real_,
+      power               = if (m1 > 0) TP_u / m1 else NA_real_,
+      FDR_unadjusted      = if (R_u > 0) FP_u / R_u else 0,
+      FDR_adjusted        = if (R_bh > 0) FP_bh / R_bh else 0
+    )
+  })
+  out
+}
+
+# Summarize metrics per replicate and then aggregate (mean & 95% CI) ----------
+metrics_by_rep <- err_long_adj %>%
+  group_by(n, d, n_perm, pi1, rep, method) %>%
+  group_modify(~ compute_metrics(.x)) %>%
+  ungroup()
+
+summary_metrics <- metrics_by_rep %>%
+  pivot_longer(cols = c(rejection_rate, false_positive_rate, power,
+                        FDR_unadjusted, FDR_adjusted),
+               names_to = "metric", values_to = "value") %>%
+  group_by(n, d, n_perm, pi1, method, alpha, metric) %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    sd   = sd(value,   na.rm = TRUE),
+    nrep = sum(is.finite(value)),
+    se   = sd / sqrt(pmax(nrep, 1)),
+    lo95 = pmax(0, mean - 1.96 * se),
+    hi95 = pmin(1, mean + 1.96 * se),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    metric_label = case_when(
+      metric == "false_positive_rate" ~ "False positive rate",
+      metric == "FDR_adjusted" ~ "FDR (adjusted)",
+      metric == "FDR_unadjusted" ~ "FDR (unadjusted)",
+      metric == "power" ~ "Power",
+      metric == "rejection_rate" ~ "Rejection rate"
+    )
+  )
+```
+
+### Flexible plotting helper
+
+```{r}
+plot_error_metric <- function(summary_metrics,
+                              metric = c("rejection_rate","false_positive_rate",
+                                         "power","FDR_unadjusted","FDR_adjusted"),
+                              x = c("pi1","n","d","n_perm"),
+                              fixed = list(),          # e.g. list(n = 100, d = 1, n_perm = 1000)
+                              alpha = 0.05,
+                              my_cols = my_cols,
+                              ylim = c(0, 1), 
+                              theme_params = list()) {
+  
+  metric <- match.arg(metric, c("rejection_rate","false_positive_rate",
+                                "power","FDR_unadjusted","FDR_adjusted"))
+  x      <- match.arg(x, choices = c("pi1","n","d","n_perm"))
+  
+  # Defaults for fixed filters (anchor the non-x dims)
+  defaults <- list(n = 100, d = 1, n_perm = 1000, pi1 = unique(summary_metrics$pi1)[1])
+  fixed <- modifyList(defaults, fixed)
+
+  filt <- quo(TRUE)
+  if (x != "n")      filt <- expr(!!filt & n      == !!fixed$n)
+  if (x != "d")      filt <- expr(!!filt & d      == !!fixed$d)
+  if (x != "n_perm") filt <- expr(!!filt & n_perm == !!fixed$n_perm)
+  if (x != "pi1")    filt <- expr(!!filt & abs(pi1 - !!fixed$pi1) < 1e-12)
+
+  df <- summary_metrics %>%
+    filter(metric == !!metric, alpha == !!alpha) %>%
+    filter(!!filt) %>%
+    mutate(method = factor(method, levels = names(my_cols)))
+
+  if (!nrow(df)) stop("No data for the chosen filters.")
+  
+  metric_label <- as.character(df[1, "metric_label"])
+  
+  p <- ggplot(df, aes(x = as.factor(.data[[x]]), y = mean, color = method, group = method))
+    #geom_hline(yintercept = 0, linewidth = 0.3, linetype = 2)
+  
+  if (metric %in% c("false_positive_rate", "FDR_adjusted")) {
+    p <- p + geom_hline(yintercept = 0.05, linewidth = 0.3, linetype = 2)
+  }
+  
+  p <- p + geom_ribbon(aes(ymin = lo95, ymax = hi95, fill = method),
+                       alpha = 0.15, color = NA, show.legend = FALSE) +
+    geom_line() +
+    geom_point(size = 1.6) +
+    scale_color_manual("Method", values = my_cols) +
+    scale_fill_manual(values = my_cols) +
+    scale_y_continuous(limits = c(0, 1), breaks = scales::pretty_breaks(6)) +
+    labs(x = x, y = metric_label, title = paste0(metric_label, " (alpha = ", alpha, ")")) +
+    theme_minimal(base_size = 13) +
+    coord_cartesian(ylim = ylim) +
+    do.call(theme, c(theme_params, list(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )))
+  p
+}
+```
+
+
+### By non-null fraction (pi1)
+
+```{r}
+# By non-null fraction (recommended primary view)
+plot_error_metric(summary_metrics, metric = "rejection_rate",
+                  x = "pi1", fixed = list(n = 100, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0, 0.2))
+
+plot_error_metric(summary_metrics, metric = "false_positive_rate",
+                  x = "pi1", fixed = list(n = 100, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.04, 0.06))
+
+plot_error_metric(summary_metrics, metric = "power",
+                  x = "pi1", fixed = list(n = 100, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.9, 1))
+
+plot_error_metric(summary_metrics, metric = "FDR_unadjusted",
+                  x = "pi1", fixed = list(n = 100, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params)
+
+plot_error_metric(summary_metrics, metric = "FDR_adjusted",
+                  x = "pi1", fixed = list(n = 100, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params)
+```
+### By sample size (n)
+
+```{r}
+# By non-null fraction (recommended primary view)
+plot_error_metric(summary_metrics, metric = "rejection_rate",
+                  x = "n", fixed = list(pi1 = 0.05, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0, 0.2))
+
+plot_error_metric(summary_metrics, metric = "false_positive_rate",
+                  x = "n", fixed = list(pi1 = 0.05, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.04, 0.06))
+
+plot_error_metric(summary_metrics, metric = "power",
+                  x = "n", fixed = list(pi1 = 0.05, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.9, 1))
+
+plot_error_metric(summary_metrics, metric = "FDR_unadjusted",
+                  x = "n", fixed = list(pi1 = 0.05, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params)
+
+plot_error_metric(summary_metrics, metric = "FDR_adjusted",
+                  x = "n", fixed = list(pi1 = 0.05, d = 1, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0, 0.2))
+```
+
+### By effect size (d)
+
+```{r}
+# By non-null fraction (recommended primary view)
+plot_error_metric(summary_metrics, metric = "rejection_rate",
+                  x = "d", fixed = list(n = 100, pi1 = 0.05, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0, 0.2))
+
+plot_error_metric(summary_metrics, metric = "false_positive_rate",
+                  x = "d", fixed = list(n = 100, pi1 = 0.05, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.04, 0.06))
+
+plot_error_metric(summary_metrics, metric = "power",
+                  x = "d", fixed = list(n = 100, pi1 = 0.05, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.9, 1))
+
+plot_error_metric(summary_metrics, metric = "FDR_unadjusted",
+                  x = "d", fixed = list(n = 100, pi1 = 0.05, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params)
+
+plot_error_metric(summary_metrics, metric = "FDR_adjusted",
+                  x = "d", fixed = list(n = 100, pi1 = 0.05, n_perm = 1000),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0, 0.2))
+```
+
+### By number of permutations
+
+```{r}
+# By non-null fraction (recommended primary view)
+plot_error_metric(summary_metrics, metric = "rejection_rate",
+                  x = "n_perm", fixed = list(n = 100, d = 1, pi1 = 0.05),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0, 0.2))
+
+plot_error_metric(summary_metrics, metric = "false_positive_rate",
+                  x = "n_perm", fixed = list(n = 100, d = 1, pi1 = 0.05),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.04, 0.06))
+
+plot_error_metric(summary_metrics, metric = "power",
+                  x = "n_perm", fixed = list(n = 100, d = 1, pi1 = 0.05),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0.9, 1))
+
+plot_error_metric(summary_metrics, metric = "FDR_unadjusted",
+                  x = "n_perm", fixed = list(n = 100, d = 1, pi1 = 0.05),
+                  alpha = 0.05, my_cols = my_cols, theme_params = theme_params)
+
+plot_error_metric(summary_metrics, metric = "FDR_adjusted",
+                  x = "n_perm", fixed = list(n = 100, d = 1, pi1 = 0.05),
+                  alpha = 0.01, my_cols = my_cols, theme_params = theme_params,
+                  ylim = c(0, 0.2))
+```
+
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

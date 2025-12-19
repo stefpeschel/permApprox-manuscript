@@ -1,0 +1,320 @@
+---
+title: "Generate Gaussian data for permutation-based p-value simulations"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output: github_document
+params:
+  name: "01_data_gen" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "5bde0cc7-05ce-483d-944a-feac8192384e")
+```
+
+```{r knitr-opts, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r pkgs}
+library(conflicted)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(furrr)
+library(progressr)
+
+conflicts_prefer(dplyr::filter, dplyr::select)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+## Parameter settings
+
+```{r}
+# Which part to generate this run: "accuracy" or "error"
+part <- "accuracy"
+
+# ---------------- Accuracy ----------------
+acc_n_fix      <- 100
+acc_n_vec      <- c(25, 50, 75, 100, 250, 500, 750, 1000)
+acc_d_fix      <- 1.0
+acc_d_vec      <- c(0.5, 1.0, 1.5, 2.0)
+acc_n_perm_fix <- 1000
+acc_n_perm_vec <- c(500, 1000, 5000, 10000)
+acc_n_test     <- 1
+acc_n_rep      <- 1000
+
+# ---------------- Error rates ----------------
+err_n_fix      <- 100
+err_n_vec      <- c(25, 50, 75, 100, 250, 500, 750, 1000)
+err_d_fix      <- 1.0
+err_d_vec      <- c(0.5, 1.0, 1.5, 2.0)
+err_n_perm_fix <- 1000
+err_n_perm_vec <- c(500, 1000, 5000, 10000)
+err_pi1_fix    <- 0.05
+err_pi1_vec    <- c(0.00, 0.01, 0.05, 0.10)  # non-null fractions
+err_n_test     <- 1000
+err_n_rep      <- 100
+
+# ---------------- Common distribution params ----------------
+mu2  <- 0
+sdev <- 1
+
+cores <- 8
+```
+
+This script generates normally distributed data used in simulation studies evaluating p-value approximation methods.
+
+* **Accuracy**: 1 test per replicate, 1000 replicates.
+  Files written to: `sim_accuracy_data/sim_accur_tstats_n{n}_d{d}.rds`
+
+* **Error rates**: 1000 tests per replicate, 100 replicates, with `n_alt` non-nulls per replicate.
+  Files written to: `sim_error_data/sim_error_tstats_n{n}_d{d}.rds`
+
+Both store, for each replicate, a matrix with columns:
+
+* `1:n_perm` = permutation t-statistics,
+* `tobs` = observed t-statistic,
+* `pttest` = parametric two-sample t-test p-value (equal-variance form).
+
+Got it! Here’s a **drop-in data-generation Rmd** that matches your updated plan:
+
+* Separate generator (no fitting).
+* **Accuracy** (1 test/rep, 1000 reps):
+  – vary **n** at **d=1** **and** vary **d** at **n=100**;
+  – **also vary `n_perm`** (vector) for both subsets.
+* **Error rates** (many tests/rep, fewer reps):
+  – vary **n** at **d=1** (with `pi1` vector),
+  – vary **d** at **n=100** (with `pi1` vector),
+  – plus the focused grid **(n=100, d=1)** with **`n_perm ∈ {1000, 5000, 10000}`** and **`pi1 ∈ {0, 0.01, 0.05, 0.10}`**.
+* Output per setting: an RDS list of length `n_rep`; each element is a matrix **`n_test × (n_perm+2)`** with columns `1:n_perm`, `tobs`, `pttest`.
+
+# Helpers
+
+```{r helpers}
+# One two-sample test: observed t, permutation t's, parametric t p (equal-variance)
+get_one_test <- function(n, mu1, mu2 = 0, sd = 1, n_perm = 1000) {
+  x1 <- rnorm(n, mean = mu1, sd = sd)
+  x2 <- rnorm(n, mean = mu2, sd = sd)
+
+  tobs <- (mean(x1) - mean(x2)) / sqrt((var(x1) + var(x2)) / n)
+  ptt  <- 2 * stats::pt(abs(tobs), df = 2*n - 2, lower.tail = FALSE)
+
+  x  <- c(x1, x2); nn <- length(x)
+  tperm <- numeric(n_perm)
+  for (b in seq_len(n_perm)) {
+    idx1 <- sample.int(nn, n, replace = FALSE)
+    x1p <- x[idx1]; x2p <- x[-idx1]
+    tperm[b] <- (mean(x1p) - mean(x2p)) / sqrt((var(x1p) + var(x2p)) / n)
+  }
+  list(tobs = tobs, tperm = tperm, pttest = ptt)
+}
+
+# Build matrix [n_test x (n_perm+2)] with columns 1:n_perm, "tobs", "pttest"
+make_panel_matrix <- function(n, mu1_vec, mu2 = 0, sd = 1, n_perm = 1000) {
+  n_test <- length(mu1_vec)
+  M <- matrix(NA_real_, nrow = n_test, ncol = n_perm + 2)
+  colnames(M) <- c(as.character(seq_len(n_perm)), "tobs", "pttest")
+  for (t in seq_len(n_test)) {
+    rs <- get_one_test(n, mu1 = mu1_vec[t], mu2 = mu2, sd = sd, n_perm = n_perm)
+    M[t, 1:n_perm] <- rs$tperm
+    M[t, "tobs"]   <- rs$tobs
+    M[t, "pttest"] <- rs$pttest
+  }
+  M
+}
+
+# Reproducible seed streams per (setting, rep) using L'Ecuyer-CMRG
+make_seed_stream <- function(n_streams, master_seed) {
+  set.seed(master_seed, kind = "L'Ecuyer-CMRG")
+  s <- .Random.seed
+  streams <- vector("list", n_streams)
+  for (i in seq_len(n_streams)) {
+    s <- parallel::nextRNGStream(s)
+    streams[[i]] <- s
+  }
+  streams
+}
+```
+
+## Accuracy
+
+We vary n at d=1, vary d at n=100, and vary n_perm.
+
+```{r}
+acc_grid_vary_n <- tidyr::crossing(
+  n      = acc_n_vec,
+  d      = acc_d_fix,
+  n_perm = acc_n_perm_fix
+)
+acc_grid_vary_d <- tidyr::crossing(
+  n      = acc_n_fix,
+  d      = acc_d_vec,
+  n_perm = acc_n_perm_fix
+)
+acc_grid_vary_nperm <- tibble(
+  n = acc_n_fix,
+  d = acc_d_fix,
+  n_perm = acc_n_perm_vec
+)
+
+acc_grid <- bind_rows(acc_grid_vary_n, acc_grid_vary_d, acc_grid_vary_nperm) %>%
+  distinct() %>%
+  mutate(n_test = acc_n_test,
+         n_rep  = acc_n_rep)
+```
+
+
+```{r accuracy, eval=FALSE}
+out_path <- path_target("sim_accuracy_data")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+with_progress({
+  p <- progressor(steps = nrow(acc_grid))
+
+  invisible(furrr::future_walk(
+    split(acc_grid, seq_len(nrow(acc_grid))),
+    function(row) {
+      row <- tibble::as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      n_rep  <- row$n_rep[[1]]
+
+      out_file <- file.path(
+        out_path,
+        sprintf("sim_acc_n%d_d%.1f_nperm%d.rds", n, d, n_perm)
+      )
+      if (file.exists(out_file)) { p(); return(invisible()) }
+
+      streams <- make_seed_stream(n_streams = n_rep, master_seed = 123456)
+      res_list <- vector("list", n_rep)
+
+      # Accuracy: 1 test per rep; if d>0 it's H1, if d==0 it's H0
+      for (r in seq_len(n_rep)) {
+        .Random.seed <<- streams[[r]]
+        mu1_vec <- d
+        mat <- make_panel_matrix(n = n, mu1_vec = mu1_vec,
+                                 mu2 = mu2, sd = sdev, n_perm = n_perm)
+        res_list[[r]] <- mat
+      }
+
+      saveRDS(res_list, file = out_file)
+      p()
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  ))
+})
+
+plan(sequential)
+```
+
+## Error rates
+
+Here, we vary n at d=1; vary d at n=100; plus focused n=100,d=1 with multiple n_perm & pi1.
+
+```{r}
+err_grid_vary_n <- tidyr::crossing(
+  n      = err_n_vec,
+  d      = err_d_fix,
+  n_perm = err_n_perm_fix,
+  pi1    = err_pi1_fix
+)
+
+err_grid_vary_d <- tidyr::crossing(
+  n      = err_n_fix,
+  d      = err_d_vec,
+  n_perm = err_n_perm_fix,
+  pi1    = err_pi1_fix
+)
+
+err_grid_vary_nperm <- tibble(
+  n      = err_n_fix,
+  d      = err_d_fix,
+  n_perm = err_n_perm_vec,
+  pi1    = err_pi1_fix
+)
+
+err_grid_vary_pi1 <- tibble(
+  n      = err_n_fix,
+  d      = err_d_fix,
+  n_perm = err_n_perm_fix,
+  pi1    = err_pi1_vec
+)
+
+err_grid <- bind_rows(err_grid_vary_n, err_grid_vary_d, 
+                      err_grid_vary_nperm, err_grid_vary_pi1) %>%
+  distinct() %>%
+  mutate(n_test = err_n_test,
+         n_rep  = err_n_rep)
+```
+
+
+```{r error, eval=FALSE}
+out_path <- path_target("sim_error_data")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+with_progress({
+  p <- progressor(steps = nrow(err_grid))
+
+  invisible(furrr::future_walk(
+    split(err_grid, seq_len(nrow(err_grid))),
+    function(row) {
+      row <- tibble::as_tibble(row)
+      n      <- row$n[[1]]
+      d      <- row$d[[1]]
+      n_perm <- row$n_perm[[1]]
+      pi1    <- row$pi1[[1]]
+      n_test <- row$n_test[[1]]
+      n_rep  <- row$n_rep[[1]]
+
+      out_file <- file.path(
+        out_path,
+        sprintf("sim_err_n%d_d%.1f_nperm%d_pi1%.2f.rds", n, d, n_perm, pi1)
+      )
+      
+      if (file.exists(out_file)) { p(); return(invisible()) }
+
+      streams <- make_seed_stream(n_streams = n_rep, 
+                                  master_seed = 123456)
+
+      res_list <- vector("list", n_rep)
+      n_alt <- round(n_test * pi1)
+      mu1_vec <- c(rep(d, n_alt), rep(0, n_test - n_alt))
+
+      for (r in seq_len(n_rep)) {
+        .Random.seed <<- streams[[r]]
+        mat <- make_panel_matrix(n = n, mu1_vec = mu1_vec,
+                                 mu2 = mu2, sd = sdev, n_perm = n_perm)
+        res_list[[r]] <- mat
+      }
+
+      saveRDS(res_list, file = out_file)
+      p()
+    },
+    .options = furrr::furrr_options(seed = TRUE)
+  ))
+})
+
+plan(sequential)
+```
+
+## Files written
+
+```{r list}
+projthis::proj_dir_info(path_target())
+```
