@@ -1,0 +1,2316 @@
+---
+title: "Differential abundance analysis with `dacomp` - EBF vs non-EBF"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "02_micro_diff_abund_breastf" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "bb9f8d89-5eb6-408d-acfc-729e640abec2")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.width = 10, 
+                      fig.height = 6, 
+                      dpi = 200,
+                      fig.path = paste0('figures/', params, "/app_dacomp_"),
+                      echo = FALSE)
+
+refit_permApprox <- FALSE
+```
+
+This notebook demonstrates how to perform **differential abundance analysis** of microbiome count data using the **`dacomp`** package.
+
+We use genus-level profiles from the **PASTURE** cohort (2-month samples). After basic prevalence filtering and defining two comparison groups (here, breastfeeding categories), we visualize the data (heatmaps, densities, histograms, ECDFs) and then apply **dacomp**:
+
+1. **Select a stable reference set of non-DA taxa**,  
+2. **Test all remaining taxa for differential abundance** using a Wilcoxon-based two-sample test with permutation p-values and DS-FDR correction.
+
+The example uses the **raw count data** for inference (as required by dacomp), while relative abundances are used only for visualization.
+
+In this notebook, we compare two breast feeding groups: 'EBF' (exclusive breast feeding until age 2 months) vs. 'non-EBF'.
+
+## Global options and packages
+
+```{r packages, message=FALSE, warning=FALSE}
+#remotes::install_github("stefpeschel/permApprox", ref = "develop")
+library(conflicted)
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(tibble)
+library(kableExtra)
+library(pheatmap)
+library(ggrepel)
+library(patchwork)
+
+# Differential abundance with dacomp
+library(dacomp)
+
+# p-value approximation with permApprox
+library(permApprox)
+
+conflicted::conflicts_prefer(dplyr::count, dplyr::filter, dplyr::select, 
+                             stats::var, dplyr::setdiff)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+
+## Load data & set parameters
+
+```{r load_data}
+bact_phylo <- readRDS(path_source("PASTURE_data", paste0("bact_2m_genus.rds")))
+sampdata    <- sample_data(bact_phylo) %>% as("data.frame")
+bact_phylo
+```
+
+```{r}
+# Rename "24_Enterobacteriaceae(F)"
+taxtab <- tax_table(bact_phylo)
+Genus <- taxtab[, "Genus"]
+Genus[Genus == "24_Enterobacteriaceae(F)"] <- "Enterobacteriaceae(F)"
+taxtab[, "Genus"] <- Genus
+
+tax_table(bact_phylo) <- taxtab
+taxa_names(bact_phylo) <- Genus
+```
+
+## Data preprocessing
+
+### Taxa prevalence (including zero counts)
+
+```{r expl_prevalence_hist}
+# Total number of samples
+n_samples <- nsamples(bact_phylo)
+
+# Compute number of samples where each taxon is observed (abundance > 0)
+taxa_prevalence <- apply(otu_table(bact_phylo), 1, function(x) sum(x > 0))
+
+# Build dataframe
+prevalence_df <- tibble(
+  taxon = names(taxa_prevalence),
+  prevalence = taxa_prevalence,
+  prevalence_pct = 100 * taxa_prevalence / n_samples
+)
+
+# Plot histogram (absolute counts)
+ggplot(prevalence_df, aes(x = prevalence)) +
+  geom_histogram(binwidth = 5, fill = "#1F78B4", color = "white", alpha = 0.8) +
+  labs(
+    title = "Taxon prevalence across samples",
+    x = "Number of samples with abundance > 0",
+    y = "Number of taxa"
+  ) +
+  theme_minimal()
+```
+
+### Prevalence threshold
+
+```{r expl_prevalence_hist_filter}
+bact_phylo  <- prune_taxa(taxa_sums(bact_phylo) > 0, bact_phylo)
+
+ggplot(prevalence_df, aes(x = prevalence_pct)) +
+  geom_histogram(binwidth = 2, fill = "#1F78B4", color = "white", alpha = 0.8) +
+  geom_vline(aes(xintercept = 1, color = "1% threshold"), 
+             linetype = "dashed", linewidth = 0.8) +
+  geom_vline(aes(xintercept = 5, color = "5% threshold"), 
+             linetype = "dashed", linewidth = 0.8) +
+  scale_color_manual(
+    name = "Prevalence thresholds",
+    values = c("1% threshold" = "orange", "5% threshold" = "red")
+  ) +
+  labs(
+    title = "Taxon prevalence across samples (including zero-abundance taxa)",
+    x = "Prevalence (% of samples)",
+    y = "Number of taxa"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 11)
+  )
+```
+
+### Taxa filtering
+
+We keep only taxa with a non-zero count in at least 1% of the samples.
+
+```{r}
+# Minimum prevalence threshold (5% of total samples)
+prev_threshold <- 0.01 * nsamples(bact_phylo)
+
+# Compute prevalence per taxon
+taxa_prevalence <- apply(otu_table(bact_phylo), 1, function(x) sum(x > 0))
+
+# Filter taxa with prevalence >= threshold
+keep_taxa <- taxa_prevalence >= prev_threshold
+
+# Prune the phyloseq object
+bact_phylo <- prune_taxa(keep_taxa, bact_phylo)
+bact_phylo
+```
+
+### Define comparison groups
+
+```{r}
+cat("breast_excl_cat1:")
+table(sampdata$breast_excl_cat1)
+
+# Build new variable with categories EBF and non-EBF
+sampdata <- sampdata %>%
+  mutate(BF_cat = case_when(
+    breast_excl_cat1 == "0" ~ "non-EBF",
+    breast_excl_cat1 == ">=2" ~ "EBF",
+    TRUE ~ NA_character_
+  ))
+sample_data(bact_phylo) <- sampdata
+cat("\nNew variable:")
+table(sampdata$BF_cat)
+```
+
+```{r}
+## Global color palette (consistent across all plots)
+col_group1 <- "#1f77b4"     # blue
+col_group2 <- "darkorange2" # orange
+
+palette_groups <- c("non-EBF" = col_group1, 
+                    "EBF"     = col_group2)
+
+# New variable
+comp_var <- "BF_cat"
+
+# Extract the vector to split on
+var_vec <- sampdata[[comp_var]]
+names(var_vec) <- rownames(sampdata)
+
+comp_val1 <- label1 <- "non-EBF"
+comp_val2 <- label2 <- "EBF"
+
+# categorical split by values
+group1_ids <- rownames(sampdata)[var_vec %in% comp_val1]
+group2_ids <- rownames(sampdata)[var_vec %in% comp_val2]
+
+# # make group sizes equal
+# set.seed(42)
+# min_length <- min(length(group1_ids), length(group2_ids))
+# group2_ids <- sample(group2_ids, min_length, replace = FALSE)
+
+# Prune phyloseq objects for each group
+bact_g1 <- prune_samples(group1_ids, bact_phylo)
+bact_g2 <- prune_samples(group2_ids, bact_phylo)
+
+# Create a tibble for plotting the distribution of comp_var
+dist_df <- tibble(
+  sample = names(var_vec),
+  value  = var_vec,
+  group  = case_when(
+    sample %in% group1_ids ~ label1,
+    sample %in% group2_ids ~ label2,
+    TRUE                   ~ "Other"
+  )
+) %>%
+  mutate(group = factor(group, levels = c(label1, "Other", label2)))
+
+# Numeric: histogram of values
+p_dist <- ggplot(dist_df, aes(x = group, fill = group)) +
+  geom_histogram(bins = 30, color = "black", alpha = .6) +
+  scale_fill_manual(values = palette_groups) +
+  labs(x = comp_var, y = "Count")
+```
+
+
+```{r expl_group_sizes, fig.width=5, fig.height=5, dpi=200}
+# Categorical: bar plot
+ggplot(dist_df %>% filter(group != "Other"),  # optional: drop "Other"
+                 aes(x = base::as.factor(group), fill = group)) +
+  geom_bar(color = "black", alpha = .6, position = "dodge") +
+  scale_fill_manual(values = palette_groups) +
+  labs(x = "", y = "Sample count") +
+  theme_minimal() +
+  theme(legend.position="none",
+        axis.text  = element_text(size = 12),
+        axis.title = element_text(size = 14))
+```
+
+```{r}
+cat("Samples in group 1:", nsamples(bact_g1), "\n")
+cat("Samples in group 2:", nsamples(bact_g2))
+```
+
+### Relative abundance transformation
+
+```{r}
+## Absolute counts
+counts_g1 <- t(as(otu_table(bact_g1), "matrix"))
+counts_g2 <- t(as(otu_table(bact_g2), "matrix"))
+
+# Compute relative abundances per sample
+abund_rel_g1 <- counts_g1 / rowSums(counts_g1)
+abund_rel_g2 <- counts_g2 / rowSums(counts_g2)
+
+# Combine abundance matrices for the two groups
+abund_rel_combined <- rbind(abund_rel_g1, abund_rel_g2)
+
+# Assign group labels
+sample_labels <- c(rep(label1, nrow(abund_rel_g1)),
+                   rep(label2, nrow(abund_rel_g2)))
+
+```
+
+
+## Data exploration
+
+```{r}
+# Top 20 overall taxa
+top_taxa <- names(sort(taxa_sums(bact_phylo), decreasing = TRUE))[1:20]
+
+mat1 <- abund_rel_g1[, top_taxa]
+mat2 <- abund_rel_g2[, top_taxa]
+
+combined <- rbind(mat1, mat2)
+labels   <- c(rep(label2, nrow(mat2)), rep(label1, nrow(mat1)))
+
+plot_df <- as.data.frame(combined) %>%
+  rownames_to_column("sample") %>%
+  mutate(group = labels) %>%
+  pivot_longer(-c(sample, group), names_to = "taxon", values_to = "abundance") %>%
+  mutate(taxon_short = stringr::str_trunc(taxon, width = 15, side = "right"))
+
+# Ensure order of facets follows the order in `top_taxa`
+top_taxa_short <- stringr::str_trunc(top_taxa[1:6], width = 15, side = "right")
+
+# Set taxon_short as a factor with desired levels
+plot_df <- plot_df %>%
+  mutate(taxon_short = factor(taxon_short, levels = top_taxa_short))
+```
+
+### Library sizes
+
+```{r expl_library_sizes, fig.width=5, fig.height=5, dpi=200}
+lib_sizes_df <- tibble(
+  sample   = c(rownames(counts_g1), rownames(counts_g2)),
+  group    = factor(c(rep(label1, nrow(counts_g1)),
+                      rep(label2, nrow(counts_g2))),
+                    levels = c(label1, label2)),
+  lib_size = c(rowSums(counts_g1),
+               rowSums(counts_g2))
+)
+
+ggplot(lib_sizes_df, aes(x = group, y = lib_size, fill = group)) +
+  geom_boxplot(alpha = 0.8, outlier.shape = NA) +
+  geom_jitter(width = 0.15, alpha = 0.4, size = 1) +
+  scale_fill_manual(values = palette_groups) +
+  labs(
+    #title = "Library sizes by group",
+    x = NULL,
+    y = "Total read count per sample"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position="none",
+    axis.text  = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+```
+
+### Prevalence vs mean relative abundance
+
+```{r expl_prev_mean_scatter, fig.width=6, fig.height=4, dpi=200}
+## Prevalence and mean relative abundance within the selected samples
+rel_comb <- rbind(abund_rel_g1, abund_rel_g2)
+
+prev_vec <- colSums(rel_comb > 0)
+n_sel    <- nrow(rel_comb)
+
+prev_mean_df <- tibble(
+  taxon        = colnames(rel_comb),
+  prevalence   = prev_vec / n_sel,
+  mean_rel_ab  = colMeans(rel_comb)
+)
+
+ggplot(prev_mean_df,
+       aes(x = prevalence, y = mean_rel_ab)) +
+  geom_point(alpha = 0.6) +
+  scale_y_log10() +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    #title = "Prevalence vs mean relative abundance",
+    x = "Prevalence (proportion of selected samples with > 0 counts)",
+    y = "Mean relative abundance (log10 scale)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position="none",
+    axis.text  = element_text(size = 12),
+    axis.title = element_text(size = 12)
+  )
+```
+
+
+### Alpha diversity
+
+```{r}
+# Restrict to the samples used in the dacomp comparison
+bact_alpha <- prune_samples(c(group1_ids, group2_ids), bact_phylo)
+
+# Standard alpha diversity estimates from phyloseq
+alpha_est <- estimate_richness(
+  bact_alpha,
+  measures = c("Observed", "Shannon", "InvSimpson")
+) %>%
+  tibble::rownames_to_column("sample")
+
+# Map sample IDs to group labels used in the dacomp script
+alpha_df <- alpha_est %>%
+  dplyr::mutate(
+    GiniSimpson = 1 - 1 / InvSimpson
+  ) %>%
+  dplyr::left_join(
+    tibble::tibble(
+      sample = c(group1_ids, group2_ids),
+      group  = c(rep(label1, length(group1_ids)),
+                 rep(label2, length(group2_ids)))
+    ),
+    by = "sample"
+  ) %>%
+  dplyr::mutate(
+    group = factor(group, levels = c(label1, label2))
+  )
+
+head(alpha_df)
+```
+
+```{r}
+plot_alpha_metric <- function(df, metric, ylab,
+                              palette = palette_groups,
+                              title = NULL,
+                              jitter_width = 0.1) {
+  
+  stopifnot(metric %in% names(df))
+  
+  # Wilcoxon rank-sum test between the two groups
+  wt <- wilcox.test(df[[metric]] ~ df$group)
+  pval <- wt$p.value
+  
+  y_max   <- max(df[[metric]], na.rm = TRUE)
+  y_line  <- y_max * 1.05
+  y_label <- y_max * 1.10
+  
+  ggplot(df, aes(x = group, y = .data[[metric]], fill = group)) +
+    # Jittered points
+    geom_jitter(width = jitter_width,
+                size = 1.6,
+                alpha = 0.7,
+                stroke = 0,
+                aes(color = group)) +
+    # Boxplot (median + IQR)
+    geom_boxplot(alpha = 0.6,
+                 width = 0.4,
+                 outlier.shape = NA) +
+    # Bracket + p-value
+    geom_segment(aes(x = 1, xend = 2,
+                     y = y_line, yend = y_line),
+                 inherit.aes = FALSE) +
+    annotate("text",
+             x = 1.5, y = y_label, size = 5,
+             label = paste0("p = ", signif(pval, 3))) +
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette) +
+    labs(
+      x = NULL,
+      y = ylab,
+      title = title
+    ) +
+    coord_cartesian(ylim = c(0, y_label * 1.05)) +
+    theme_minimal() +
+    theme(
+      #legend.position = "none",
+      axis.text  = element_text(size = 14),
+      axis.text.x = element_blank(),
+      axis.title.y = element_text(size = 14),
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 14),
+      plot.title   = element_text(size = 14, face = "bold"),
+      panel.grid.minor = element_blank()
+    )
+}
+
+```
+
+#### Richness (Observed genera)
+
+```{r expl_alpha_richness}
+p_alpha_richness <- plot_alpha_metric(
+  alpha_df,
+  metric = "Observed",
+  ylab   = "Richness (genera)"
+  #title  = "Alpha diversity: richness"
+)
+p_alpha_richness
+```
+
+#### Shannon diversity
+
+```{r expl_alpha_shannon}
+p_alpha_shannon <- plot_alpha_metric(
+  alpha_df,
+  metric = "Shannon",
+  ylab   = "Shannon index"
+  #title  = "Alpha diversity: Shannon"
+)
+p_alpha_shannon
+
+```
+
+#### Gini–Simpson index
+
+```{r expl_alpha_gini_simpson}
+p_alpha_gini <- plot_alpha_metric(
+  alpha_df,
+  metric = "GiniSimpson",
+  ylab   = "Gini–Simpson index"
+  #title  = "Alpha diversity: evenness"
+)
+p_alpha_gini
+```
+
+#### Alpha diversity combined
+
+```{r expl_alpha_diversity, fig.width=11, fig.height=6, dpi=200}
+p_alpha_richness + p_alpha_shannon + p_alpha_gini +
+  plot_layout(guides = 'collect')
+```
+
+
+### Heatmap
+
+```{r heatmap_top20_unclust, fig.width=10, fig.height=5, dpi=200}
+# Combine abundance matrices for the two groups
+abund_rel_combined <- rbind(abund_rel_g1, abund_rel_g2)
+
+# Assign group labels
+sample_labels <- c(rep(label1, nrow(abund_rel_g1)),
+                   rep(label2, nrow(abund_rel_g2)))
+
+# Get top 20 most abundant taxa in the *full* dataset
+top_taxa <- names(sort(taxa_sums(bact_phylo), decreasing = TRUE))[1:20]
+
+# Select only top taxa from the combined matrix
+heatmap_mat <- abund_rel_combined[, top_taxa]
+
+# Annotation data for the columns
+annotation_col <- data.frame(group = factor(sample_labels))
+rownames(annotation_col) <- rownames(heatmap_mat)
+
+annotation_colors = list(group = palette_groups)
+
+# Heatmap (non-clustered)
+pheatmap(
+  t(heatmap_mat),  # transpose: taxa as rows
+  annotation_col = annotation_col,
+  annotation_colors = annotation_colors,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  main = paste("Relative abundances (Top 20 taxa:", label1, "vs", label2, ")")
+)
+```
+
+```{r heatmap_top20_clust, fig.width=10, fig.height=5, dpi=200}
+# Heatmap (clustered)
+pheatmap(
+  t(heatmap_mat),  # transpose: taxa as rows
+  annotation_col = annotation_col,
+  annotation_colors = annotation_colors,  show_rownames = TRUE,
+  show_colnames = FALSE,
+  cluster_rows = FALSE,
+  cluster_cols = TRUE,
+  main = paste("Relative abundances (Top 20 taxa:", label1, "vs", label2, ")")
+)
+```
+
+### Mean composition - Phylum level
+
+```{r expl_mean_composition_phylum, fig.width=7, fig.height=5, dpi=200}
+## ----- Aggregate genus-level relative abundances to Phylum -----
+
+tax_tab <- as.data.frame(tax_table(bact_phylo))
+
+# Map genus taxa (rows of tax_tab) to Phylum
+genus_to_phylum <- tax_tab$Phylum
+names(genus_to_phylum) <- rownames(tax_tab)
+
+# Helper to aggregate one group to phylum
+aggregate_to_phylum <- function(abund_rel_mat) {
+  abund_rel_mat %>%
+    as.data.frame() %>%
+    mutate(sample = rownames(.)) %>%
+    tidyr::pivot_longer(
+      cols      = -sample,
+      names_to  = "taxon",
+      values_to = "rel_abund"
+    ) %>%
+    dplyr::mutate(phylum = genus_to_phylum[taxon]) %>%
+    dplyr::group_by(sample, phylum) %>%
+    dplyr::summarise(rel_abund = sum(rel_abund), .groups = "drop") %>%
+    tidyr::pivot_wider(
+      names_from  = phylum,
+      values_from = rel_abund,
+      values_fill = 0
+    )
+}
+
+phylum_mat_g1 <- aggregate_to_phylum(abund_rel_g1)
+phylum_mat_g2 <- aggregate_to_phylum(abund_rel_g2)
+
+phylum_g1 <- as.matrix(phylum_mat_g1[, -1, drop = FALSE])
+phylum_g2 <- as.matrix(phylum_mat_g2[, -1, drop = FALSE])
+
+## ----- Group-wise mean relative abundances at Phylum level -----
+
+mean_phylum_g1 <- colMeans(phylum_g1)
+mean_phylum_g2 <- colMeans(phylum_g2)
+
+mean_phylum_df <- tibble::tibble(
+  phylum       = colnames(phylum_g1),
+  mean_rel_g1  = mean_phylum_g1,
+  mean_rel_g2  = mean_phylum_g2
+) %>%
+  dplyr::mutate(overall_mean = (mean_rel_g1 + mean_rel_g2) / 2) %>%
+  dplyr::arrange(dplyr::desc(overall_mean))
+
+mean_phylum_long <- mean_phylum_df %>%
+  dplyr::select(phylum, mean_rel_g1, mean_rel_g2) %>%
+  tidyr::pivot_longer(
+    cols      = dplyr::starts_with("mean_rel_"),
+    names_to  = "group",
+    values_to = "rel_abund"
+  ) %>%
+  dplyr::mutate(
+    group = dplyr::recode(
+      group,
+      "mean_rel_g1" = label1,   # non-EBF
+      "mean_rel_g2" = label2    # EBF
+    )
+  )
+
+## ----- Color palette: 7 phyla, all shown -----
+
+# Okabe–Ito 7-color palette
+base_cols <- c(
+  "#E69F00", # orange
+  "#56B4E9", # light blue
+  "#009E73", # green
+  "#F0E442", # yellow
+  "#0072B2", # blue
+  "#D55E00", # red
+  "#CC79A7"  # purple
+)
+
+phylum_levels <- unique(mean_phylum_long$phylum)
+# assumes length(phylum_levels) <= 7
+phylum_colors <- setNames(base_cols[seq_along(phylum_levels)], phylum_levels)
+
+## ----- Plot: stacked bar chart at Phylum level -----
+
+ggplot(mean_phylum_long,
+       aes(x = group, y = rel_abund, fill = phylum)) +
+  geom_bar(stat = "identity", position = "stack", color = "white") +
+  scale_fill_manual(values = phylum_colors, name = "Phylum") +
+  labs(
+    title = "Mean phylum composition",
+    x     = NULL,
+    y     = "Relative abundance (mean across samples)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text    = element_text(size = 14),
+    axis.title   = element_text(size = 14),
+    plot.title   = element_text(size = 15, face = "bold"),
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 14)
+  )
+```
+
+Firmucutes are increased in non-EBF, which is in line with other studies. 
+
+### Mean composition - Genus level
+
+```{r expl_mean_composition_genus, fig.width=7, fig.height=5, dpi=200}
+## Mean relative abundances per group (using dacomp samples)
+
+mean_rel_g1 <- colMeans(abund_rel_g1)
+mean_rel_g2 <- colMeans(abund_rel_g2)
+
+mean_rel_df <- tibble::tibble(
+  taxon       = colnames(abund_rel_g1),
+  mean_rel_g1 = mean_rel_g1,
+  mean_rel_g2 = mean_rel_g2
+) %>%
+  dplyr::mutate(
+    overall_mean = (mean_rel_g1 + mean_rel_g2) / 2
+  ) %>%
+  dplyr::arrange(dplyr::desc(overall_mean))
+
+# Number of top genera to show explicitly
+K <- 7
+
+top_taxa <- mean_rel_df$taxon[1:K]
+
+mean_rel_long <- mean_rel_df %>%
+  dplyr::select(taxon, mean_rel_g1, mean_rel_g2) %>%
+  tidyr::pivot_longer(
+    cols      = starts_with("mean_rel_"),
+    names_to  = "group",
+    values_to = "rel_abund"
+  ) %>%
+  dplyr::mutate(
+    group = dplyr::recode(
+      group,
+      "mean_rel_g1" = label1,
+      "mean_rel_g2" = label2
+    ),
+    taxon_plot = dplyr::if_else(taxon %in% top_taxa, taxon, "Other")
+  ) %>%
+  dplyr::group_by(group, taxon_plot) %>%
+  dplyr::summarise(
+    rel_abund = sum(rel_abund),
+    .groups   = "drop"
+  ) %>%
+  dplyr::group_by(group) %>%
+  dplyr::mutate(
+    rel_abund = rel_abund / sum(rel_abund)
+  ) %>%
+  dplyr::ungroup()
+
+# Order taxa so that "Other" is last in the legend
+ordered_taxa <- c(top_taxa, "Other")
+mean_rel_long$taxon_plot <- factor(mean_rel_long$taxon_plot,
+                                   levels = ordered_taxa)
+
+# Okabe–Ito palette for taxa (you can adjust / reuse your existing colors)
+cb_palette <- c(
+  "#E69F00", # orange
+  "#56B4E9", # light blue
+  "#009E73", # green
+  "#F0E442", # yellow
+  "#0072B2", # blue
+  "#D55E00", # red
+  "#CC79A7"  # purple
+)
+cb_other <- "#999999"   # grey for "Other"
+
+taxa_colors <- c(cb_palette, cb_other)
+names(taxa_colors) <- ordered_taxa
+
+ggplot(mean_rel_long,
+       aes(x = group, y = rel_abund, fill = taxon_plot)) +
+  geom_bar(stat = "identity", position = "stack", color = "white") +
+  scale_fill_manual(values = taxa_colors, name = "Genus") +
+  labs(
+    title = paste("Mean genus composition (top", K, "genera)"),
+    x     = NULL,
+    y     = "Relative abundance (mean across samples)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text    = element_text(size = 14),
+    axis.title   = element_text(size = 14),
+    plot.title   = element_text(size = 15, face = "bold"),
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 14)
+  )
+```
+
+## dacomp - Differential abundance analysis
+
+### Build count matrix and phenotype vector
+
+```{r dacomp_data_prep}
+# Combine counts into one matrix X: rows = samples, columns = taxa
+X_counts <- rbind(counts_g1, counts_g2)
+
+# Phenotype / group labels corresponding to the rows of X_counts
+y_groups <- factor(
+  c(rep(label1, nrow(counts_g1)),
+    rep(label2, nrow(counts_g2))),
+  levels = c(label1, label2)
+)
+
+dim(X_counts)
+table(y_groups)
+```
+
+### Select reference taxa
+
+```{r dacomp_select_refs}
+set.seed(42)
+
+# Reference selection:
+# You can tweak minimal_TA and/or median_SD_threshold.
+res_refs <- dacomp.select_references(
+  X = X_counts,
+  minimal_TA = 50,          # ensure enough counts under reference set
+  verbose   = TRUE
+)
+
+res_refs
+length(res_refs$selected_references)
+
+tax_names <- colnames(X_counts)
+cat("Reference taxa: \n")
+tax_names[res_refs$selected_references]
+
+# Diagnostic plot of reference scores
+dacomp.plot_reference_scores(res_refs)
+```
+
+Of the 118 taxa, 93 are selected as reference. 
+
+```{r dacmp_prev_var_plot, fig.width=6, fig.height=4, dpi=200}
+## Prevalence–variance plot for genus level (à la Sommer et al.)
+
+# X_counts: samples x taxa (same object you use for dacomp)
+X <- X_counts
+
+n_samples <- nrow(X)
+
+## 1) Prevalence: proportion of samples with count > 0
+taxa_prev <- colSums(X > 0) / n_samples
+
+## 2) Variance of log((x + 1)/sum(x)) across samples
+#    (this matches: transform_sample_counts(ps, function(x) log((x+1)/sum(x))))
+X_logrel <- log(
+  sweep(X + 1, 1, rowSums(X), FUN = "/")
+)
+
+taxa_var <- apply(X_logrel, 2, var, na.rm = TRUE)
+
+## 3) Classification into "reference" vs "test" using the same thresholds
+##    as in the script you showed (for genus level):
+##        variance < 2  &  prevalence > 0.9
+is_ref_rule <- (taxa_var < 2) & (taxa_prev > 0.9)
+
+prev_var_df <- tibble(
+  taxon      = colnames(X),
+  prevalence = taxa_prev,
+  variance   = taxa_var,
+  is_ref     = is_ref_rule
+)
+
+ggplot(prev_var_df,
+       aes(x = prevalence, y = variance)) +
+  geom_point(aes(color = is_ref), size = 1.5, alpha = 0.9) +
+  geom_vline(xintercept = 0.9, linetype = "dashed") +
+  geom_hline(yintercept = 2,   linetype = "dashed") +
+  scale_color_manual(
+    values = c(`FALSE` = "darkgrey", `TRUE` = "red"),
+    labels = c(`FALSE` = "test", `TRUE` = "reference"),
+    name   = NULL
+  ) +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "Reference selection rule at genus level",
+    x     = "Prevalence (proportion of samples with count > 0)",
+    y     = "Variance of log((x + 1)/sum(x))"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position  = "right",
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r dacomp_prev_var_with_refs, fig.width=6, fig.height=4, dpi=200}
+# X_counts: samples x taxa used in dacomp
+X <- X_counts
+n_samples <- nrow(X)
+
+## 1) Prevalence: proportion of samples with count > 0
+taxa_prev <- colSums(X > 0) / n_samples
+
+## 2) Variance of log((x + 1)/sum(x)) across samples
+X_logrel <- log(
+  sweep(X + 1, 1, rowSums(X), FUN = "/")
+)
+taxa_var <- apply(X_logrel, 2, var, na.rm = TRUE)
+
+## 4) dacomp-selected references (indices in columns of X)
+dacomp_idx  <- res_refs$selected_references
+is_dacomp_ref <- seq_along(colnames(X)) %in% dacomp_idx
+
+## 5) Combine into a single factor for coloring
+prev_var_df <- tibble(
+  taxon        = colnames(X),
+  prevalence   = taxa_prev,
+  variance     = taxa_var,
+  dacomp_ref   = is_dacomp_ref,
+  ref_type     = case_when(
+    dacomp_ref              ~ "reference",
+    TRUE                    ~ "test"
+  )
+)
+
+ggplot(prev_var_df,
+       aes(x = prevalence, y = variance)) +
+  geom_point(aes(color = ref_type), size = 1.6, alpha = 0.9) +
+  scale_color_manual(
+    values = c(
+      "test"                = "darkgrey",
+      "reference"     = "forestgreen"
+    ),
+    name = NULL
+  ) +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+  #geom_vline(xintercept = 0.9, linetype = "dashed") +
+  #geom_hline(yintercept = 2,   linetype = "dashed") +
+  labs(
+    title = "Prevalence–variance and reference selection (genus level)",
+    x     = "Prevalence (proportion of samples with count > 0)",
+    y     = "Variance of log((x + 1)/sum(x))"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position  = "right",
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r dacomp_prev_vs_score, fig.width=6, fig.height=4, dpi=200}
+X <- X_counts
+n_samples <- nrow(X)
+
+# Prevalence (same definition as before)
+taxa_prev <- colSums(X > 0) / n_samples
+
+df_prev_score <- tibble::tibble(
+  taxon      = colnames(X),
+  prevalence = taxa_prev,
+  score      = res_refs$scores,
+  is_ref     = seq_along(colnames(X)) %in% res_refs$selected_references
+)
+
+## taxa to annotate
+taxa_to_annotate <- df_prev_score %>%
+  dplyr::filter(is_ref & prevalence >= 0.25) %>%
+  # dplyr::arrange(dplyr::desc(score)) %>%
+  # dplyr::slice(1:5) %>%
+  dplyr::pull(taxon)
+
+ggplot(df_prev_score,
+       aes(x = prevalence, y = score)) +
+  geom_point(aes(color = is_ref), size = 1.7, alpha = 0.9) +
+  scale_color_manual(
+    values = c(`FALSE` = "darkgrey", `TRUE` = "forestgreen"),
+    labels = c(`FALSE` = "test", `TRUE` = "reference"),
+    name   = NULL
+  ) +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "Prevalence vs dacomp score (genus level)",
+    x     = "Prevalence (proportion of samples with count > 0)",
+    y     = "dacomp median SD score"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position  = "right"
+  ) +
+  ggrepel::geom_text_repel(
+    data = subset(df_prev_score, taxon %in% taxa_to_annotate),
+    aes(label = taxon),
+    size          = 3,
+    box.padding   = 0.3,
+    point.padding = 0.5,
+    min.segment.length = 0,
+    max.overlaps  = Inf,
+    segment.alpha = 0.6
+  )
+
+```
+
+### Run dacomp test
+
+```{r dacomp_test}
+# DS-FDR target
+q_DSFDR <- 0.1
+
+res_dacomp <- dacomp.test(
+  X                  = X_counts,
+  y                  = y_groups,
+  ind_reference_taxa = res_refs,
+  test               = DACOMP.TEST.NAME.WILCOXON,
+  nr_perm            = 1000,
+  q                  = q_DSFDR,
+  verbose            = TRUE,
+  return_rarefied_values = TRUE,
+  Test_All           = TRUE
+)
+
+# Taxon IDs (columns of X_counts are taxa)
+taxa_ids <- colnames(X_counts)
+
+# Create a tibble with p-values and DS-FDR calls
+res_dacomp_tbl <- tibble(
+  taxon        = taxa_ids,
+  stat_dacomp  = res_dacomp$stats_matrix[1, ],
+  p_dacomp     = res_dacomp$p.values.test,
+  p_dacomp_adj = res_dacomp$p.values.test.adjusted,
+  is_reference = seq_along(taxa_ids) %in% res_refs$selected_references
+)
+```
+
+## permApprox - robust ftr
+
+```{r}
+stats_mat  <- res_dacomp$stats_matrix
+obs_stats  <- stats_mat[1, ]        # length = number of taxa
+perm_stats <- stats_mat[-1, , drop = FALSE]  # nr_perm x taxa matrix
+colnames(perm_stats) <- res_dacomp_tbl$taxon
+dim(stats_mat)
+```
+
+### permApprox – unconstrained GPD
+
+```{r permApprox_unconstr_ftr}
+fname_pApp_unconstr <- path_target("permapprox_unconstr_ftr.rds")
+
+if (!file.exists(fname_pApp_unconstr) || refit_permApprox) {
+  
+  gpd_ctrl_unconstr <- make_gpd_ctrl(
+    fit_method    = "lme",
+    include_obs   = FALSE,
+    constraint    = "unconstrained",
+    thresh_method = "rob_ftr",
+    exceed0       = 0.25,
+    exceed0_min   = 250,
+    exceed_min    = 10,
+    thresh_step   = 10
+  )
+  
+  papprox_unconstr_ftr <- perm_approx(
+    obs_stats     = obs_stats,
+    perm_stats    = perm_stats,     # dim: n_perm x n_taxa
+    alternative   = "two_sided",
+    approx_thresh = 0.1,
+    method        = "gpd",
+    gpd_ctrl      = gpd_ctrl_unconstr,
+    adjust_method = "BH",
+    cores         = 1,
+    verbose       = TRUE
+  )
+  
+  saveRDS(papprox_unconstr_ftr, file = fname_pApp_unconstr)
+} else {
+  papprox_unconstr_ftr <- readRDS(fname_pApp_unconstr)
+}
+
+```
+
+### permApprox – constrained GPD (SLLS)
+
+```{r permApprox_constr_ftr}
+## CONSTRAINED GPD FIT (support_at_obs + SLLS)
+fname_pApp_constr <- path_target("permapprox_constr_ftr.rds")
+
+if (!file.exists(fname_pApp_constr) || refit_permApprox) {
+  
+  sampsize <- min(nrow(counts_g1), nrow(counts_g2))  # for SLLS rule
+  
+  gpd_ctrl_constr <- make_gpd_ctrl(
+    fit_method    = "lme",
+    include_obs   = FALSE,
+    constraint    = "support_at_obs",
+    sample_size   = sampsize,
+    thresh_method = "rob_ftr",
+    exceed0       = 0.25,
+    exceed0_min   = 250,
+    exceed_min    = 10,
+    thresh_step   = 10
+  )
+  
+  papprox_constr_ftr <- perm_approx(
+    obs_stats     = obs_stats,
+    perm_stats    = perm_stats,     # dim: n_perm x n_taxa
+    alternative   = "two_sided",
+    approx_thresh = 0.1,
+    method        = "gpd",
+    gpd_ctrl      = gpd_ctrl_constr,
+    adjust_method = "BH",
+    cores         = 1,
+    verbose       = TRUE
+  )
+  
+  saveRDS(papprox_constr_ftr, file = fname_pApp_constr)
+} else {
+  papprox_constr_ftr <- readRDS(fname_pApp_constr)
+}
+```
+
+### Combine dacomp and permApprox results
+
+```{r}
+## Add permApprox p-values (empirical + GPD-based)
+res_tbl_ftr <- res_dacomp_tbl %>%
+  mutate(
+    p_dacomp_adj       = NULL,
+    p_emp_pApp         = papprox_unconstr_ftr$p_empirical,
+    p_perm_pApp_uncon  = papprox_unconstr_ftr$p_unadjusted,
+    method_pApp_uncon  = papprox_unconstr_ftr$method_used,
+    status_pApp_uncon  = papprox_unconstr_ftr$fit_result$status,
+    p_perm_pApp_constr = papprox_constr_ftr$p_unadjusted,
+    method_pApp_constr = papprox_constr_ftr$method_used
+  )
+
+res_tbl_adj_ftr <- res_dacomp_tbl %>%
+  mutate(
+    p_dacomp           = ifelse(is.infinite(p_dacomp_adj), 1, p_dacomp_adj),
+    p_dacomp_adj       = NULL,
+    p_emp_pApp         = papprox_unconstr_ftr$p_empirical,
+    p_perm_pApp_uncon  = papprox_unconstr_ftr$p_values,
+    method_pApp_uncon  = papprox_unconstr_ftr$method_used,
+    p_perm_pApp_constr = papprox_constr_ftr$p_values,
+    method_pApp_constr = papprox_constr_ftr$method_used
+  )
+
+## log2 fold-change
+rel_counts <- X_counts / rowSums(X_counts)
+group_means <- aggregate(rel_counts,
+                         by = list(group = y_groups),
+                         FUN = mean)
+mean_g1 <- as.numeric(group_means[group_means$group == label1, -1])
+mean_g2 <- as.numeric(group_means[group_means$group == label2, -1])
+eps <- 1e-6
+
+res_tbl_ftr <- res_tbl_ftr %>%
+  mutate(
+    mean_rel_g1 = mean_g1,
+    mean_rel_g2 = mean_g2,
+    log2_fc     = log2((mean_g2 + eps) / (mean_g1 + eps))
+  )
+
+res_tbl_adj_ftr <- res_tbl_adj_ftr %>%
+  mutate(
+    mean_rel_g1 = mean_g1,
+    mean_rel_g2 = mean_g2,
+    log2_fc     = log2((mean_g2 + eps) / (mean_g1 + eps))
+  )
+
+res_tbl_ftr <- res_tbl_ftr %>%
+  arrange(p_perm_pApp_constr)
+
+res_tbl_adj_ftr <- res_tbl_adj_ftr %>%
+  arrange(p_perm_pApp_constr)
+```
+
+### Unadjusted results
+
+```{r }
+# Show top hits
+res_tbl_ftr %>%
+  slice_head(n = 20) %>%
+  kable(digits = 4) %>%
+  kable_styling(full_width = FALSE)
+```
+
+### Adjusted results
+
+```{r }
+# Show top hits
+res_tbl_adj_ftr %>%
+  slice_head(n = 20) %>%
+  kable(digits = 4) %>%
+  kable_styling(full_width = FALSE)
+```
+
+## permApprox - 250 exceedances
+
+```{r}
+stats_mat  <- res_dacomp$stats_matrix
+obs_stats  <- stats_mat[1, ]        # length = number of taxa
+perm_stats <- stats_mat[-1, , drop = FALSE]  # nr_perm x taxa matrix
+colnames(perm_stats) <- res_dacomp_tbl$taxon
+dim(stats_mat)
+```
+
+### permApprox – unconstrained GPD
+
+```{r permApprox_unconstr_250}
+fname_pApp_unconstr <- path_target("permapprox_unconstr_250.rds")
+
+if (!file.exists(fname_pApp_unconstr) || refit_permApprox) {
+  
+  gpd_ctrl_unconstr <- make_gpd_ctrl(
+    fit_method    = "lme",
+    include_obs   = FALSE,
+    constraint    = "unconstrained",
+    thresh_method = "fix",
+    exceed0       = 250,
+    exceed0_min   = 250,
+    exceed_min    = 10,
+    thresh_step   = 10
+  )
+  
+  papprox_unconstr <- perm_approx(
+    obs_stats     = obs_stats,
+    perm_stats    = perm_stats,     # dim: n_perm x n_taxa
+    alternative   = "two_sided",
+    approx_thresh = 0.1,
+    method        = "gpd",
+    gpd_ctrl      = gpd_ctrl_unconstr,
+    adjust_method = "BH",
+    cores         = 1,
+    verbose       = TRUE
+  )
+  
+  saveRDS(papprox_unconstr, file = fname_pApp_unconstr)
+} else {
+  papprox_unconstr <- readRDS(fname_pApp_unconstr)
+}
+
+```
+
+### permApprox – constrained GPD (SLLS)
+
+```{r permApprox_constr_250}
+## CONSTRAINED GPD FIT (support_at_obs + SLLS)
+fname_pApp_constr <- path_target("permapprox_constr_250.rds")
+
+if (!file.exists(fname_pApp_constr) || refit_permApprox) {
+  
+  sampsize <- min(nrow(counts_g1), nrow(counts_g2))  # for SLLS rule
+  
+  gpd_ctrl_constr <- make_gpd_ctrl(
+    fit_method    = "lme",
+    include_obs   = FALSE,
+    constraint    = "support_at_obs",
+    sample_size   = sampsize,
+    thresh_method = "fix",
+    exceed0       = 250,
+    exceed0_min   = 250,
+    exceed_min    = 10,
+    thresh_step   = 10
+  )
+  
+  papprox_constr <- perm_approx(
+    obs_stats     = obs_stats,
+    perm_stats    = perm_stats,     # dim: n_perm x n_taxa
+    alternative   = "two_sided",
+    approx_thresh = 0.1,
+    method        = "gpd",
+    gpd_ctrl      = gpd_ctrl_constr,
+    adjust_method = "BH",
+    cores         = 1,
+    verbose       = TRUE
+  )
+  
+  saveRDS(papprox_constr, file = fname_pApp_constr)
+} else {
+  papprox_constr <- readRDS(fname_pApp_constr)
+}
+```
+
+### Combine dacomp and permApprox results
+
+```{r}
+## Add permApprox p-values (empirical + GPD-based)
+res_tbl <- res_dacomp_tbl %>%
+  mutate(
+    p_dacomp_adj       = NULL,
+    p_emp_pApp         = papprox_unconstr$p_empirical,
+    p_perm_pApp_uncon  = papprox_unconstr$p_unadjusted,
+    method_pApp_uncon  = papprox_unconstr$method_used,
+    status_pApp_uncon  = papprox_unconstr$fit_result$status,
+    gpd_shape_uncon    = papprox_unconstr$fit_result$shape,
+    p_perm_pApp_constr = papprox_constr$p_unadjusted,
+    method_pApp_constr = papprox_constr$method_used,
+    gpd_shape_constr   = papprox_constr$fit_result$shape
+  )
+
+res_tbl_adj <- res_dacomp_tbl %>%
+  mutate(
+    p_dacomp           = ifelse(is.infinite(p_dacomp_adj), 1, p_dacomp_adj),
+    p_dacomp_adj       = NULL,
+    p_emp_pApp         = papprox_unconstr$p_empirical,
+    p_perm_pApp_uncon  = papprox_unconstr$p_values,
+    method_pApp_uncon  = papprox_unconstr$method_used,
+    gpd_shape_uncon    = papprox_unconstr$fit_result$shape,
+    p_perm_pApp_constr = papprox_constr$p_values,
+    method_pApp_constr = papprox_constr$method_used,
+    gpd_shape_constr   = papprox_constr$fit_result$shape
+  )
+
+## log2 fold-change
+rel_counts <- X_counts / rowSums(X_counts)
+group_means <- aggregate(rel_counts,
+                         by = list(group = y_groups),
+                         FUN = mean)
+mean_g1 <- as.numeric(group_means[group_means$group == label1, -1])
+mean_g2 <- as.numeric(group_means[group_means$group == label2, -1])
+eps <- 1e-6
+
+res_tbl <- res_tbl %>%
+  mutate(
+    mean_rel_g1 = mean_g1,
+    mean_rel_g2 = mean_g2,
+    log2_fc     = log2((mean_g2 + eps) / (mean_g1 + eps))
+  )
+
+res_tbl_adj <- res_tbl_adj %>%
+  mutate(
+    mean_rel_g1 = mean_g1,
+    mean_rel_g2 = mean_g2,
+    log2_fc     = log2((mean_g2 + eps) / (mean_g1 + eps))
+  )
+
+res_tbl <- res_tbl %>%
+  arrange(p_perm_pApp_constr)
+
+res_tbl_adj <- res_tbl_adj %>%
+  arrange(p_perm_pApp_constr)
+```
+
+### Unadjusted results
+
+```{r }
+# Show top hits
+res_tbl %>%
+  slice_head(n = 20) %>%
+  kable(digits = 4) %>%
+  kable_styling(full_width = FALSE)
+```
+
+### Adjusted results
+
+```{r }
+# Show top hits
+res_tbl_adj %>%
+  slice_head(n = 20) %>%
+  kable(digits = 4) %>%
+  kable_styling(full_width = FALSE)
+```
+
+
+## Plots
+
+### P-values vs test statistics
+
+```{r}
+## Build long df with 3 methods: dacomp / permApprox U / permApprox C
+prepare_plot_three_df_dacomp <- function(res_df,
+                                         stat_col  = "stat_dacomp",
+                                         p_dac_col = "p_dacomp",
+                                         p_u_col   = "p_perm_pApp_uncon",
+                                         p_c_col   = "p_perm_pApp_constr") {
+  
+  need <- c("taxon", stat_col, p_dac_col, p_u_col, p_c_col,
+            "method_pApp_uncon", "method_pApp_constr")
+  stopifnot(all(need %in% names(res_df)))
+  
+  dd_dac <- res_df %>%
+    transmute(
+      taxon,
+      method_key        = "dacomp",
+      method_label      = "dacomp",
+      stat              = .data[[stat_col]],
+      pval              = .data[[p_dac_col]],
+      ptype             = "empirical"
+    )
+  
+  dd_u <- res_df %>%
+    transmute(
+      taxon,
+      method_key        = "permApprox_unconstrained",
+      method_label      = "dacomp + permApprox(U)",
+      stat              = .data[[stat_col]],
+      pval              = .data[[p_u_col]],
+      ptype             = if_else(method_pApp_uncon == "empirical",
+                                  "empirical", "GPD fit")
+    )
+  
+  dd_c <- res_df %>%
+    transmute(
+      taxon,
+      method_key        = "permApprox_constrained",
+      method_label      = "dacomp + permApprox(C)",
+      stat              = .data[[stat_col]],
+      pval              = .data[[p_c_col]],
+      ptype             = if_else(method_pApp_constr == "empirical",
+                                  "empirical", "GPD fit")
+    )
+  
+  bind_rows(dd_dac, dd_u, dd_c)
+}
+```
+
+```{r}
+plot_pvals_three_methods_dacomp <- function(df_long,
+                                            alpha_level = 0.05,
+                                            zero_repl   = 1e-100,
+                                            show_zero_label = TRUE,
+                                            log_breaks  = c(1, 1e-2, 1e-5, 1e-10),
+                                            annotate_taxa = NULL,
+                                            annotate_size = 3,
+                                            annotate_methods = NULL,
+                                            box_padding = 0.2,
+                                            force = 1.4,
+                                            methods = c("dacomp",
+                                                        "permApprox_unconstrained",
+                                                        "permApprox_constrained")) {
+  
+  if (is.null(annotate_methods)) {
+    annotate_methods <- methods
+  }
+  
+  dd <- df_long %>%
+    filter(method_key %in% methods) %>%
+    mutate(method_key = factor(method_key, levels = methods))
+  
+  if (nrow(dd) == 0L) {
+    return(ggplot() +
+             annotate("text", x = 0.5, y = 0.5,
+                      label = "No points.", size = 5) +
+             theme_void())
+  }
+  
+  dd <- dd %>%
+    mutate(
+      pval_plot = case_when(
+        is.na(pval)      ~ NA_real_,
+        pval == 0        ~ zero_repl,
+        pval < zero_repl ~ NA_real_,
+        TRUE             ~ pval
+      )
+    )
+  
+  base_labs <- dd %>%
+    group_by(method_key) %>%
+    summarise(lbl = dplyr::first(method_label), .groups = "drop")
+  
+  zero_tbl <- dd %>%
+    group_by(method_key) %>%
+    summarise(
+      n_total = sum(!is.na(pval)),
+      n_zero  = sum(pval == 0, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  lab_map <- setNames(
+    paste0(
+      base_labs$lbl#,
+      # "\n(zeros: ",
+      # zero_tbl$n_zero[match(base_labs$method_key, zero_tbl$method_key)],
+      # " / ",
+      # zero_tbl$n_total[match(base_labs$method_key, zero_tbl$method_key)],
+      # ")"
+    ),
+    as.character(base_labs$method_key)
+  )
+  
+  log_breaks <- sort(unique(log_breaks))
+  log_breaks <- sort(unique(c(log_breaks, zero_repl)))
+  lower_limit <- min(log_breaks)
+  
+  label_fun <- function(breaks) {
+    out <- breaks
+    
+    # scientific labels for "normal" values
+    out[breaks > 1e-5] <- scales::label_scientific()(breaks[breaks > 1e-5])
+    
+    # zero-replacement labeling is optional
+    if (show_zero_label) {
+      out[breaks <= zero_repl * 10] <- "0"
+    } else {
+      # label with the scientific value instead of "0"
+      out[breaks <= zero_repl * 10] <- scales::label_scientific()(breaks[breaks <= zero_repl * 10])
+    }
+    out
+  }
+  
+  p <- ggplot(dd, aes(x = stat, y = pval_plot)) +
+    geom_point(aes(fill = ptype),
+               shape = 21, size = 2.5, alpha = 0.7,
+               color = "gray10", stroke = 0.2) +
+    geom_hline(yintercept = alpha_level, linetype = "dashed") +
+    facet_wrap(~ method_key, nrow = 1, labeller = as_labeller(lab_map)) +
+    scale_y_log10(breaks = log_breaks, labels = label_fun) +
+    coord_cartesian(ylim = c(lower_limit, 1)) +
+    scale_fill_manual(values = c("GPD fit" = "#F8766D", "empirical" = "gray50"),
+                      name = "p-value type") +
+    labs(
+      x = "dacomp test statistic",
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text       = element_text(size = 15),
+      axis.title      = element_text(size = 16),
+      strip.text      = element_text(size = 15),
+      legend.title    = element_text(size = 16),
+      legend.text     = element_text(size = 16),
+      legend.position    = "bottom",
+      panel.spacing      = unit(2, "lines"),
+      panel.grid.minor   = element_blank(),
+      panel.grid.major.y = element_line(color = "gray80")
+    )
+  
+  ## ---- Optional annotation of selected genera (ONLY permApprox panel) --
+  if (!is.null(annotate_taxa)) {
+    ann_df <- dd %>%
+      filter(
+        method_key %in% annotate_methods,# "permApprox_constrained", 
+        taxon %in% annotate_taxa,
+        !is.na(pval_plot)
+      )
+    
+    if (nrow(ann_df) > 0) {
+      p <- p +
+        ggrepel::geom_text_repel(
+          data              = ann_df,
+          aes(label = taxon),
+          size              = annotate_size,
+          min.segment.length = 0,
+          max.overlaps      = Inf,
+          box.padding = box_padding,
+          force = force,
+          segment.alpha     = 0.5
+        )
+    }
+  }
+  
+  p
+}
+```
+
+#### Threshold method: rob_ftr
+
+```{r pvals_vs_tstats_ftr, fig.width=10, fig.height=5, dpi=200}
+## Three-panel p-value plot
+df_three <- prepare_plot_three_df_dacomp(res_tbl_ftr)
+
+plot_pvals_three_methods_dacomp(
+  df_three,
+  zero_repl  = 1e-40,
+  log_breaks = c(1e-3, 1e-10, 1e-20, 1e-30, 1e-40)
+)
+```
+
+For Lactobacillus, no theshold could be defined so that the empirical p-values is used.
+
+#### 250 exceedances
+
+```{r pvals_vs_tstats_three, fig.width=10, fig.height=5, dpi=200}
+## Three-panel p-value plot
+df_three <- prepare_plot_three_df_dacomp(res_tbl)
+
+taxa_to_annotate <- df_three %>% 
+  filter(method_key == "permApprox_constrained") %>%
+  arrange(pval) %>% slice(1:8) %>% pull(taxon)
+
+plot_pvals_three_methods_dacomp(
+  df_three,
+  zero_repl  = 1e-22,
+  log_breaks = c(1e-3, 1e-5, 1e-10, 1e-15, 1e-20),
+  annotate_size = 3.5,
+  force = 2,
+  annotate_taxa = taxa_to_annotate,
+  annotate_methods = c("permApprox_constrained", "permApprox_unconstrained")
+)
+```
+
+```{r pvals_vs_tstats_two, fig.width=8, fig.height=5, dpi=200}
+## Three-panel p-value plot
+df_three <- prepare_plot_three_df_dacomp(res_tbl)
+
+taxa_to_annotate <- df_three %>% 
+  filter(method_key == "permApprox_constrained") %>%
+  arrange(pval) %>% slice(1:8) %>% pull(taxon)
+
+plot_pvals_three_methods_dacomp(
+  df_three,
+  alpha_level = 0.01,
+  show_zero_label = FALSE,
+  zero_repl  = 1e-20,
+  log_breaks = c(1e-3, 1e-5, 1e-10, 1e-15, 1e-20),
+  annotate_size = 3.5,
+  annotate_taxa = taxa_to_annotate,
+  box_padding = 0.5,
+  annotate_methods = c("permApprox_constrained"),
+  methods =c("dacomp", "permApprox_constrained")
+)
+```
+
+#### 250 exceedances; adjusted p-values
+
+```{r pvals_vs_tstats_adj_three, fig.width=10, fig.height=5, dpi=200}
+## Three-panel p-value plot
+df_three <- prepare_plot_three_df_dacomp(res_tbl_adj)
+
+taxa_to_annotate <- df_three %>% 
+  filter(method_key == "permApprox_constrained") %>%
+  arrange(pval) %>% slice(1:8) %>% pull(taxon)
+
+plot_pvals_three_methods_dacomp(
+  df_three,
+  alpha_level = 0.01,
+  zero_repl  = 1e-22,
+  log_breaks = c(1e-3, 1e-5, 1e-10, 1e-15, 1e-20),
+  annotate_size = 3.5,
+  annotate_taxa = taxa_to_annotate,
+  box_padding = 0.5,
+  annotate_methods = c("permApprox_constrained", "permApprox_unconstrained")
+)
+```
+
+
+```{r pvals_vs_tstats_adj_two, fig.width=8, fig.height=5, dpi=200}
+## Three-panel p-value plot
+df_three <- prepare_plot_three_df_dacomp(res_tbl_adj)
+
+taxa_to_annotate <- df_three %>% 
+  filter(method_key == "permApprox_constrained") %>%
+  arrange(pval) %>% slice(1:8) %>% pull(taxon)
+
+plot_pvals_three_methods_dacomp(
+  df_three,
+  alpha_level = 0.01,
+  zero_repl  = 1e-20,
+  show_zero_label = FALSE,
+  log_breaks = c(1e-3, 1e-5, 1e-10, 1e-15, 1e-20),
+  annotate_size = 3.5,
+  annotate_taxa = taxa_to_annotate,
+  box_padding = 0.5,
+  annotate_methods = c("permApprox_constrained"),
+  methods =c("dacomp", "permApprox_constrained")
+)
+```
+
+### Volcano plots
+
+```{r}
+plot_volcano_three_fc <- function(
+    res_df,
+    fc_col        = "log2_fc",
+    p_dac_col     = "p_dacomp",
+    p_u_col       = "p_perm_pApp_uncon",
+    p_c_col       = "p_perm_pApp_constr",
+    taxon_col     = "taxon",
+    alpha_thresh  = 0.01,
+    lfc_thresh    = 1,
+    annotate_taxa = NULL,        # vector of taxa names to label
+    annotate_methods = NULL,     # which methods' panels to annotate
+    box_padding   = 0.3,
+    point_padding = 0.7,
+    force         = 1.4,
+    n_label       = 10,          # (optional, if you want to use inside)
+    title         = NULL
+) {
+
+  ## ------------------------------------------------------------------ ##
+  ## 1) Build long data frame: 2 (or 3) methods, same log2FC, different p
+  ## ------------------------------------------------------------------ ##
+  df_long <- dplyr::bind_rows(
+    res_df %>%
+      dplyr::transmute(
+        method  = "dacomp",
+        taxon   = .data[[taxon_col]],
+        log2_fc = .data[[fc_col]],
+        p       = .data[[p_dac_col]]
+      ),
+    res_df %>%
+      dplyr::transmute(
+        method  = "dacomp + permApprox",
+        taxon   = .data[[taxon_col]],
+        log2_fc = .data[[fc_col]],
+        p       = .data[[p_c_col]]
+      )
+  ) %>%
+    dplyr::mutate(
+      neglogp_raw = dplyr::if_else(p > 0, -log10(p), NA_real_),
+      signif_p    = p <= alpha_thresh & !is.na(p),
+      big_lfc     = abs(log2_fc) >= lfc_thresh,
+      sig_both    = signif_p,
+      direction   = dplyr::case_when(
+        sig_both & log2_fc >  0 ~ paste0("Higher in '", label2, "'"),
+        sig_both & log2_fc <  0 ~ paste0("Higher in '", label1, "'"),
+        TRUE                    ~ "No difference"
+      )
+    )
+
+  # Fix factor order for facets
+  df_long <- df_long %>%
+    dplyr::mutate(
+      method = factor(
+        method,
+        levels = c("dacomp",
+                   "dacomp + permApprox")  # add "permApprox (unconstr)" if used
+      )
+    )
+
+  ## ------------------------------------------------------------------ ##
+  ## 2) Handle zero p-values → show them at a single “Inf” height
+  ## ------------------------------------------------------------------ ##
+  has_zero <- any(df_long$p == 0, na.rm = TRUE)
+  finite_vals <- df_long$neglogp_raw[is.finite(df_long$neglogp_raw)]
+  max_finite  <- if (length(finite_vals) > 0) max(finite_vals) else 0
+
+  if (has_zero) {
+    y_top <- max_finite + 1  # above all finite values
+
+    df_long <- df_long %>%
+      dplyr::mutate(
+        neglogp_plot = dplyr::if_else(p == 0, y_top, neglogp_raw)
+      )
+
+    base_breaks <- pretty(c(0, max_finite))
+    base_breaks <- base_breaks[base_breaks < y_top]
+
+    breaks_y <- c(base_breaks, y_top)
+    labels_y <- ifelse(breaks_y == y_top, "Inf", as.character(breaks_y))
+
+    y_limits <- c(0, y_top)
+  } else {
+    df_long <- df_long %>%
+      dplyr::mutate(neglogp_plot = neglogp_raw)
+    breaks_y <- pretty(c(0, max_finite))
+    labels_y <- as.character(breaks_y)
+    y_limits <- c(0, max_finite)
+  }
+
+  ## ------------------------------------------------------------------ ##
+  ## 3) Colors for direction
+  ## ------------------------------------------------------------------ ##
+  dir_colors <- setNames(
+    c(col_group1, col_group2, "grey70"),
+    c(
+      paste0("Higher in '", label1, "'"),
+      paste0("Higher in '", label2, "'"),
+      "No difference"
+    )
+  )
+
+  ## ------------------------------------------------------------------ ##
+  ## 4) Base volcano plot
+  ## ------------------------------------------------------------------ ##
+  p <- ggplot(df_long, aes(x = log2_fc, y = neglogp_plot)) +
+    geom_point(aes(color = direction), alpha = 0.8, size = 3) +
+    facet_wrap(~ method, nrow = 1) +
+    geom_hline(
+      yintercept = -log10(alpha_thresh),
+      linetype   = "dashed",
+      color      = "gray50"
+    ) +
+    geom_vline(
+      xintercept = c(-lfc_thresh, lfc_thresh),
+      linetype   = "dashed",
+      color      = "gray50"
+    ) +
+    scale_color_manual(values = dir_colors, name = NULL) +
+    scale_y_continuous(
+      breaks = breaks_y,
+      labels = labels_y,
+      limits = y_limits
+    ) +
+    labs(
+      title = title,
+      x     = "log2 fold-change",
+      y     = expression(-log[10](hat(p)))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text       = element_text(size = 14),
+      axis.title      = element_text(size = 14),
+      strip.text      = element_text(size = 14),
+      legend.title    = element_text(size = 14),
+      legend.text     = element_text(size = 14),
+      legend.position = "bottom",
+      panel.spacing   = unit(2, "lines")
+    )
+
+  ## ------------------------------------------------------------------ ##
+  ## 5) Annotation: choose which methods + which taxa to label
+  ## ------------------------------------------------------------------ ##
+  if (!is.null(annotate_taxa)) {
+    
+    # default: annotate all methods in the plot
+    if (is.null(annotate_methods)) {
+      annotate_methods <- levels(df_long$method)
+    }
+    
+    df_annot <- df_long %>%
+      dplyr::filter(
+        method %in% annotate_methods,
+        taxon %in% annotate_taxa,
+        !is.na(neglogp_plot)
+      )
+    
+    if (nrow(df_annot) > 0) {
+      p <- p +
+        ggrepel::geom_text_repel(
+          data          = df_annot,
+          aes(label = taxon),
+          size          = 3,
+          box.padding   = box_padding,
+          point.padding = point_padding,
+          min.segment.length = unit(0, "lines"),
+          segment.alpha = 0.4,
+          max.overlaps  = Inf,
+          force         = force
+        )
+    }
+  }
+
+  p
+}
+
+```
+
+
+```{r}
+res_tbl_adj %>% filter(log2_fc > 1, p_perm_pApp_constr < 0.01)
+res_tbl_adj %>% filter(log2_fc < 1, p_perm_pApp_constr < 0.01) %>% arrange(p_perm_pApp_constr)
+```
+
+```{r}
+res_tbl_adj %>% filter(log2_fc > 1, p_dacomp < 0.01)
+res_tbl_adj %>% filter(log2_fc < 1, p_dacomp < 0.01) %>% arrange(p_perm_pApp_constr)
+```
+
+#### Unadjusted
+
+```{r volcano_unadjusted, fig.width=10, fig.height=5, dpi=300}
+res_tbl %>% 
+  #filter(!is_reference) %>%
+  plot_volcano_three_fc(
+    alpha_thresh = 0.01,
+    lfc_thresh   = 0,
+    box_padding  = 0.9,
+    point_padding = 0.5,
+    annotate_taxa = FALSE
+  )
+```
+
+#### Adjusted
+
+```{r volcano_adjusted, fig.width=10, fig.height=5, dpi=300}
+set.seed(1234)
+
+taxa_to_annotate <- res_tbl_adj %>%
+  filter(p_perm_pApp_constr < 0.01) %>% 
+  pull(taxon)
+
+res_tbl_adj %>% 
+  #filter(!is_reference) %>%
+  plot_volcano_three_fc(
+    alpha_thresh = 0.01,
+    lfc_thresh   = 0,
+    box_padding  = 0.5,
+    point_padding = 0.3,
+    force        = 2,
+    annotate_taxa = c(taxa_to_annotate, "Bifidobacterium"),
+    annotate_methods = c("dacomp + permApprox")
+  )
+```
+
+```{r volcano_adjusted_allsig, fig.width=10, fig.height=5, dpi=300}
+set.seed(1234)
+
+taxa_to_annotate <- res_tbl_adj %>%
+  filter(p_perm_pApp_constr < 0.01) %>% 
+  pull(taxon)
+
+res_tbl_adj %>% 
+  #filter(!is_reference) %>%
+  plot_volcano_three_fc(
+    alpha_thresh = 0.01,
+    lfc_thresh   = 0,
+    box_padding  = 0.5,
+    point_padding = 0.3,
+    force        = 2,
+    annotate_taxa = c(taxa_to_annotate),
+    annotate_methods = c("dacomp + permApprox")
+  )
+```
+
+
+### Relative abundances of significant taxa
+
+```{r abund_sig_permApprox, fig.width=10, fig.height=6, dpi=200}
+## Abundance plots for taxa significant by permApprox (BH-adjusted)
+alpha_sig <- 0.01
+top_n <- 8  # number of taxa to plot
+
+## Select 8 taxa with the smallest adjusted permApprox p-values
+top_taxa_df <- res_tbl_adj %>%
+  filter(!is.na(p_perm_pApp_constr)) %>%    # just to be safe
+  arrange(p_perm_pApp_constr) %>%
+  slice_head(n = top_n)
+
+sig_taxa <- top_taxa_df$taxon
+sig_taxa
+```
+
+```{r counts_rel_abund_top8, fig.width=12, fig.height=6, dpi=200}
+## Sample-level meta data
+sample_groups <- tibble(
+  sample = rownames(X_counts),
+  group  = y_groups
+)
+
+## Long format for selected taxa (ALL abundances, including zeros)
+abund_sig_df <- rel_counts[, sig_taxa, drop = FALSE] %>%
+  as.data.frame() %>%
+  rownames_to_column("sample") %>%
+  left_join(sample_groups, by = "sample") %>%
+  pivot_longer(
+    cols      = all_of(sig_taxa),
+    names_to  = "taxon",
+    values_to = "rel_abund"
+  )
+
+## Facet order: increasing adjusted permApprox p-value
+taxon_order <- top_taxa_df %>%
+  arrange(p_perm_pApp_constr) %>%
+  pull(taxon)
+
+abund_sig_df <- abund_sig_df %>%
+  mutate(
+    taxon = factor(taxon, levels = taxon_order),
+    group = factor(group, levels = c(label1, label2))
+  )
+
+## Data for boxplots: non-zero abundances only
+abund_nonzero_df <- abund_sig_df %>%
+  filter(rel_abund > 0)
+
+## Small offset for log-scale
+eps_abund <- 1e-6
+
+ggplot() +
+  ## JITTER: all values, zeros included
+  geom_jitter(
+    data = abund_sig_df,
+    aes(x = group, y = rel_abund + eps_abund, color = group),
+    width = 0.15, alpha = 0.5, size = 1.2
+  ) +
+  ## BOXPLOTS: only non-zero values
+  geom_boxplot(
+    data = abund_nonzero_df,
+    aes(x = group, y = rel_abund + eps_abund, fill = group),
+    outlier.shape = NA,
+    alpha = 0.8
+  ) +
+  scale_y_log10(labels = scales::label_scientific()) +
+  scale_fill_manual(values = palette_groups) +
+  scale_color_manual(values = palette_groups) +
+  facet_wrap(~ taxon, scales = "free_y", ncol = 4) +
+  labs(
+    title = paste0(
+      "Relative abundances of top ", length(sig_taxa),
+      " taxa ordered by increasing BH-adjusted permApprox p-value"
+    ),
+    x = NULL,
+    y = "Relative abundance"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 14),
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 12),
+    axis.title   = element_text(size = 14),
+    strip.text   = element_text(size = 12)
+  )
+```
+
+### dacomp-rarefied taxa counts
+
+```{r}
+alpha_sig <- 0.01
+top_n     <- 8
+
+top_taxa_df <- res_tbl_adj %>%
+  filter(!is.na(p_perm_pApp_constr),
+         p_perm_pApp_constr < alpha_sig) %>%
+  arrange(p_perm_pApp_constr) %>%
+  slice_head(n = top_n)
+
+sig_taxa <- top_taxa_df$taxon
+sig_taxa
+```
+
+
+```{r}
+## dacomp-normalized (rarefied) counts
+dacomp_counts <- res_dacomp$rarefied_counts
+dimnames(dacomp_counts) <- dimnames(X_counts)
+
+## Sample-level meta data
+sample_groups <- tibble(
+  sample = rownames(dacomp_counts),
+  group  = y_groups
+)
+
+## Long format for selected taxa (all counts, zeros included)
+dacomp_long <- dacomp_counts[, sig_taxa, drop = FALSE] %>%
+  as.data.frame() %>%
+  rownames_to_column("sample") %>%
+  left_join(sample_groups, by = "sample") %>%
+  pivot_longer(
+    cols      = all_of(sig_taxa),
+    names_to  = "taxon",
+    values_to = "norm_count"
+  )
+
+## Facet order: increasing adjusted permApprox p-value
+taxon_order <- top_taxa_df %>%
+  arrange(p_perm_pApp_constr) %>%
+  pull(taxon)
+
+dacomp_long <- dacomp_long %>%
+  mutate(
+    taxon = factor(taxon, levels = taxon_order),
+    group = factor(group, levels = c(label1, label2))
+  )
+
+## Boxplots: non-zero counts only
+dacomp_nonzero <- dacomp_long %>%
+  filter(norm_count > 0)
+
+## Offset for log10 scale (counts are integers; 0.5 works nicely)
+eps_count <- 0.5
+```
+
+
+```{r counts_dacomp_norm_top8, fig.width=12, fig.height=6, dpi=200}
+ggplot() +
+  # Jitter: all counts (including zeros)
+  geom_jitter(
+    data = dacomp_long,
+    aes(x = group, y = norm_count + eps_count, color = group),
+    width = 0.15, alpha = 0.8, size = 1.2
+  ) +
+  # Boxplots: non-zero counts only
+  geom_boxplot(
+    data = dacomp_nonzero,
+    aes(x = group, y = norm_count + eps_count, fill = group),
+    outlier.shape = NA,
+    alpha = 0.6
+  ) +
+    scale_y_log10(
+    limits = c(eps_count, max(dacomp_long$norm_count + eps_count) * 1.1),
+    breaks = c(eps_count, 1, 10, 100),
+    labels = c("0", "1", "10", "100")
+  ) +
+  scale_fill_manual(values = palette_groups) +
+  scale_color_manual(values = palette_groups) +
+  facet_wrap(~ taxon, scales = "free_y", ncol = 4) +
+  labs(
+    title = paste0(
+      "dacomp-rarefied counts of top ", length(sig_taxa),
+      " taxa ordered by increasing BH-adjusted permApprox p-value"
+    ),
+    x = NULL,
+    y = "dacomp-rarefied counts"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 14),
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 12),
+    axis.title   = element_text(size = 14),
+    strip.text   = element_text(size = 12)
+  )
+```
+```{r counts_violin_dacomp_norm_top8, fig.width=12, fig.height=6, dpi=200}
+library(ggforce)
+
+ggplot() +
+  # # Jitter: all counts (including zeros)
+  # geom_jitter(
+  #   data = dacomp_long,
+  #   aes(x = group, y = norm_count + eps_count, color = group),
+  #   width = 0.15, alpha = 0.5, size = 1.2
+  # ) +
+  # Violins: full distribution
+  geom_violin(
+    data = dacomp_long,
+    aes(x = group, y = norm_count + eps_count, fill = group),
+    trim = FALSE,
+    alpha = 0.6,
+    color = NA
+  ) +
+  # Density-shaped dots
+  geom_sina(
+    data = dacomp_long,
+    aes(x = group, y = norm_count + eps_count, color = "black"),
+    color = "black",
+    maxwidth = 0.7,          # width of the “violin” of dots
+    alpha   = 0.7,
+    size    = 0.5
+  ) +
+  # # Overlaid boxplot to visualize medians (optional, looks very good)
+  # geom_boxplot(
+  #   data = dacomp_long,
+  #   aes(x = group, y = norm_count + eps_count),
+  #   width = 0.2,
+  #   outlier.shape = NA,
+  #   alpha = 0.5,
+  #   color = "black",
+  #   fill = "white"
+  # ) +
+  scale_y_log10(
+    limits = c(eps_count, max(dacomp_long$norm_count + eps_count) * 1.1),
+    breaks = c(eps_count, 1, 10, 100),
+    labels = c("0", "1", "10", "100")
+  ) +
+  scale_fill_manual(values = palette_groups) +
+  scale_color_manual(values = palette_groups) +
+  facet_wrap(~ taxon, scales = "free_y", ncol = 4) +
+  labs(
+    # title = paste0(
+    #   "dacomp-rarefied counts of top ", length(sig_taxa),
+    #   " taxa ordered by increasing BH-adjusted permApprox p-value"
+    # ),
+    x = NULL,
+    y = "dacomp-rarefied counts"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 14),
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 12),
+    axis.title   = element_text(size = 14),
+    strip.text   = element_text(size = 12)
+  )
+
+```
+
+
+### Tables
+
+#### Unadjusted p-values
+
+```{r table_top_effects, message = FALSE}
+# Number of top effects to display
+n_top <- 15
+
+sci <- function(x) {
+  ifelse(is.na(x), NA, formatC(x, format = "e", digits = 2))
+}
+
+top_effects_tbl <- res_tbl %>%
+  # drop reference taxa if desired
+  #filter(!is_reference) %>%
+  arrange(p_perm_pApp_constr) %>%
+  slice_head(n = n_top) %>%
+  mutate(
+    p_dacomp_sci           = sci(p_dacomp),
+    p_permApprox_uncon_sci = sci(p_perm_pApp_uncon),
+    p_permApprox_constr_sci= sci(p_perm_pApp_constr)
+  ) %>%
+  transmute(
+    taxon,
+    stat_dacomp,
+    log2_fc,
+    `p_dacomp`              = p_dacomp_sci,
+    `p_permApprox(U)`       = p_permApprox_uncon_sci,
+    `p_permApprox`       = p_permApprox_constr_sci
+  )
+
+top_effects_tbl %>%
+  kable(
+    escape = TRUE,
+    caption = paste0(
+      "Top ", n_top, " genera sorted by permApprox p-values."),
+    ) %>%
+  kable_styling(full_width = FALSE)
+
+```
+
+```{r table_top_effects_latex, results = "asis", message = FALSE}
+# Number of taxa to show
+n_top <- 20 
+
+# Helper: scientific notation as character
+sci <- function(x, digits = 2) {
+  ifelse(is.na(x), NA, formatC(x, format = "e", digits = digits))
+}
+
+top_tbl <- res_tbl %>%
+  #filter(!is_reference) %>%               # exclude dacomp reference taxa
+  arrange(p_perm_pApp_constr) %>%         # sort by permApprox
+  slice_head(n = n_top) %>%
+  mutate(
+    stat_dacomp       = round(stat_dacomp, 3),
+    log2_fc           = round(log2_fc, 2),
+    p_dacomp_sci      = sci(p_dacomp),
+    p_pApp_U_sci      = sci(p_perm_pApp_uncon),
+    p_pApp_C_sci      = sci(p_perm_pApp_constr),
+    gpd_shape_U       = round(gpd_shape_uncon, 3),
+    gpd_shape_C       = round(gpd_shape_constr, 3)
+  ) %>%
+  transmute(
+    Genus                         = taxon,
+    `dacomp stat`                 = stat_dacomp,
+    `log2 FC`                     = log2_fc,
+    `$p_{\\text{dacomp}}$`        = p_dacomp_sci,
+    `$p_{\\text{permApprox(U)}}$` = p_pApp_U_sci,
+    `$p_{\\text{permApprox(C)}}$` = p_pApp_C_sci,
+    `$\\hat{\\xi}_{(U)}$`         = gpd_shape_U,
+    `$\\hat{\\xi}_{(C)}$`         = gpd_shape_C
+  )
+
+# Create LaTeX-ready table
+tab_latex <- kable(
+  top_tbl,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,
+  caption  = paste0(
+    "p-values of the top ", n_top,
+    " genera sorted by permApprox p-values. "
+  ),
+  label    = "tab:permApprox_top_effects"
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "striped"),
+    font_size     = 8
+  )
+
+print(tab_latex)
+
+# Optional: export as a standalone .tex file
+save_kable(tab_latex, path_target("permApprox_top_effects_table.tex"))
+```
+
+#### Adjusted p-values
+
+```{r table_top_effects_adj, message = FALSE}
+# Number of top effects to display
+n_top <- 15
+
+sci <- function(x) {
+  ifelse(is.na(x), NA, formatC(x, format = "e", digits = 2))
+}
+
+top_effects_tbl <- res_tbl_adj %>%
+  # drop reference taxa if desired
+  #filter(!is_reference) %>%
+  arrange(p_perm_pApp_constr) %>%
+  slice_head(n = n_top) %>%
+  mutate(
+    p_dacomp_sci           = sci(p_dacomp),
+    p_permApprox_uncon_sci = sci(p_perm_pApp_uncon),
+    p_permApprox_constr_sci= sci(p_perm_pApp_constr)
+  ) %>%
+  transmute(
+    taxon,
+    stat_dacomp,
+    log2_fc,
+    `p_dacomp`            = p_dacomp_sci,
+    `p_permApprox(U)`     = p_permApprox_uncon_sci,
+    `p_permApprox`        = p_permApprox_constr_sci
+  )
+
+top_effects_tbl %>%
+  kable(
+    escape = TRUE,
+    caption = paste0(
+      "Top ", n_top, " genera sorted by permApprox p-values."),
+    ) %>%
+  kable_styling(full_width = FALSE)
+
+```
+
+```{r table_top_effects_adj_latex, results = "asis", message = FALSE}
+# Number of taxa to show
+n_top <- 20 
+
+# Helper: scientific notation as character
+sci <- function(x, digits = 2) {
+  ifelse(is.na(x), NA, formatC(x, format = "e", digits = digits))
+}
+
+top_tbl <- res_tbl_adj %>%
+  #filter(!is_reference) %>%               # exclude dacomp reference taxa
+  arrange(p_perm_pApp_constr) %>%         # sort by permApprox
+  slice_head(n = n_top) %>%
+  mutate(
+    stat_dacomp       = round(stat_dacomp, 3),
+    log2_fc           = round(log2_fc, 2),
+    p_dacomp_sci      = sci(p_dacomp),
+    p_pApp_U_sci      = sci(p_perm_pApp_uncon),
+    p_pApp_C_sci      = sci(p_perm_pApp_constr),
+    gpd_shape_U       = round(gpd_shape_uncon, 3),
+    gpd_shape_C       = round(gpd_shape_constr, 3)
+  ) %>%
+  transmute(
+    Genus                        = taxon,
+    `dacomp stat`                = stat_dacomp,
+    `log2 FC`                    = log2_fc,
+    `$p_{\\text{dacomp}}$`        = p_dacomp_sci,
+    `$p_{\\text{permApprox(U)}}$` = p_pApp_U_sci,
+    `$p_{\\text{permApprox(C)}}$` = p_pApp_C_sci,
+    `$\\hat{\\xi}_{(U)}$`         = gpd_shape_U,
+    `$\\hat{\\xi}_{(C)}$`         = gpd_shape_C
+  )
+
+# Create LaTeX-ready table
+tab_latex <- kable(
+  top_tbl,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,
+  caption  = paste0(
+    "p-values of the top ", n_top,
+    " genera sorted by BH-adjusted permApprox p-values."
+  ),
+  label    = "tab:permApprox_top_effects"
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "striped"),
+    font_size     = 8
+  )
+
+print(tab_latex)
+
+# Optional: export as a standalone .tex file
+save_kable(tab_latex, path_target("permApprox_top_effects_adj_table.tex"))
+```
+
