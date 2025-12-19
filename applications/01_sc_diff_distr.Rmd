@@ -1,0 +1,3280 @@
+---
+title: "Differential distribution analysis of single-cell gene expression using `waddR` and `permApprox`"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "01_sc_diff_distr" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "3f0a7f60-7a25-4421-89f9-e2d5fe4071a7")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.width = 10, 
+                      fig.height = 6, 
+                      dpi = 200,
+                      fig.path = paste0('figures/', params, "/app_ddistr_sc_"),
+                      echo = FALSE)
+```
+
+
+```{r packages, message=FALSE, warning=FALSE}
+#remotes::install_github("stefpeschel/permApprox", ref = "develop")
+
+# Load packages
+library("conflicted")
+
+library(waddR)
+library(SingleCellExperiment)
+library(BiocFileCache)
+library(BiocParallel)
+
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(parallel)
+library(arm)
+library(eva)
+library(furrr)
+library(progressr)
+library(kableExtra)
+
+#remotes::install_github("stefpeschel/permApprox@develop")
+library(permApprox)
+
+conflicts_prefer(dplyr::count, dplyr::filter, dplyr::setdiff, dplyr::select,
+                 dplyr::desc)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+## Description
+
+Single-cell RNA sequencing (scRNA-seq) data often exhibit complex distributional differences between experimental conditions. Standard differential expression methods can miss these patterns, especially when they involve changes in the shape or spread of the distribution, not just the mean.
+
+The `waddR` package provides a semi-parametric test based on the 2-Wasserstein distance, designed to detect such differences. However, its permutation-based p-values can be inaccurate when the number of permutations is limited, leading to zero p-values.
+
+In this application study, we analyze a subset of the Vento-Tormo et al. (2018) dataset to demonstrate how `permApprox` can be used to accurately approximate small permutation p-values from the `waddR` method, particularly addressing zero p-values and improving inference robustness.
+
+In `waddR`, the one-stage (OS) approach compares the complete distributions between groups in a single step, using the squared Wasserstein distance on all observed values, including zeros. In contrast, the two-stage (TS) approach separates sparsity from magnitude differences: in the first stage it tests for differences in the proportion of zero values between groups, and in the second stage it computes the Wasserstein distance only on the non-zero values. The evidence from both stages is then combined into one permutation-based p-value.
+
+We concentrate on the two-stage (TS) approach here.
+
+## Own waddR implementation
+
+We needed to adapt the waddR package to export the permutation test statistics. 
+
+```{r, message=FALSE, warning=FALSE}
+# Load waddR functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+waddR_path <- file.path(proj_path, "functions/waddR/R")
+waddR_functions <- list.files(waddR_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(waddR_functions, source))
+```
+
+## Data and Preprocessing
+
+We analyze decidua and blood samples from a normalized replicate of the Vento-Tormo dataset. The gene expression data are available as two `SingleCellExperiment` objects. 
+
+We select the 1000 most prevalent genes for our analysis.
+
+
+```{r}
+# Loading and subsetting data
+data_url <- "https://github.com/goncalves-lab/waddR-data/blob/master/data/"
+sce_blood_url <- paste0(data_url, "data_blood.rda?raw=true")
+sce_decidua_url <- paste0(data_url, "data_decidua.rda?raw=true")
+
+getCachedPath <- function(url, rname){
+  bfc <- BiocFileCache() # fire up cache
+  res <- bfcquery(bfc, url, field="fpath", exact=TRUE)
+  if (bfccount(res) == 0L)
+    cachedFilePath <- bfcadd(bfc, rname=rname, fpath=url)
+  else
+    cachedFilePath <- bfcpath(bfc, res[["rid"]])
+  cachedFilePath
+}
+
+load(getCachedPath(sce_blood_url, "data_blood"))
+load(getCachedPath(sce_decidua_url, "data_decidua"))
+```
+
+```{r}
+counts_blood <- counts(data_blood)
+counts_decidua <- counts(data_decidua)
+
+cat("Dimensions of blood counts: ", dim(counts_blood))
+cat("\nDimensions of decidua counts: ", dim(counts_decidua))
+```
+
+```{r}
+# Calculate prevalence (number of non-zero counts) per gene in each dataset
+prev_blood <- Matrix::rowSums(counts_blood > 0)
+prev_decidua <- Matrix::rowSums(counts_decidua > 0)
+
+# Total prevalence across both conditions
+prev_total <- prev_blood + prev_decidua
+
+# Select top 1000 most prevalent genes
+top_genes <- names(sort(prev_total, decreasing = TRUE))[1:1000]
+
+# Subset SCE objects
+sce_blood <- data_blood[top_genes, ]
+sce_decidua <- data_decidua[top_genes, ]
+
+# Number of cells
+n_cells_blood <- dim(colData(sce_blood))[1]
+n_cells_decidua <- dim(colData(sce_decidua))[1]
+```
+
+To eliminate potential effects of different sample sizes, we subsample from the data set with the larger number of samples (decidua) so that both data sets have the same number of cells. 
+
+```{r}
+# Number of cells per condition
+n_cells_blood    <- ncol(sce_blood)
+n_cells_decidua  <- ncol(sce_decidua)
+
+# Target size = min of the two
+n_target <- min(n_cells_blood, n_cells_decidua)
+
+# We subsample from the larger group (decidua)
+set.seed(123) 
+keep_decidua <- sample(ncol(sce_decidua), n_target)
+sce_decidua  <- sce_decidua[, keep_decidua, drop = FALSE]
+
+dim(sce_blood)    # genes x cells
+dim(sce_decidua)  # genes x cells
+```
+
+```{r}
+# Clean up
+rm(data_blood, data_decidua, counts_blood, counts_decidua)
+gc()
+```
+
+
+## Exploratory Analysis
+
+We visualize selected genes to explore differences in expression distributions between conditions.
+
+```{r}
+## Global color palette (consistent across all plots)
+col_group1 <- "darkorange2"  # blood
+col_group2 <- "#1f77b4"  # decidua
+palette_groups <- c("blood" = col_group1, "decidua" = col_group2)
+```
+
+
+```{r}
+# Utility function to shorten gene names
+make_short_gene <- function(gene_vec) {
+  # If the string contains "-", remove the trailing Ensembl ID
+  sub("-ENSG[0-9]+.*$", "", gene_vec)
+}
+```
+
+### Heatmap
+
+```{r heatmap}
+# Select top 20 random genes
+topgenes <- top_genes[1:20]
+
+# Combine expression matrices (logcounts)
+expr_mat <- cbind(
+  assay(sce_blood)[topgenes, ],
+  assay(sce_decidua)[topgenes, ]
+)
+
+# Add cell labels
+col_ann <- data.frame(
+  tissue = factor(rep(c("blood", "decidua"),
+                      c(ncol(sce_blood), ncol(sce_decidua))))
+)
+rownames(col_ann) <- colnames(expr_mat)
+
+# Shorten gene names
+rownames(expr_mat) <- make_short_gene(rownames(expr_mat))
+
+# Correct color list
+annotation_colors = list(tissue = palette_groups)
+
+pheatmap(
+  log1p(expr_mat),
+  annotation_col = col_ann,
+  annotation_colors = annotation_colors,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  main = "Gene expression (Top 20 genes)"
+)
+```
+
+### Density plots
+
+```{r}
+# Select a few genes (e.g., 5)
+genes_to_plot <- top_genes[1:6]
+
+# Create a tidy data frame with log1p-transformed expression values
+plot_df <- dplyr::bind_rows(
+  lapply(genes_to_plot, function(gene) {
+    tibble(
+      gene = gene,
+      expression = log1p(assay(sce_blood)[gene, ]),
+      tissue = "blood"
+    ) %>%
+      dplyr::bind_rows(tibble(
+        gene = gene,
+        expression = log1p(assay(sce_decidua)[gene, ]),
+        tissue = "decidua"
+      )) %>%
+      mutate(gene = make_short_gene(gene))
+  })
+)
+```
+
+
+```{r density_top6, fig.width=12, fig.height=5}
+# Density
+ggplot(plot_df, aes(x = expression, fill = tissue)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = palette_groups) +
+  facet_wrap(~ gene, scales = "free") +
+  labs(title = "Gene expression density", 
+       y = "Density",
+       x = "Expression") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        strip.text = element_text(size = 14)
+  )
+```
+
+### Histograms
+
+```{r hist_top6, fig.width=12, fig.height=5}
+ggplot(plot_df, aes(x = expression, fill = tissue)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = palette_groups) +
+  facet_wrap(~ gene, scales = "free") +
+  labs(#title = "Gene expression histograms", 
+    y = "Count",
+    x = "Expression") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        strip.text = element_text(size = 14)
+  )
+```
+
+### Quantile plot
+
+```{r quantf_top6, fig.width=12, fig.height=5}
+# Quantile function
+ggplot(plot_df, aes(x = expression, color = tissue)) +
+  stat_ecdf(geom = "step", size = 1) +
+  scale_color_manual(values = palette_groups) +
+  facet_wrap(~ gene, scales = "free") +
+  labs(
+    #title = "Quantile Function",
+    x = "Expression",
+    y = "Cumulative Probability"
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        strip.text = element_text(size = 14)
+  )
+```
+
+## Differential Testing (two-stage approach)
+
+### waddR - 1000 permutations
+
+We apply the two-stage (`TS`) approach in `waddR`, which separately tests for differences in non-zero expression values and in the proportion of zero values.
+
+```{r, eval=FALSE}
+register(SerialParam())  # Disable parallelism
+
+waddr_res_ts <- wassersteinEdit.sc(sce_blood, sce_decidua, method = "TS", 
+                                   permnum = 1000, seed = 42)
+
+saveRDS(waddr_res_ts, file = path_target("waddr_results_ts_1000.rds"))
+```
+
+
+```{r}
+waddr_res_ts_1k <- readRDS(path_target("waddr_results_ts_1000.rds"))
+perm_stats_ts_1k <- t(attributes(waddr_res_ts_1k)$wass.values)
+colnames(perm_stats_ts_1k) <- make_short_gene(colnames(perm_stats_ts_1k))
+
+
+waddr_res_ts_1k <- waddr_res_ts_1k %>%
+  as_tibble() %>%
+  dplyr::mutate(idx = row_number(),
+         gene = row.names(waddr_res_ts_1k)) %>%
+  dplyr::select(idx, gene, everything()) %>%
+  mutate(gene = make_short_gene(gene))
+
+head(waddr_res_ts_1k, n=10L)
+```
+
+
+```{r}
+res <- waddr_res_ts_1k %>% dplyr::filter(!is.na(pval))
+
+cat("Number of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE))
+cat("\nNumber of non-NA p-values: ", nrow(res))
+cat("\nProportion of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE) / nrow(res))
+```
+
+### waddR - 10000 permutations
+
+We repeat the waddR run with 10000 permutations to compare the accuracy with the 1000 permuations later. 
+
+```{r, eval=FALSE}
+register(SerialParam())  # Disable parallelism
+
+waddr_res_ts <- wassersteinEdit.sc(sce_blood, sce_decidua, method = "TS", 
+                                   permnum = 10000, seed = 42)
+
+saveRDS(waddr_res_ts, file = path_target("waddr_results_ts_10000.rds"))
+```
+
+
+```{r}
+waddr_res_ts_10k <- readRDS(path_target("waddr_results_ts_10000.rds"))
+perm_stats_ts_10k <- t(attributes(waddr_res_ts_10k)$wass.values)
+colnames(perm_stats_ts_10k) <- make_short_gene(colnames(perm_stats_ts_10k))
+
+waddr_res_ts_10k <- waddr_res_ts_10k %>%
+  as_tibble() %>%
+  dplyr::mutate(idx = row_number(),
+         gene = row.names(waddr_res_ts_10k)) %>%
+  dplyr::select(idx, gene, everything()) %>%
+  mutate(gene = make_short_gene(gene))
+```
+
+
+```{r}
+res <- waddr_res_ts_10k %>% dplyr::filter(!is.na(pval))
+
+cat("Number of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE))
+cat("\nNumber of non-NA p-values: ", nrow(res))
+cat("\nProportion of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE) / nrow(res))
+```
+
+### waddR - 50000 permutations
+
+We repeat the waddR run with 50000 permutations to compare the accuracy with the 1000 permuations later. 
+
+```{r, eval=FALSE}
+register(SerialParam())  # Disable parallelism
+
+waddr_res_ts <- wassersteinEdit.sc(sce_blood, sce_decidua, method = "TS", 
+                                   permnum = 50000, seed = 42)
+
+saveRDS(waddr_res_ts, file = path_target("waddr_results_ts_50000.rds"))
+```
+
+
+```{r}
+waddr_res_ts_50k <- readRDS(path_target("waddr_results_ts_50000.rds"))
+perm_stats_ts_50k <- t(attributes(waddr_res_ts_50k)$wass.values)
+colnames(perm_stats_ts_50k) <- make_short_gene(colnames(perm_stats_ts_50k))
+
+waddr_res_ts_50k <- waddr_res_ts_50k %>%
+  as_tibble() %>%
+  dplyr::mutate(idx = row_number(),
+         gene = row.names(waddr_res_ts_50k)) %>%
+  dplyr::select(idx, gene, everything()) %>%
+  mutate(gene = make_short_gene(gene))
+```
+
+
+```{r}
+res <- waddr_res_ts_50k %>% dplyr::filter(!is.na(pval))
+
+cat("Number of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE))
+cat("\nNumber of non-NA p-values: ", nrow(res))
+cat("\nProportion of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE) / nrow(res))
+```
+
+### waddR - 100000 permutations
+
+We repeat the waddR run with 100000 permutations to compare the accuracy with the 1000 permuations later. 
+
+```{r, eval=FALSE}
+register(SerialParam())  # Disable parallelism
+
+waddr_res_ts <- wassersteinEdit.sc(sce_blood, sce_decidua, method = "TS", 
+                                   permnum = 100000, seed = 42)
+
+saveRDS(waddr_res_ts, file = path_target("waddr_results_ts_100000.rds"))
+```
+
+
+```{r}
+waddr_res_ts_100k <- readRDS(path_target("waddr_results_ts_100000.rds"))
+perm_stats_ts_100k <- t(attributes(waddr_res_ts_100k)$wass.values)
+colnames(perm_stats_ts_100k) <- make_short_gene(colnames(perm_stats_ts_100k))
+
+waddr_res_ts_100k <- waddr_res_ts_100k %>%
+  as_tibble() %>%
+  dplyr::mutate(idx = row_number(),
+         gene = row.names(waddr_res_ts_100k)) %>%
+  dplyr::select(idx, gene, everything()) %>%
+  mutate(gene = make_short_gene(gene))
+```
+
+
+```{r}
+res <- waddr_res_ts_100k %>% dplyr::filter(!is.na(pval))
+
+cat("Number of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE))
+cat("\nNumber of non-NA p-values: ", nrow(res))
+cat("\nProportion of zero p-values with waddR: ", 
+    sum(res$pval == 0, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (unadjusted): ", 
+    sum(res$pval < 0.05, na.rm = TRUE) / nrow(res))
+cat("\nNumber of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE))
+cat("\nProportion of significant tests (adjusted): ", 
+    sum(res$p.adj.nonzero < 0.05, na.rm = TRUE) / nrow(res))
+```
+
+### Empirical p-values
+
+```{r}
+fname_ts_emp_1k <- path_target(paste0("permapprox_results_ts_emp_1k.rds"))
+fname_ts_emp_10k <- path_target(paste0("permapprox_results_ts_emp_10k.rds"))
+fname_ts_emp_50k <- path_target(paste0("permapprox_results_ts_emp_50k.rds"))
+fname_ts_emp_100k <- path_target(paste0("permapprox_results_ts_emp_100k.rds"))
+
+if (!file.exists(fname_ts_emp_1k)) {
+  papprox_ts_emp_1k <- perm_approx(
+    obs_stats = waddr_res_ts_1k$`d.wass^2`,
+    perm_stats = perm_stats_ts_1k,
+    method = "empirical",
+    null_center = "mean"
+  )
+  saveRDS(papprox_ts_emp_1k, file = fname_ts_emp_1k)
+} else {
+  papprox_ts_emp_1k <- readRDS(fname_ts_emp_1k)
+}
+
+if (!file.exists(fname_ts_emp_10k)) {
+  papprox_ts_emp_10k <- perm_approx(
+    obs_stats = waddr_res_ts_10k$`d.wass^2`,
+    perm_stats = perm_stats_ts_10k,
+    method = "empirical",
+    null_center = "mean"
+  )
+  saveRDS(papprox_ts_emp_10k, file = fname_ts_emp_10k)
+} else {
+  papprox_ts_emp_10k <- readRDS(fname_ts_emp_10k)
+}
+
+if (!file.exists(fname_ts_emp_50k)) {
+  papprox_ts_emp_50k <- perm_approx(
+    obs_stats = waddr_res_ts_50k$`d.wass^2`,
+    perm_stats = perm_stats_ts_50k,
+    method = "empirical",
+    null_center = "mean"
+  )
+  saveRDS(papprox_ts_emp_50k, file = fname_ts_emp_50k)
+} else {
+  papprox_ts_emp_50k <- readRDS(fname_ts_emp_50k)
+}
+
+if (!file.exists(fname_ts_emp_100k)) {
+  papprox_ts_emp_100k <- perm_approx(
+    obs_stats = waddr_res_ts_100k$`d.wass^2`,
+    perm_stats = perm_stats_ts_100k,
+    method = "empirical",
+    null_center = "mean"
+  )
+  saveRDS(papprox_ts_emp_100k, file = fname_ts_emp_100k)
+} else {
+  papprox_ts_emp_100k <- readRDS(fname_ts_emp_100k)
+}
+```
+
+### permApprox - unconstrained
+
+```{r}
+fname_ts_unconstr1k <- path_target(paste0("permapprox_results_ts_unconstr_1k.rds"))
+
+if (!file.exists(fname_ts_unconstr1k)) {
+  
+  gpd_ctrl <- make_gpd_ctrl(
+    fit_method = "lme",
+    tol = 1e-7,
+    include_obs = FALSE,
+    constraint = "unconstrained",
+    thresh_method = "rob_ftr",
+    exceed0 = 0.25,
+    exceed0_min = 250,
+    exceed_min = 10,
+    thresh_step = 10,
+    gof_test = "ad",
+    gof_alpha = 0.05
+  )
+  
+  papprox_ts_unconstr_1k <- perm_approx(
+    obs_stats = waddr_res_ts_1k$`d.wass^2`,
+    perm_stats = perm_stats_ts_1k,
+    null_center = "mean",
+    alternative = "greater",
+    method = "gpd",
+    approx_thresh = 1,
+    gpd_ctrl = gpd_ctrl,
+    adjust_method = "BH",
+    cores = 10,
+    verbose = TRUE
+  )
+  
+  saveRDS(papprox_ts_unconstr_1k, file = fname_ts_unconstr1k)
+} else {
+  papprox_ts_unconstr_1k <- readRDS(fname_ts_unconstr1k)
+}
+
+```
+
+
+```{r}
+fname_ts_unconstr10k <- path_target(paste0("permapprox_results_ts_unconstr_10k.rds"))
+
+if (!file.exists(fname_ts_unconstr10k)) {
+papprox_ts_unconstr_10k <- perm_approx(
+  obs_stats = waddr_res_ts_10k$`d.wass^2`,
+  perm_stats = perm_stats_ts_10k,
+  null_center = "mean",
+  alternative = "greater",
+  method = "gpd",
+  approx_thresh = 1,
+  gpd_ctrl = gpd_ctrl,
+  adjust_method = "BH",
+  cores = 10,
+  verbose = TRUE
+)
+
+  saveRDS(papprox_ts_unconstr_10k, file = fname_ts_unconstr10k)
+} else {
+  papprox_ts_unconstr_10k <- readRDS(fname_ts_unconstr10k)
+}
+```
+
+### permApprox - constrained
+
+We use the `permApprox` package to approximate p-values from permutation distributions of `waddR` test statistics.
+
+```{r}
+sampsize <- min(n_cells_blood, n_cells_decidua)
+
+fname_ts_constr1k <- path_target(paste0("permapprox_results_ts_constr_1k.rds"))
+
+if (!file.exists(fname_ts_constr1k)) {
+  
+  gpd_ctrl <- make_gpd_ctrl(
+    fit_method = "lme",
+    tol = 1e-7,
+    include_obs = FALSE,
+    constraint = "support_at_obs",
+    sample_size = sampsize,
+    eps_fun = eps_slls,
+    thresh_method = "rob_ftr",
+    exceed0 = 0.25,
+    exceed0_min = 250,
+    exceed_min = 10,
+    thresh_step = 10,
+    gof_test = "ad",
+    gof_alpha = 0.05
+  )
+  
+  papprox_ts_constr_1k <- perm_approx(
+    obs_stats = waddr_res_ts_1k$`d.wass^2`,
+    perm_stats = perm_stats_ts_1k,
+    null_center = "mean",
+    alternative = "greater",
+    method = "gpd",
+    approx_thresh = 1,
+    gpd_ctrl = gpd_ctrl,
+    adjust_method = "BH",
+    cores = 10,
+    verbose = TRUE
+  )
+  
+  saveRDS(papprox_ts_constr_1k, file = fname_ts_constr1k)
+} else {
+  papprox_ts_constr_1k <- readRDS(fname_ts_constr1k)
+}
+```
+
+
+```{r}
+fname_ts_constr10k <- path_target("permapprox_results_ts_constr_10k.rds")
+
+if (!file.exists(fname_ts_constr10k)) {
+  papprox_ts_constr_10k <- perm_approx(
+    obs_stats = waddr_res_ts_10k$`d.wass^2`,
+    perm_stats = perm_stats_ts_10k,
+    null_center = "mean",
+    alternative = "greater",
+    method = "gpd",
+    approx_thresh = 1,
+    gpd_ctrl = gpd_ctrl,
+    adjust_method = "BH",
+    cores = 10,
+    verbose = TRUE
+  )
+  saveRDS(papprox_ts_constr_10k, file = fname_ts_constr10k)
+} else {
+  papprox_ts_constr_10k <- readRDS(fname_ts_constr10k)
+}
+```
+
+## Combine results
+
+```{r}
+# Collect rows method-by-method (only if the corresponding objects exist)
+rows <- list()
+
+## empirical (B = 1k)
+rows[["emp_1k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_emp_1k$p_unadjusted),
+  gene   = waddr_res_ts_1k$gene,
+  stat   = waddr_res_ts_1k$`d.wass^2`,
+  pval   = papprox_ts_emp_1k$p_unadjusted,
+  shape  = NA,
+  scale  = NA,
+  constraint = NA,
+  source = "empirical",
+  fit    = "empirical",
+  B      = 1000L,
+  method_key = "empirical_1000",
+  method_label = "Empirical",
+  method_label_long = "Empirical (B = 1k)"
+)
+
+## empirical (B = 10k)
+rows[["emp_10k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_emp_10k$p_unadjusted),
+  gene   = waddr_res_ts_10k$gene,
+  stat   = waddr_res_ts_10k$`d.wass^2`,
+  pval   = papprox_ts_emp_10k$p_unadjusted,
+  shape  = NA,
+  scale  = NA,
+  constraint = NA,
+  source = "empirical",
+  fit    = "empirical",
+  B      = 10000L,
+  method_key = "empirical_10000",
+  method_label = "Empirical",
+  method_label_long = "Empirical (B = 10k)"
+)
+
+## empirical (B = 50k)
+rows[["emp_50k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_emp_50k$p_unadjusted),
+  gene   = waddr_res_ts_50k$gene,
+  stat   = waddr_res_ts_50k$`d.wass^2`,
+  pval   = papprox_ts_emp_50k$p_unadjusted,
+  shape  = NA,
+  scale  = NA,
+  constraint = NA,
+  source = "empirical",
+  fit    = "empirical",
+  B      = 50000L,
+  method_key = "empirical_50000",
+  method_label = "Empirical",
+  method_label_long = "Empirical (B = 50k)"
+)
+
+## empirical (B = 100k)
+rows[["emp_100k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_emp_100k$p_unadjusted),
+  gene   = waddr_res_ts_100k$gene,
+  stat   = waddr_res_ts_100k$`d.wass^2`,
+  pval   = papprox_ts_emp_100k$p_unadjusted,
+  shape  = NA,
+  scale  = NA,
+  constraint = NA,
+  source = "empirical",
+  fit    = "empirical",
+  B      = 100000L,
+  method_key = "empirical_100000",
+  method_label = "Empirical",
+  method_label_long = "Empirical (B = 100k)"
+)
+
+## waddR (B = 1k)
+rows[["waddR_1k"]] <- tibble::tibble(
+  idx    = seq_len(nrow(waddr_res_ts_1k)),
+  gene   = waddr_res_ts_1k$gene,
+  stat   = waddr_res_ts_1k$`d.wass^2`,
+  pval   = waddr_res_ts_1k$pval,
+  shape  = waddr_res_ts_1k$shape,
+  scale  = NA,
+  constraint = NA,
+  source = "waddR",
+  fit    = ifelse(is.na(waddr_res_ts_1k$gpd.shape), "empirical", "GPD"),
+  B      = 1000L,
+  method_key = "waddR_1000",
+  method_label = "waddR",
+  method_label_long = "waddR (B = 1k)"
+)
+
+## waddR (B = 10k)
+rows[["waddR_10k"]] <- tibble::tibble(
+  idx    = seq_len(nrow(waddr_res_ts_10k)),
+  gene   = waddr_res_ts_10k$gene,
+  stat   = waddr_res_ts_10k$`d.wass^2`,
+  pval   = waddr_res_ts_10k$pval,
+  shape  = waddr_res_ts_10k$shape,
+  scale  = NA,
+  constraint = NA,
+  source = "waddR",
+  fit    = ifelse(is.na(waddr_res_ts_10k$gpd.shape), "empirical", "GPD"),
+  B      = 10000L,
+  method_key = "waddR_10000",
+  method_label = "waddR",
+  method_label_long = "waddR (B = 10k)"
+)
+
+
+## permApprox unconstrained (B = 1k)
+rows[["pA_unconstr_1k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_unconstr_1k$p_unadjusted),
+  gene   = waddr_res_ts_1k$gene,
+  stat   = waddr_res_ts_1k$`d.wass^2`,
+  pval   = papprox_ts_unconstr_1k$p_unadjusted,
+  shape  = papprox_ts_unconstr_1k$gpd_fit$shape,
+  scale  = papprox_ts_unconstr_1k$gpd_fit$scale,
+  constraint = "unconstrained",
+  source = "permApprox (unconstrained)",
+  fit    = ifelse(papprox_ts_unconstr_1k$method_used == "empirical", 
+                  "empirical", "GPD"),
+  B      = 1000L,
+  method_key = "permApprox_unconstrained_1000",
+  method_label = "waddR + permApprox(U)",
+  method_label_long = "waddR + permApprox(U)\n(B = 1k)"
+)
+
+
+## permApprox unconstrained (B = 10k)
+rows[["pA_unconstr_10k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_unconstr_10k$p_unadjusted),
+  gene   = waddr_res_ts_10k$gene,
+  stat   = waddr_res_ts_10k$`d.wass^2`,
+  pval   = papprox_ts_unconstr_10k$p_unadjusted,
+  shape  = papprox_ts_unconstr_10k$gpd_fit$shape,
+  scale  = papprox_ts_unconstr_10k$gpd_fit$scale,
+  constraint = "unconstrained",
+  source = "permApprox (unconstrained)",
+  fit    = ifelse(papprox_ts_unconstr_10k$method_used == "empirical", 
+                  "empirical", "GPD"),
+  B      = 10000L,
+  method_key = "permApprox_unconstrained_10000",
+  method_label = "waddR + permApprox(U)",
+  method_label_long = "waddR + permApprox(U)\n(B = 10k)"
+)
+
+
+## permApprox constrained (B = 1k)
+rows[["pA_constr_1k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_constr_1k$p_unadjusted),
+  gene   = waddr_res_ts_1k$gene,
+  stat   = waddr_res_ts_1k$`d.wass^2`,
+  pval   = papprox_ts_constr_1k$p_unadjusted,
+  shape  = papprox_ts_constr_1k$gpd_fit$shape,
+  scale  = papprox_ts_constr_1k$gpd_fit$scale,
+  constraint = "constrained",
+  source = "permApprox (constrained)",
+  fit    = ifelse(papprox_ts_constr_1k$method_used == "empirical", 
+                  "empirical", "GPD"),
+  B      = 1000L,
+  method_key = "permApprox_constrained_1000",
+  method_label = "waddR + permApprox(C)",
+  method_label_long = "waddR + permApprox(C)\n(B = 1k)"
+)
+
+## permApprox constrained (B = 10k)
+rows[["pA_constr_10k"]] <- tibble::tibble(
+  idx    = seq_along(papprox_ts_constr_10k$p_unadjusted),
+  gene   = waddr_res_ts_10k$gene,
+  stat   = waddr_res_ts_10k$`d.wass^2`,
+  pval   = papprox_ts_constr_10k$p_unadjusted,
+  shape  = papprox_ts_constr_10k$gpd_fit$shape,
+  scale  = papprox_ts_constr_10k$gpd_fit$scale,
+  constraint = "constrained",
+  source = "permApprox (constrained)",
+  fit    = ifelse(papprox_ts_constr_10k$method_used == "empirical", 
+                  "empirical", "GPD"),
+  B      = 10000L,
+  method_key = "permApprox_constrained_10000",
+  method_label = "waddR + permApprox(C)",
+  method_label_long = "waddR + permApprox(C)\n(B = 10k)"
+)
+
+# Bind + finalize a global tidy DF
+df_pvals_global <- dplyr::bind_rows(rows) %>%
+  dplyr::mutate(
+    # stable keys & preferred global ordering
+    method_key = factor(
+      method_key,
+      levels = c(
+        "empirical_1000", 
+        "empirical_10000", 
+        "empirical_50000", 
+        "empirical_100000",
+        "waddR_1000", 
+        "waddR_10000",
+        "permApprox_unconstrained_1000", 
+        "permApprox_unconstrained_10000",
+        "permApprox_constrained_1000",
+        "permApprox_constrained_10000"
+      )
+    ),
+    # legend grouping
+    ptype = ifelse(fit == "empirical", "empirical", "GPD fit")
+  )
+```
+
+## Plots
+
+```{r}
+# returns a clean data.frame (no styling)
+sig_table_for_methods_df <- function(df, methods, alphas = c(0.05, 0.01, 0.001),
+                                     use_long_labels = TRUE) {
+  stopifnot(all(methods %in% df$method_key))
+  dd <- dplyr::filter(df, method_key %in% methods)
+
+  lab_col <- if (isTRUE(use_long_labels)) "method_label_long" else "method_label"
+  key_labels <- dd |>
+    dplyr::group_by(method_key) |>
+    dplyr::summarise(method = dplyr::first(.data[[lab_col]]), .groups = "drop")
+
+  base_counts <- dd |>
+    dplyr::group_by(method_key) |>
+    dplyr::summarise(
+      n_tests = sum(!is.na(pval)),
+      n_zero  = sum(pval == 0, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  alpha_counts <- purrr::map_dfr(alphas, function(a) {
+    dd |>
+      dplyr::filter(!is.na(pval)) |>
+      dplyr::group_by(method_key) |>
+      dplyr::summarise(n_sig = sum(pval <= a), .groups = "drop") |>
+      dplyr::mutate(alpha = a)
+  }) |>
+    tidyr::pivot_wider(
+      id_cols = method_key,
+      names_from = alpha,
+      values_from = n_sig,
+      names_prefix = "alpha_"
+    )
+
+  out <- base_counts |>
+    dplyr::left_join(alpha_counts, by = "method_key") |>
+    dplyr::left_join(key_labels,   by = "method_key") |>
+    dplyr::mutate(method_key = factor(method_key, levels = methods)) |>
+    dplyr::arrange(method_key) |>
+    dplyr::select(method, n_tests, n_zero, dplyr::starts_with("alpha_"))
+
+  # Ensure numeric columns stay numeric; replace NAs visibly (prevents blank cells)
+  out |>
+    dplyr::mutate(dplyr::across(where(is.numeric), ~ .x)) |>
+    dplyr::mutate(dplyr::across(dplyr::everything(),
+                                ~ ifelse(is.na(.), NA, .)))
+}
+
+render_sig_table_kable <- function(tbl, caption = NULL) {
+  # Optional: relabel alpha columns nicely
+  coln <- names(tbl)
+  coln <- gsub("^alpha_0.05$", "\u03B1 = 0.05", coln)
+  coln <- gsub("^alpha_0.01$", "\u03B1 = 0.01", coln)
+  coln <- gsub("^alpha_0.001$", "\u03B1 = 0.001", coln)
+
+  knitr::kable(
+    tbl,
+    format = "html",            # be explicit
+    digits = 0,                 # integers
+    align  = c("l", rep("r", ncol(tbl) - 1)),
+    format.args = list(scientific = FALSE, trim = TRUE),
+    col.names = coln,
+    caption   = caption %||% "Significant features and zero p-values"
+  ) |>
+    kableExtra::kable_styling(full_width = FALSE, position = "left")
+}
+```
+
+
+### P-values (waddR vs. permApprox)
+
+```{r}
+plot_pvals_three_zero_colored <- function(df,
+                                       methods = c("waddR_1000",
+                                                   "permApprox_unconstrained_1000",
+                                                   "permApprox_constrained_1000"),
+                                       label = c("short", "long"),
+                                       legend_position = "bottom",
+                                       legend_text_size = 13,
+                                       zero_repl = 1e-40,
+                                       add_zero  = TRUE,
+                                       log_breaks = c(1e-3, 1e-5, 1e-10,
+                                                      1e-20, 1e-30, 1e-40),
+                                       annotate_genes_c = NULL,
+                                       annotate_genes_u = NULL,
+                                       annotate_size  = 3,
+                                       box_padding_u  = 0.2,
+                                       box_padding_c  = 0.2,
+                                       point_padding_u = 0.3,
+                                       point_padding_c = 0.3,
+                                       label_force_u   = 2,
+                                       label_force_c   = 2) {
+
+  label <- match.arg(label)
+
+  dd <- df %>%
+    dplyr::filter(method_key %in% methods) %>%
+    dplyr::mutate(
+      method_key = factor(method_key, levels = methods)
+    )
+
+  dd <- dd %>%
+    dplyr::mutate(
+      pval_plot = dplyr::case_when(
+        is.na(pval)      ~ NA_real_,
+        pval == 0        ~ zero_repl,
+        pval < zero_repl ~ NA_real_,
+        TRUE             ~ pval
+      )
+    )
+
+  lab_col <- if (label == "long") "method_label_long" else "method_label"
+
+  zero_tbl <- dd %>%
+    dplyr::group_by(method_key) %>%
+    dplyr::summarise(
+      n_total = sum(!is.na(pval)),
+      n_zero  = sum(pval == 0, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  base_labs <- dd %>%
+    dplyr::group_by(method_key) %>%
+    dplyr::summarise(lbl = dplyr::first(.data[[lab_col]]), .groups = "drop")
+
+  lab_map <- setNames(
+    paste0(
+      base_labs$lbl,
+      "\n(zeros: ",
+      zero_tbl$n_zero[match(base_labs$method_key, zero_tbl$method_key)],
+      " / ",
+      zero_tbl$n_total[match(base_labs$method_key, zero_tbl$method_key)],
+      ")"
+    ),
+    as.character(base_labs$method_key)
+  )
+
+  log_breaks <- sort(unique(log_breaks))
+  if (isTRUE(add_zero)) log_breaks <- sort(unique(c(log_breaks, zero_repl)))
+  lower_limit <- min(log_breaks)
+
+  label_fun <- function(breaks) {
+    out <- breaks
+    out[breaks > 1e-5] <- scales::label_scientific()(breaks[breaks > 1e-5])
+    if (isTRUE(add_zero)) {
+      out[breaks <= zero_repl * 10] <- "0"
+    }
+    out
+  }
+
+  ## aesthetics for the 3 classes
+  color_values <- c(
+    "nonzero_waddR"   = "grey40",
+    "zero_waddR_only" = "#0072B2",  # blue
+    "zero_both"       = "#D55E00", # orange
+    "na_waddR"        = "gray10"
+  )
+  shape_values <- c(
+    "nonzero_waddR"   = 1,   # open circle
+    "zero_waddR_only" = 17,  # triangle
+    "zero_both"       = 16,   # filled circle
+    "na_waddR"        = 7  # filled circle
+  )
+  labels_values <- c(
+    "nonzero_waddR"   = "Non-zero in waddR",
+    "zero_waddR_only" = "Zero in waddR → >0 in permApprox(U)",
+    "zero_both"       = "Zero in waddR → 0 in permApprox(U)",
+    "na_waddR"        = "NA in waddR"
+  )
+
+  p <- ggplot(dd, aes(x = stat, y = pval_plot)) +
+    ## 4 layers so we can control stroke/size
+    geom_point(
+      data = dd %>% dplyr::filter(zero_class == "nonzero_waddR"),
+      aes(color = zero_class, shape = zero_class),
+      size = 2.7, alpha = 0.9, stroke = 1
+    ) +
+    geom_point(
+      data = dd %>% dplyr::filter(zero_class == "zero_waddR_only"),
+      aes(color = zero_class, shape = zero_class),
+      size = 2.7, alpha = 0.9, stroke = 0.4
+    ) +
+    geom_point(
+      data = dd %>% dplyr::filter(zero_class == "zero_both"),
+      aes(color = zero_class, shape = zero_class),
+      size = 2, alpha = 0.9, stroke = 0.3
+    ) +
+    geom_point(
+      data = dd %>% dplyr::filter(zero_class == "na_waddR"),
+      aes(color = zero_class, shape = zero_class),
+      size = 2, alpha = 0.9, stroke = 0.6
+    ) +
+    geom_hline(yintercept = 0.05, linetype = "dashed", color = "black") +
+    facet_wrap(~ method_key, nrow = 1, labeller = as_labeller(lab_map)) +
+    scale_y_log10(breaks = log_breaks, labels = label_fun) +
+    coord_cartesian(ylim = c(lower_limit / 2, 1)) +
+    scale_color_manual(
+      values = color_values,
+      labels = labels_values,
+      name   = "zero type"
+    ) +
+    scale_shape_manual(
+      values = shape_values,
+      labels = labels_values,
+      name   = "zero type"
+    ) +
+    guides(
+      color = guide_legend(override.aes = list(size = 3)),
+      shape = guide_legend(override.aes = list(size = 3))
+    ) +
+    labs(
+      x = expression(d[W]^2),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text        = element_text(size = 15),
+      axis.title       = element_text(size = 16),
+      strip.text       = element_text(size = 15),
+      legend.text      = element_text(size = legend_text_size),
+      legend.title     = element_blank(),
+      legend.position  = legend_position,
+      legend.background    = element_rect(fill = "white", colour = "black"),
+      legend.key           = element_rect(fill = "white", colour = NA),
+      legend.box.background = element_rect(fill = "white", colour = "black"),
+      panel.spacing    = unit(2, "lines"),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.y = element_line(color = "gray80")
+    )
+
+  ## ---- optional annotation ONLY in permApprox(C) panel ----
+  if (!is.null(annotate_genes_c)) {
+    ann_df <- dd %>%
+      dplyr::filter(
+        method_key == "permApprox_constrained_1000",
+        gene %in% annotate_genes_c,
+        !is.na(pval_plot)
+      )
+
+    if (nrow(ann_df) > 0) {
+      p <- p +
+        ggrepel::geom_text_repel(
+          data               = ann_df,
+          aes(label = gene),
+          size               = annotate_size,
+          min.segment.length = 0,
+          max.overlaps       = Inf,
+          box.padding        = box_padding_c,
+          point.padding      = point_padding_c,
+          force              = label_force_c,
+          force_pull         = 0,
+          segment.alpha      = 0.5
+        )
+    }
+  }
+  
+    if (!is.null(annotate_genes_u)) {
+    ann_df <- dd %>%
+      dplyr::filter(
+        method_key == "permApprox_unconstrained_1000",
+        gene %in% annotate_genes_u,
+        !is.na(pval_plot)
+      )
+
+    if (nrow(ann_df) > 0) {
+      p <- p +
+        ggrepel::geom_text_repel(
+          data               = ann_df,
+          aes(label = gene),
+          size               = annotate_size,
+          min.segment.length = 0,
+          max.overlaps       = Inf,
+          box.padding        = box_padding_u,
+          point.padding      = point_padding_u,
+          force              = label_force_u,
+          force_pull         = 0,
+          segment.alpha      = 0.5
+        )
+    }
+  }
+
+  p
+}
+
+```
+
+#### B = 1000
+
+```{r}
+zero_class_df_1000 <- df_pvals_global %>%
+  dplyr::filter(method_key %in% c("waddR_1000",
+                                  "permApprox_unconstrained_1000")) %>%
+  dplyr::select(gene, method_key, pval) %>%
+  tidyr::pivot_wider(
+    id_cols = gene,
+    names_from = method_key,
+    values_from = pval
+  ) %>%
+  dplyr::mutate(
+    zero_class = dplyr::case_when(
+      # NA in waddR
+      is.na(`waddR_1000`) ~ "na_waddR",
+      
+      # non-zero waddR → grey
+      `waddR_1000` > 0 ~ "nonzero_waddR",
+
+      # waddR == 0 & permApprox(U) == 0 → red
+      `waddR_1000` == 0 & `permApprox_unconstrained_1000` == 0 ~ "zero_both",
+
+      # waddR == 0 but permApprox(U) > 0 → blue
+      `waddR_1000` == 0 & (`permApprox_unconstrained_1000` > 0 |
+                           is.na(`permApprox_unconstrained_1000`)) ~ "zero_waddR_only"
+    )
+  )
+df_pvals_global_1000 <- df_pvals_global %>%
+  dplyr::left_join(zero_class_df_1000, by = "gene")
+
+# 1) create a single zero_class column from the first existing one
+df_pvals_global_1000 <- df_pvals_global_1000 %>%
+  dplyr::mutate(
+    zero_class = dplyr::coalesce(
+      !!!rlang::syms(grep("^zero_class", names(df_pvals_global_1000), value = TRUE))
+    )
+  ) %>%
+  # 2) drop all the old suffixed versions
+  dplyr::select(-dplyr::matches("^zero_class\\."))
+
+df_pvals_global_1000 <- df_pvals_global_1000 %>%
+  dplyr::mutate(
+    zero_class = factor(
+      zero_class,
+      levels = c("nonzero_waddR",     # grey 
+                 "zero_waddR_only",   # blue triangles 
+                 "zero_both",         # orange
+                 "na_waddR")
+      
+    )
+  ) %>%
+  arrange(zero_class)
+```
+
+```{r pvals_vs_dw2_wad_pau_pac_1k, fig.width=10, fig.height=4.5, dpi=200}
+plot_pvals_three_zero_colored(
+  df_pvals_global_1000,
+  methods = c("waddR_1000",
+              "permApprox_unconstrained_1000",
+              "permApprox_constrained_1000"),
+  label = "short",
+  zero_repl = 1e-318,
+  log_breaks = c(1e-3, 1e-25, 1e-50, 1e-75, 1e-100, 1e-200, 1e-300),
+  add_zero = TRUE,
+  legend_position = c(0.2,0.37),
+  legend_text_size = 11
+)
+```
+
+```{r pvals_vs_dw2_wad_pau_pac_1k_ann, fig.width=10, fig.height=4.5, dpi=200}
+genes_to_annotate_c <- df_pvals_global_1000 %>% 
+  filter(B == 1000, source == "permApprox (constrained)") %>% 
+  filter(pval < 1e-140 | stat > 2) %>%
+  dplyr::pull(gene)
+
+genes_to_annotate_u <- df_pvals_global_1000 %>% 
+  filter(B == 1000, source == "permApprox (unconstrained)") %>% 
+  filter(pval < 1e-110, pval > 0) %>%
+  dplyr::pull(gene)
+
+plot_pvals_three_zero_colored(
+  df_pvals_global_1000,
+  methods = c("waddR_1000",
+              "permApprox_unconstrained_1000",
+              "permApprox_constrained_1000"),
+  label = "short",
+  zero_repl = 1e-318,
+  log_breaks = c(1e-3, 1e-25, 1e-50, 1e-75, 1e-100, 1e-200, 1e-300),
+  add_zero = TRUE,
+  legend_position = c(0.2,0.37),
+  legend_text_size = 11,
+  annotate_genes_c = genes_to_annotate_c,
+  #annotate_genes_u = genes_to_annotate_u,
+  box_padding_c = 0.2,
+  box_padding_u = 0.3,
+  point_padding_u = 2,
+  label_force_u = 4,
+  annotate_size = 3
+)
+```
+
+```{r}
+tbl_1k <- sig_table_for_methods_df(
+  df_pvals_global_1000,
+  methods = c("waddR_1000",
+              "permApprox_unconstrained_1000",
+              "permApprox_constrained_1000")
+)
+render_sig_table_kable(tbl_1k, caption = "Counts for B = 1k")
+```
+
+
+#### B = 10000
+
+```{r}
+zero_class_df_10000 <- df_pvals_global %>%
+  dplyr::filter(method_key %in% c("waddR_10000",
+                                  "permApprox_unconstrained_10000")) %>%
+  dplyr::select(gene, method_key, pval) %>%
+  tidyr::pivot_wider(
+    id_cols = gene,
+    names_from = method_key,
+    values_from = pval
+  ) %>%
+  dplyr::mutate(
+    zero_class = dplyr::case_when(
+      # non-zero waddR → grey
+      is.na(`waddR_10000`) | `waddR_10000` > 0 ~ "nonzero_waddR",
+
+      # waddR == 0 & permApprox(U) == 0 → red
+      `waddR_10000` == 0 & `permApprox_unconstrained_10000` == 0 ~ "zero_both",
+
+      # waddR == 0 but permApprox(U) > 0 → blue
+      `waddR_10000` == 0 & (`permApprox_unconstrained_10000` > 0 |
+                           is.na(`permApprox_unconstrained_10000`)) ~ "zero_waddR_only"
+    )
+  )
+df_pvals_global_10000 <- df_pvals_global %>%
+  dplyr::left_join(zero_class_df_10000, by = "gene")
+
+# 1) create a single zero_class column from the first existing one
+df_pvals_global_10000 <- df_pvals_global_10000 %>%
+  dplyr::mutate(
+    zero_class = dplyr::coalesce(
+      !!!rlang::syms(grep("^zero_class", names(df_pvals_global_10000), value = TRUE))
+    )
+  ) %>%
+  # 2) drop all the old suffixed versions
+  dplyr::select(-dplyr::matches("^zero_class\\."))
+
+df_pvals_global_10000 <- df_pvals_global_10000 %>%
+  dplyr::mutate(
+    zero_class = factor(
+      zero_class,
+      levels = c("nonzero_waddR",     # grey 
+                 "zero_waddR_only",   # blue triangles 
+                 "zero_both")         # orange
+      
+    )
+  ) %>%
+  arrange(zero_class)
+```
+
+```{r pvals_vs_dw2_wad_pau_pac_10k, fig.width=10, fig.height=5, dpi=200}
+# tmp <- df_pvals_global %>% filter(method_key == "permApprox_unconstrained_10000")
+# sum(tmp$pval == 0, na.rm = TRUE)
+
+plot_pvals_three_zero_colored(
+  df_pvals_global_10000,
+  methods = c("waddR_10000",
+              "permApprox_unconstrained_10000",
+              "permApprox_constrained_10000"),
+  label = "short",
+  zero_repl = 1e-120,
+  log_breaks = c(1e-3, 1e-25, 1e-50, 1e-75, 1e-100),
+  add_zero = TRUE,
+  legend_position = c(0.19,0.37),
+  legend_text_size = 11
+)
+```
+
+```{r}
+tbl_1k <- sig_table_for_methods_df(
+  df_pvals_global,
+  methods = c("waddR_10000",
+              "permApprox_unconstrained_10000",
+              "permApprox_constrained_10000")
+)
+render_sig_table_kable(tbl_1k, caption = "Counts for B = 10k")
+```
+
+
+### P-values with annotations
+
+```{r}
+plot_pvals_single_method <- function(df_long,
+                                     method_key,
+                                     label        = c("short", "long"),
+                                     zero_repl    = 1e-50,
+                                     extra_space_factor = 1, # more padding at bottom if > 1
+                                     alpha_level  = 0.01,
+                                     add_zero     = TRUE,
+                                     log_breaks   = c(1e-3, 1e-10, 1e-25, 1e-50),
+                                     annotate_taxa   = NULL,
+                                     annotate_size   = 3,
+                                     label_force     = 2,
+                                     box_padding     = 0.2,
+                                     legend_position = "bottom") {
+
+  label <- match.arg(label)
+
+  # subset for one method_key (e.g., "waddR_1000", "permApprox_constrained_1000")
+  dd <- df_long %>%
+    dplyr::filter(method_key == !!method_key)
+
+  if (nrow(dd) == 0L) {
+    stop("No rows found for method_key = ", method_key)
+  }
+
+  # handle zeros / very small p-values (clamp tiny ones)
+  dd <- dd %>%
+    dplyr::mutate(
+      pval_plot = dplyr::case_when(
+        is.na(pval)      ~ NA_real_,
+        pval == 0        ~ zero_repl,
+        pval < zero_repl ~ zero_repl,
+        TRUE             ~ pval
+      )
+    )
+
+  # choose label column (short vs long) and build title with zero counts
+  lab_col <- if (label == "long") "method_label_long" else "method_label"
+
+  base_lab <- dd %>%
+    dplyr::summarise(lbl = dplyr::first(.data[[lab_col]]), .groups = "drop") %>%
+    dplyr::pull(lbl)
+
+  zero_info <- dd %>%
+    dplyr::summarise(
+      n_total = sum(!is.na(pval)),
+      n_zero  = sum(pval == 0, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  title_text <- paste0(
+    base_lab,
+    "\n(zeros: ", zero_info$n_zero, " / ", zero_info$n_total, ")"
+  )
+
+  # y-axis breaks and labels
+  log_breaks <- sort(unique(log_breaks))
+  if (isTRUE(add_zero)) log_breaks <- sort(unique(c(log_breaks, zero_repl)))
+
+  lower_limit       <- min(log_breaks)
+  lower_plot_limit  <- lower_limit / extra_space_factor
+
+  label_fun <- function(breaks) {
+    out <- breaks
+    out[breaks > 1e-5] <- scales::label_scientific()(breaks[breaks > 1e-5])
+    if (isTRUE(add_zero)) {
+      out[breaks <= zero_repl * 10] <- "0"
+    }
+    out
+  }
+
+  p <- ggplot(dd, aes(x = stat, y = pval_plot)) +
+    geom_point(aes(fill = ptype),
+               shape = 21, size = 2.5, alpha = 0.7,
+               color = "gray10", stroke = 0.2) +
+    geom_hline(yintercept = alpha_level, linetype = "dashed", color = "black") +
+    scale_y_log10(breaks = log_breaks, labels = label_fun) +
+    coord_cartesian(ylim = c(lower_plot_limit, 1)) +
+    scale_fill_manual(
+      values = c("GPD fit" = "#F8766D", "empirical" = "gray"),
+      name   = "p-value type"
+    ) +
+    labs(
+      title = title_text,
+      x     = expression(d[W]^2),
+      y     = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text            = element_text(size = 14),
+      axis.title           = element_text(size = 14),
+      plot.title           = element_text(size = 14, hjust = 0.5),
+      legend.title         = element_text(size = 14),
+      legend.text          = element_text(size = 14),
+      legend.background    = element_rect(fill = "white", colour = "black"),
+      legend.key           = element_rect(fill = "white", colour = NA),
+      legend.box.background = element_rect(fill = "white", colour = "black"),
+      legend.position      = legend_position,
+      panel.grid.minor     = element_blank(),
+      panel.grid.major.y   = element_line(color = "gray80")
+    )
+
+  # optional annotation
+  if (!is.null(annotate_taxa)) {
+    ann_df <- dd %>%
+      dplyr::filter(gene %in% annotate_taxa, !is.na(pval_plot))
+
+    if (nrow(ann_df) > 0) {
+      p <- p +
+        ggrepel::geom_text_repel(
+          data               = ann_df,
+          aes(label = gene),
+          size               = annotate_size,
+          min.segment.length = 0,
+          max.overlaps       = Inf,
+          box.padding        = box_padding,
+          point.padding      = 0.3,
+          force              = label_force,
+          force_pull         = 0,
+          segment.alpha      = 0.5
+        )
+    }
+  }
+
+  p
+}
+```
+
+```{r}
+## Restrict to B = 1000 and the three methods of interest
+df_ts_long <- df_pvals_global %>%
+  dplyr::filter(method_key %in% c("waddR_1000",
+                                  "permApprox_unconstrained_1000",
+                                  "permApprox_constrained_1000"))
+
+## For the paper, you want a cleaner label for the constrained permApprox
+df_ts_long <- df_ts_long %>%
+  dplyr::mutate(
+    method_label = dplyr::if_else(
+      method_key == "permApprox_constrained_1000",
+      "waddR + permApprox",          # short label
+      method_label
+    ),
+    method_label_long = dplyr::if_else(
+      method_key == "permApprox_constrained_1000",
+      "waddR + permApprox (constrained)",  # long label if you ever use it
+      method_label_long
+    )
+  )
+
+## Annotation sets:
+## - genes with zero waddR p-values
+## - top few genes by smallest waddR p-values
+genes_to_annotate_perma <- df_pvals_global %>% 
+  filter(B == 1000, source == "permApprox (constrained)") %>% 
+  arrange(pval) %>% 
+  dplyr::slice(1:7) %>%
+  dplyr::pull(gene)
+
+## Common y-axis settings for the plots
+log_breaks <- c(1e-3, 1e-25, 1e-50, 1e-75, 1e-100, 1e-200, 1e-300)
+zero_repl  <- 1e-319
+extra_space_factor <- 10000
+```
+
+```{r, fig.width=5, fig.height=4.5, dpi=200}
+p_waddR <- plot_pvals_single_method(
+  df_ts_long,
+  method_key        = "waddR_1000",
+  label             = "short",
+  zero_repl         = zero_repl,
+  log_breaks        = log_breaks,
+  box_padding       = 0.5,
+  label_force       = 1.7,
+  extra_space_factor = extra_space_factor,
+  alpha_level       = 0.01,
+  legend_position   = c(0.8, 0.4)
+)
+
+p_pApp_u <- plot_pvals_single_method(
+  df_ts_long,
+  method_key        = "permApprox_unconstrained_1000",
+  label             = "short",
+  zero_repl         = zero_repl,
+  log_breaks        = log_breaks,
+  box_padding       = 0.5,
+  label_force       = 1.7,
+  extra_space_factor = extra_space_factor,
+  alpha_level       = 0.01
+)
+
+p_pApp <- plot_pvals_single_method(
+  df_ts_long,
+  method_key        = "permApprox_constrained_1000",
+  label             = "short",
+  zero_repl         = zero_repl,
+  log_breaks        = log_breaks,
+  annotate_taxa     = genes_to_annotate_perma,
+  annotate_size     = 3,
+  box_padding       = 0.3,
+  label_force       = 1.8,
+  extra_space_factor = extra_space_factor,
+  alpha_level       = 0.01
+)
+
+```
+
+```{r pvals_vs_dw2_ts_wad_pac_1k, fig.width=12, fig.height=4.5, dpi=200}
+p_waddR +
+  p_pApp_u +
+  theme(legend.position = "none") +
+  p_pApp +
+  theme(legend.position = "none") +
+  patchwork::plot_layout(nrow = 1, guides = "keep") &
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+
+### P-values vs. ranked tests
+
+```{r}
+# Ranked p-value plot with empirical_100000 as fixed reference (open black circles)
+# Always sort by decreasing p_ref; within the p_ref floor (<= 1/(B+1)) sort by increasing stat.
+plot_pvals_ranked <- function(df,
+                              methods = c("waddR_1000",
+                                          "permApprox_unconstrained_1000",
+                                          "permApprox_constrained_1000"),
+                              label      = c("short", "long"),
+                              pval_min   = NULL,
+                              n_top      = NULL,   # keep first n after ordering
+                              n_bottom   = NULL,   # keep last n after ordering
+                              zero_repl  = 1e-320,
+                              add_zero   = TRUE,
+                              emp_to_na  = TRUE,
+                              log_breaks = c(1e-3, 1e-10, 1e-25, 1e-50,
+                                             1e-75, 1e-100, 1e-200, 1e-300),
+                              add_grid   = TRUE,
+                              ref_key    = "empirical_100000",
+                              B_ref      = 100000,
+                              floor_tol  = 1e-12,      # small tolerance around the p-floor
+                              drop_na_stat = c("reference", "any", "none"),
+                              ref_size   = 2.2,   # size of reference dots
+                              base_size  = 1.8, # start size for other methods
+                              method_colors = NULL,
+                              show_ref_in_legend = TRUE) {
+  
+  label <- match.arg(label)
+  drop_na_stat <- match.arg(drop_na_stat)
+
+  if (!is.null(n_top) && !is.null(n_bottom)) 
+    stop("Specify at most one of `n_top` or `n_bottom`.")
+  if (!ref_key %in% df$method_key) 
+    stop("Reference method_key '", ref_key, "' not found in df$method_key.")
+
+  # ensure ref isn't duplicated in methods
+  methods  <- unique(setdiff(methods, ref_key))
+  sel_keys <- c(ref_key, methods)
+
+  # subset to ref + methods
+  dd <- df %>%
+    dplyr::filter(method_key %in% sel_keys) %>%
+    dplyr::mutate(method_key = factor(method_key, levels = sel_keys))
+
+  # Drop NA stats early (prevents missing ranks at start)
+  if (drop_na_stat == "reference") {
+    bad_genes <- dd %>% dplyr::filter(method_key == ref_key, 
+                                      is.na(stat) | !is.finite(stat)) %>%
+      dplyr::pull(gene) %>% unique()
+    dd <- dplyr::filter(dd, !gene %in% bad_genes)
+  } else if (drop_na_stat == "any") {
+    dd <- dd %>%
+      dplyr::group_by(gene) %>%
+      dplyr::filter(!any(is.na(stat) | !is.finite(stat))) %>%
+      dplyr::ungroup()
+  }
+
+  # keep only genes present in ALL selected series
+  dd <- dd %>%
+    dplyr::group_by(gene) %>%
+    dplyr::filter(dplyr::n_distinct(method_key) == length(sel_keys)) %>%
+    dplyr::ungroup()
+
+  # optional p-value floor across all selected series
+  if (!is.null(pval_min)) {
+    stopifnot(is.numeric(pval_min), length(pval_min) == 1, !is.na(pval_min))
+    keep_genes <- dd %>%
+      dplyr::group_by(gene) %>%
+      dplyr::summarise(n_ok = sum(!is.na(pval) & pval > pval_min), 
+                       .groups = "drop") %>%
+      dplyr::filter(n_ok == length(sel_keys)) %>%
+      dplyr::pull(gene)
+    dd <- dplyr::filter(dd, gene %in% keep_genes)
+  }
+
+  if (nrow(dd) == 0L) {
+    return(ggplot() +
+             annotate("text", .5, .5, 
+                      label = "No points after filtering.", size = 5) +
+             theme_void())
+  }
+
+  lab_col <- if (label == "long") "method_label_long" else "method_label"
+
+  # --- Reference order --------------------------------------------------------
+  p_floor <- 1 / (B_ref + 1)  # min empirical p for B permutations with +1 correction
+
+  ref_order <- dd %>%
+    dplyr::filter(method_key == ref_key) %>%
+    dplyr::transmute(
+      gene,
+      p_ref = pval,
+      stat_ref = stat,
+      # treat 0s as floor for ordering; keep NA last
+      p_sort = dplyr::case_when(
+        is.na(p_ref) ~ -Inf,     # NA will go to the very end (after slice it likely drops)
+        p_ref == 0   ~ zero_repl,
+        TRUE         ~ p_ref
+      ),
+      is_floor = !is.na(p_ref) & (p_ref <= p_floor * (1 + floor_tol))
+    ) %>%
+    # Decreasing by p, then for floor-tied ones sort by increasing stat
+    dplyr::arrange(dplyr::desc(p_sort),
+                   dplyr::if_else(is_floor, stat_ref, Inf)) %>%
+    dplyr::select(gene)
+
+  # slice top/bottom on the reference order
+  if (!is.null(n_top))     ref_order <- ref_order %>% dplyr::slice_head(n = n_top)
+  if (!is.null(n_bottom))  ref_order <- ref_order %>% dplyr::slice_tail(n = n_bottom)
+
+  ref_order <- ref_order %>% dplyr::mutate(rank = dplyr::row_number())
+  max_rank  <- nrow(ref_order)
+
+  # x axis: start at 1, pad ±0.5 so rank 1 dot isn't cut; force ticks at 1 and max
+  x_limits <- c(0.5, max_rank + 0.5)
+  x_breaks <- sort(unique(c(1, scales::pretty_breaks(n = 6)(c(1, max_rank)), max_rank)))
+  
+  #join single rank to all methods
+  dd <- dd %>%
+  dplyr::semi_join(ref_order, by = "gene") %>%
+  dplyr::left_join(ref_order, by = "gene") %>%
+  dplyr::mutate(
+    legend_label = .data[[lab_col]],
+    # force NA if method is not "empirical" but ptype says "empirical"
+    pval = dplyr::case_when(
+      isTRUE(emp_to_na) & !grepl("empirical", method_key) & ptype == "empirical" ~ NA_real_,
+      TRUE ~ pval
+    ),
+    pval_plot = dplyr::case_when(
+      is.na(pval)       ~ NA_real_,
+      pval == 0         ~ zero_repl,
+      pval < zero_repl  ~ NA_real_,
+      TRUE              ~ pval
+    )
+  ) %>%
+  dplyr::arrange(rank)
+  
+  # split reference vs comparison
+  ref_pts <- dd %>% dplyr::filter(method_key == ref_key)
+  cmp_pts <- dd %>% dplyr::filter(method_key != ref_key)
+
+  # --- y-axis breaks & labels -------------------------------------------------
+  log_breaks <- sort(unique(log_breaks))
+  if (isTRUE(add_zero)) log_breaks <- sort(unique(c(log_breaks, zero_repl)))
+  lower_limit <- min(log_breaks)
+  label_fun <- function(breaks) {
+    out <- breaks
+    out[breaks > 1e-5] <- scales::label_scientific()(breaks[breaks > 1e-5])
+    if (isTRUE(add_zero)) out[breaks <= zero_repl * 10] <- "0"
+    out
+  }
+
+  # vertical guide per rank (== per gene)
+  grid_df <- ref_order %>% dplyr::transmute(rank, ymin = lower_limit, ymax = 1)
+
+  x_title <- bquote("Test index (ordered by decreasing " ~ hat(p)[emp_100k] ~ ")")
+
+  # --- Legend mapping: color by method_key, labels from short/long ------------
+  legend_df_all <- dd %>%
+    dplyr::distinct(method_key, legend_label) %>%
+    dplyr::mutate(method_key = as.character(method_key))
+
+  if (isTRUE(show_ref_in_legend)) {
+    ref_lab <- legend_df_all$legend_label[legend_df_all$method_key == ref_key][1]
+    legend_keys <- c(ref_key, as.character(methods))                 # ref first
+    legend_labs <- c(ref_lab, legend_df_all$legend_label[match(methods, legend_df_all$method_key)])
+  } else {
+    legend_keys <- as.character(methods)
+    legend_labs <- legend_df_all$legend_label[match(methods, legend_df_all$method_key)]
+  }
+  
+  # --- Plot -------------------------------------------------------------------
+  p <- ggplot()
+  if (isTRUE(add_grid)) {
+    p <- p + geom_segment(data = grid_df,
+                          aes(x = rank, xend = rank, y = ymin, yend = ymax),
+                          linewidth = 0.2, color = "grey85")
+  }
+  p <- p + geom_point(
+    data = ref_pts,
+    aes(x = rank, y = pval_plot, color = ref_key),
+    shape = 21, size = ref_size, stroke = 0.5,
+    fill = NA,
+    show.legend = show_ref_in_legend
+  ) 
+  
+  # comparison methods (colored)
+  # add one layer per method in the *given* order -> controls z-order
+  for (i in seq_along(methods)) {
+    mk <- methods[i]
+    this_size <- base_size - 0.2 * (i - 1)
+    p <- p + geom_point(
+      data = cmp_pts %>% dplyr::filter(method_key == mk),
+      aes(x = rank, y = pval_plot, color = method_key),
+      alpha = 0.8, size = this_size, inherit.aes = FALSE
+    )
+  }
+  
+  # reference as open black circles (optionally in legend)
+  p <- p + 
+    scale_x_continuous(limits = x_limits, breaks = x_breaks, 
+                       expand = expansion(mult = c(0, 0))) +
+    scale_y_log10(breaks = log_breaks, labels = label_fun) +
+    coord_cartesian(ylim = c(lower_limit, 1)) +
+    labs(x = x_title, y = expression(hat(p)), color = "Method") +
+    theme_minimal() +
+    theme(
+      axis.text   = element_text(size = 12),
+      axis.title  = element_text(size = 14),
+      legend.title= element_text(size = 12),
+      legend.text = element_text(size = 10),
+      panel.grid.minor = element_blank()
+    )
+  
+  # Colors in legend order
+  if (!is.null(method_colors)) {
+    if (is.null(names(method_colors))) names(method_colors) <- legend_keys
+    if (isTRUE(show_ref_in_legend) && is.na(method_colors[ref_key])) {
+      method_colors[ref_key] <- "black"
+    }
+    col_vals <- method_colors[legend_keys]
+  } else {
+    if (isTRUE(show_ref_in_legend)) {
+      col_vals <- setNames(c("black", scales::hue_pal()(length(legend_keys) - 1)), legend_keys)
+    } else {
+      col_vals <- setNames(scales::hue_pal()(length(legend_keys)), legend_keys)
+    }
+  }
+
+  p <- p + scale_color_manual(values = col_vals,
+                              breaks = legend_keys,
+                              labels = legend_labs,
+                              name   = "Method")
+
+  if (isTRUE(show_ref_in_legend)) {
+    p <- p + guides(color = guide_legend(
+      override.aes = list(
+        shape = c(21, rep(16, length(legend_keys) - 1)),
+        fill  = c(NA,  rep(NA,  length(legend_keys) - 1))
+      )
+    ))
+  } else {
+    p <- p + guides(color = guide_legend(override.aes = list(shape = 16)))
+  }
+
+  p
+}
+
+```
+
+```{r, fig.width=10, fig.height=4, dpi=200}
+my_cols <- c(
+  "empirical_1000"                 = "gray50",
+  "waddR_1000"                     = "skyblue3",  
+  "waddR_10000"                    = "royalblue4",  
+  "permApprox_unconstrained_1000"  = "orange2",
+  "permApprox_unconstrained_10000" = "chocolate4",
+  "permApprox_constrained_1000"  = "#F8766D",  
+  "permApprox_constrained_10000"   = "red4"
+)
+```
+
+#### 1,000 vs. 10,000 permutations
+
+```{r pvals_vs_idx_emp_wad1k_wad10k_all, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "waddR_10000",
+              "waddR_1000"
+  ),
+  label = "long",
+  emp_to_na = TRUE,
+  add_grid = FALSE,
+  pval_min = NULL,
+  log_breaks = c(1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-10, 1e-15, 1e-20),
+  add_zero = FALSE,
+  n_top = 1000,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+Since the Empirical p-values with B = 100k are constant from approx index 130 on, we plot only up to this test in the following.
+
+```{r pvals_vs_idx_emp_wad1k_wad10k, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "waddR_10000",
+              "waddR_1000"
+  ),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-15,
+  log_breaks = c(1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10),
+  add_zero = FALSE,
+  n_top = 130,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+```{r pvals_vs_idx_emp_pau1k_pau10k_all, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "permApprox_unconstrained_10000",
+              "permApprox_unconstrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  add_grid = FALSE,
+  log_breaks = c(1e-0, 1e-5,1e-10, 1e-25, 1e-50, 1e-75, 1e-100),
+  add_zero = FALSE,
+  n_top = 1000,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+
+```{r pvals_vs_idx_emp_pau1k_pau10k, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "permApprox_unconstrained_10000",
+              "permApprox_unconstrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-15,
+  log_breaks = c(1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10),
+  add_zero = FALSE,
+  n_top = 130,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+```{r pvals_vs_idx_emp_pac1k_pac10k_all, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "permApprox_constrained_10000",
+              "permApprox_constrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  add_grid = FALSE,
+  log_breaks = c(1e-0, 1e-5,1e-10, 1e-25, 1e-50, 1e-75, 1e-100),
+  add_zero = FALSE,
+  n_top = 1000,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+```{r pvals_vs_idx_emp_pac1k_pac10k, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "permApprox_constrained_10000",
+              "permApprox_constrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-15,
+  log_breaks = c(1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10),
+  add_zero = FALSE,
+  n_top = 130,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+#### waddR vs. permApprox (B = 1,000)
+
+```{r pvals_vs_idx_wad_pau_pac_1k, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("waddR_1000",
+              "permApprox_unconstrained_1000",
+              "permApprox_constrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-15,
+  log_breaks = c(1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10),
+  add_zero = FALSE,
+  n_top = 130,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+#### waddR vs. permApprox (B = 10,000)
+
+```{r pvals_vs_idx_wad_pau_pac_10k, fig.width=10, fig.height=4, dpi=200}
+plot_pvals_ranked(
+  df_pvals_global,
+  methods = c("waddR_10000",
+              "permApprox_unconstrained_10000",
+              "permApprox_constrained_10000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-15,
+  log_breaks = c(1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10),
+  add_zero = FALSE,
+  n_top = 130,
+  method_colors = my_cols,
+  show_ref_in_legend = TRUE
+)
+```
+
+### Ratio of p-values (vs. empirical with B = 100k)
+
+```{r}
+# Ratio plot: p_method / p_ref along ranked test index (ref = empirical_100000)
+plot_pval_ratio_ranked <- function(df,
+                                   methods = c("waddR_1000",
+                                               "permApprox_unconstrained_1000",
+                                               "permApprox_constrained_1000"),
+                                   label        = c("short","long"),
+                                   pval_min     = NULL,
+                                   n_top        = NULL,
+                                   n_bottom     = NULL,
+                                   zero_repl    = 1e-320,   # floor for p-values before ratio
+                                   ratio_floor  = 1e-300,   # clamp tiny ratios for log scale safety
+                                   ref_key      = "empirical_100000",
+                                   B_ref        = 100000,
+                                   floor_tol    = 1e-12,
+                                   drop_na_stat = c("reference","any","none"),
+                                   emp_to_na    = TRUE,
+                                   base_size    = 1.8,      # first method size; then -0.2 per method
+                                   ratio_breaks = c(1e-6, 1e-4, 1e-2, 1, 1e2, 1e4, 1e6),
+                                   method_colors = NULL) {
+
+  label        <- match.arg(label)
+  drop_na_stat <- match.arg(drop_na_stat)
+
+  if (!is.null(n_top) && !is.null(n_bottom)) 
+    stop("Specify at most one of `n_top` or `n_bottom`.")
+  if (!ref_key %in% df$method_key) 
+    stop("Reference method_key '", ref_key, "' not found in df$method_key.")
+
+  methods  <- unique(setdiff(methods, ref_key))
+  sel_keys <- c(ref_key, methods)
+
+  dd <- df %>%
+    dplyr::filter(method_key %in% sel_keys) %>%
+    dplyr::mutate(method_key = factor(method_key, levels = sel_keys))
+
+  # Drop NA stats early
+  if (drop_na_stat == "reference") {
+    bad_genes <- dd %>%
+      dplyr::filter(method_key == ref_key, is.na(stat) | !is.finite(stat)) %>%
+      dplyr::pull(gene) %>% unique()
+    dd <- dplyr::filter(dd, !gene %in% bad_genes)
+  } else if (drop_na_stat == "any") {
+    dd <- dd %>% dplyr::group_by(gene) %>%
+      dplyr::filter(!any(is.na(stat) | !is.finite(stat))) %>%
+      dplyr::ungroup()
+  }
+
+  # keep only genes present in ALL selected series
+  dd <- dd %>%
+    dplyr::group_by(gene) %>%
+    dplyr::filter(dplyr::n_distinct(method_key) == length(sel_keys)) %>%
+    dplyr::ungroup()
+
+  # optional p-value floor across all series
+  if (!is.null(pval_min)) {
+    keep_genes <- dd %>% dplyr::group_by(gene) %>%
+      dplyr::summarise(n_ok = sum(!is.na(pval) & pval > pval_min), 
+                       .groups = "drop") %>%
+      dplyr::filter(n_ok == length(sel_keys)) %>% dplyr::pull(gene)
+    dd <- dplyr::filter(dd, gene %in% keep_genes)
+  }
+
+  if (nrow(dd) == 0L) 
+    return(ggplot() + annotate("text", .5, .5, 
+                               label = "No points after filtering.", size = 5) + 
+             theme_void())
+
+  lab_col <- if (label == "long") "method_label_long" else "method_label"
+
+  # --- Reference order: decreasing p_ref; ties at floor broken by increasing stat
+  p_floor <- 1 / (B_ref + 1)
+
+  ref_order <- dd %>%
+    dplyr::filter(method_key == ref_key) %>%
+    dplyr::transmute(
+      gene,
+      p_ref = pval,
+      stat_ref = stat,
+      p_sort = dplyr::case_when(
+        is.na(p_ref) ~ -Inf,
+        p_ref == 0   ~ zero_repl,
+        TRUE         ~ p_ref
+      ),
+      is_floor = !is.na(p_ref) & (p_ref <= p_floor * (1 + floor_tol))
+    ) %>%
+    dplyr::arrange(dplyr::desc(p_sort),
+                   dplyr::if_else(is_floor, stat_ref, Inf)) %>%
+    dplyr::select(gene)
+
+  if (!is.null(n_top))     ref_order <- ref_order %>% dplyr::slice_head(n = n_top)
+  if (!is.null(n_bottom))  ref_order <- ref_order %>% dplyr::slice_tail(n = n_bottom)
+
+  ref_order <- ref_order %>% dplyr::mutate(rank = dplyr::row_number())
+  max_rank  <- nrow(ref_order)
+
+  # x axis: start at 1, pad ±0.5 so rank 1 dot isn't cut; force ticks at 1 and max
+  x_limits <- c(0.5, max_rank + 0.5)
+  x_breaks <- sort(unique(c(1, scales::pretty_breaks(n = 6)(c(1, max_rank)), 
+                            max_rank)))
+
+  # join, handle emp_to_na, compute ratios
+  dd <- dd %>%
+    dplyr::semi_join(ref_order, by = "gene") %>%
+    dplyr::left_join(ref_order, by = "gene") %>%
+    dplyr::mutate(
+      legend_label = .data[[lab_col]],
+      # drop empirical placeholder p-values for non-empirical methods if requested
+      pval = dplyr::case_when(
+        isTRUE(emp_to_na) & !grepl("empirical", method_key) & ptype == "empirical" ~ NA_real_,
+        TRUE ~ pval
+      ),
+      p_ref    = pmax(ifelse(method_key == ref_key, pval, NA_real_), zero_repl),
+      p_method = pmax(ifelse(method_key != ref_key, pval, NA_real_), zero_repl)
+    ) %>%
+    dplyr::group_by(gene) %>%
+    dplyr::mutate(p_ref_gene = max(p_ref, na.rm = TRUE)) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      ratio_raw = ifelse(method_key == ref_key, NA_real_, p_method / p_ref_gene),
+      ratio_plot = dplyr::case_when(
+        is.na(ratio_raw)        ~ NA_real_,
+        ratio_raw <= 0          ~ NA_real_,
+        ratio_raw < ratio_floor ~ ratio_floor,
+        TRUE                    ~ ratio_raw
+      )
+    ) %>%
+    dplyr::arrange(rank)
+
+  cmp_pts <- dd %>% dplyr::filter(method_key != ref_key)
+
+  # vertical guides
+  grid_df <- ref_order %>% dplyr::transmute(rank, ymin = min(ratio_breaks), 
+                                            ymax = max(ratio_breaks))
+
+  x_title <- bquote("Test index (ordered by decreasing " ~ hat(p)[emp_100k] ~ ")")
+
+  # Legend keys/labels
+  legend_df_all <- dd %>%
+    dplyr::distinct(method_key, legend_label) %>%
+    dplyr::mutate(method_key = as.character(method_key))
+  legend_keys <- as.character(methods)
+  legend_labs <- legend_df_all$legend_label[match(methods, 
+                                                  legend_df_all$method_key)]
+
+  # --- Plot
+  p <- ggplot() +
+    geom_segment(data = grid_df,
+                 aes(x = rank, xend = rank, y = ymin, yend = ymax),
+                 linewidth = 0.2, color = "grey85") +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "grey40")
+
+  # comparison methods (colored), one layer per method in the given order
+  for (i in seq_along(methods)) {
+    mk <- methods[i]
+    this_size <- base_size - 0.2 * (i - 1)
+    p <- p + geom_point(
+      data = cmp_pts %>% dplyr::filter(method_key == mk),
+      aes(x = rank, y = ratio_plot, color = method_key),
+      alpha = 0.85, size = this_size, inherit.aes = FALSE
+    )
+  }
+
+  p <- p +
+    scale_x_continuous(limits = x_limits, breaks = x_breaks, 
+                       expand = expansion(mult = c(0, 0))) +
+    scale_y_log10(breaks = ratio_breaks, labels = scales::label_scientific()) +
+    labs(x = x_title, y = expression(hat(p)[method]/hat(p)[emp_100k]), 
+         color = "Method") +
+    theme_minimal() +
+    theme(
+      axis.text   = element_text(size = 12),
+      axis.title  = element_text(size = 14),
+      legend.title= element_text(size = 12),
+      legend.text = element_text(size = 10),
+      panel.grid.minor = element_blank()
+    )
+
+  # Colors in legend order
+  if (!is.null(method_colors)) {
+    if (is.null(names(method_colors))) names(method_colors) <- legend_keys
+    col_vals <- method_colors[legend_keys]
+  } else {
+    col_vals <- setNames(scales::hue_pal()(length(legend_keys)), legend_keys)
+  }
+
+  p <- p + scale_color_manual(values = col_vals,
+                              breaks = legend_keys,
+                              labels = legend_labs,
+                              name   = "Method") +
+    guides(color = guide_legend(override.aes = list(shape = 16)))
+
+  p
+}
+```
+
+
+#### 1,000 vs. 10,000 permutations
+
+```{r ratios_vs_idx_emp_wad1k_wad10k, fig.width=10, fig.height=4, dpi=200}
+plot_pval_ratio_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "waddR_10000",
+              "waddR_1000"
+  ),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-10,
+  ratio_breaks = c(1e+2, 1e+1, 1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5),
+  n_top = 130,
+  method_colors = my_cols
+)
+```
+
+```{r ratios_vs_idx_emp_pau1k_pau10k, fig.width=10, fig.height=4, dpi=200}
+plot_pval_ratio_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "permApprox_unconstrained_10000",
+              "permApprox_unconstrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-10,
+  ratio_breaks = c(1e+2, 1e+1, 1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5),
+  n_top = 130,
+  method_colors = my_cols
+)
+```
+
+
+```{r ratios_vs_idx_emp_pac1k_pac10k, fig.width=10, fig.height=4, dpi=200}
+plot_pval_ratio_ranked(
+  df_pvals_global,
+  methods = c("empirical_1000",
+              "permApprox_constrained_10000",
+              "permApprox_constrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-10,
+  ratio_breaks = c(1e+2, 1e+1, 1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5),
+  n_top = 130,
+  method_colors = my_cols
+)
+```
+
+#### waddR vs. permApprox (B = 1,000)
+
+```{r ratios_vs_idx_wad_pau_pac_1k, fig.width=10, fig.height=4, dpi=200}
+plot_pval_ratio_ranked(
+  df_pvals_global,
+  methods = c("waddR_1000",
+              "permApprox_unconstrained_1000",
+              "permApprox_constrained_1000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-10,
+  ratio_breaks = c(1e+2, 1e+1, 1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5),
+  n_top = 130,
+  method_colors = my_cols
+)
+```
+
+#### waddR vs. permApprox (B = 10,000)
+
+```{r ratios_vs_idx_wad_pau_pac_10k, fig.width=10, fig.height=4, dpi=200}
+plot_pval_ratio_ranked(
+  df_pvals_global,
+  methods = c("waddR_10000",
+              "permApprox_unconstrained_10000",
+              "permApprox_constrained_10000"),
+  label = "long",
+  emp_to_na = TRUE,
+  pval_min = 1e-10,
+  ratio_breaks = c(1e+2, 1e+1, 1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5),
+  n_top = 130,
+  method_colors = my_cols
+)
+```
+
+## P-values vs. ordered test statistics
+
+```{r}
+plot_p_vs_stat_ordered <- function(df,
+                                   methods = c("waddR_1000",
+                                               "permApprox_unconstrained_1000",
+                                               "permApprox_constrained_1000"),
+                                   label      = c("short","long"),
+                                   zero_repl  = 1e-320,
+                                   add_zero   = TRUE,
+                                   log_breaks = c(1e-3, 1e-25, 1e-50, 1e-100, 1e-200, 1e-300),
+                                   add_path   = TRUE,   # connect points in stat order
+                                   add_bins   = TRUE,   # binned median guide over x
+                                   bins       = 20,
+                                   add_loess  = FALSE   # optional smooth
+) {
+  label <- match.arg(label)
+  lab_col <- if (label == "long") "method_label_long" else "method_label"
+
+  # keep only selected methods; ensure all selected genes are in all methods
+  dd <- df %>%
+    dplyr::filter(method_key %in% methods) %>%
+    dplyr::mutate(method_key = factor(method_key, levels = methods)) %>%
+    dplyr::group_by(gene) %>%
+    dplyr::filter(dplyr::n_distinct(method_key) == length(methods)) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      pval_plot = dplyr::case_when(
+        is.na(pval)      ~ NA_real_,
+        pval == 0        ~ zero_repl,
+        pval < zero_repl ~ NA_real_,
+        TRUE             ~ pval
+      )
+    ) %>%
+    dplyr::group_by(method_key) %>%
+    dplyr::arrange(stat, .by_group = TRUE) %>%          # <- ORDER BY STAT (increasing)
+    dplyr::mutate(ord_idx = dplyr::row_number()) %>%
+    dplyr::ungroup()
+
+  # facet labels
+  labs_tbl <- dd %>% dplyr::group_by(method_key) %>%
+    dplyr::summarise(lbl = dplyr::first(.data[[lab_col]]), .groups = "drop")
+  lab_map <- setNames(labs_tbl$lbl, labs_tbl$method_key)
+
+  # y-axis formatting
+  log_breaks <- sort(unique(log_breaks))
+  if (isTRUE(add_zero)) log_breaks <- sort(unique(c(log_breaks, zero_repl)))
+  lower_limit <- min(log_breaks)
+  label_fun <- function(b) {
+    out <- b
+    out[b > 1e-5] <- scales::label_scientific()(b[b > 1e-5])
+    if (isTRUE(add_zero)) out[b <= zero_repl * 10] <- "0"
+    out
+  }
+
+  # optional binned medians in x
+  bin_df <- NULL
+  if (isTRUE(add_bins) && nrow(dd) > 0) {
+    bin_df <- dd %>%
+      dplyr::group_by(method_key) %>%
+      dplyr::mutate(bin = cut(stat, breaks = bins, include.lowest = TRUE)) %>%
+      dplyr::group_by(method_key, bin) %>%
+      dplyr::summarise(x = median(stat, na.rm = TRUE),
+                       y = median(pval_plot, na.rm = TRUE),
+                       .groups = "drop") %>%
+      dplyr::filter(is.finite(x), is.finite(y))
+  }
+
+  p <- ggplot(dd, aes(x = stat, y = pval_plot)) +
+    {
+      if (isTRUE(add_path))
+        geom_path(aes(group = method_key),
+                  linewidth = 0.4, alpha = 0.5, color = "grey40")
+    } +
+    geom_point(aes(fill = ptype),
+               shape = 21, size = 1.6, alpha = 0.75,
+               color = "gray20", stroke = 0.2, na.rm = TRUE) +
+    {
+      if (isTRUE(add_bins) && nrow(bin_df) > 0)
+        geom_line(data = bin_df, aes(x = x, y = y),
+                  linewidth = 0.7, inherit.aes = FALSE)
+    } +
+    {
+      if (isTRUE(add_loess))
+        geom_smooth(method = "loess", se = FALSE, linewidth = 0.6,
+                    span = 0.8, color = "black")
+    } +
+    facet_wrap(~ method_key, nrow = 1, labeller = as_labeller(lab_map), scales = "free_x") +
+    scale_y_log10(breaks = log_breaks, labels = label_fun) +
+    scale_x_log10() +
+    coord_cartesian(ylim = c(lower_limit, 1)) +
+    scale_fill_manual(values = c("GPD fit" = "#F8766D", "empirical" = "gray"),
+                      name = "p-value type") +
+    labs(x = expression(d[W]^2 ~ "(ordered)"),
+         y = expression(hat(p))) +
+    theme_minimal() +
+    theme(
+      axis.text = element_text(size = 12),
+      axis.title = element_text(size = 14),
+      strip.text = element_text(size = 14),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      panel.grid.major.y = element_line(color = "gray85")
+    )
+
+  p
+}
+
+
+```
+
+```{r pvals_vs_odw2_wad_pau_pac_10k, fig.width=10, fig.height=5, dpi=200}
+plot_p_vs_stat_ordered(
+  df_pvals_global,
+  methods = c("permApprox_constrained_1000",
+              "permApprox_constrained_10000"),
+  label = "long",
+  add_path = FALSE,   # shows the stat-ordered trace
+  add_bins = FALSE,
+  add_loess = FALSE
+)
+```
+
+```{r}
+plot_p_vs_ordered_stat <- function(df,
+                                   methods = c("waddR_1000",
+                                               "permApprox_unconstrained_1000",
+                                               "permApprox_constrained_1000"),
+                                   label      = c("short","long"),
+                                   zero_repl  = 1e-320,
+                                   add_zero   = TRUE,
+                                   log_breaks = c(1e-3, 1e-10, 1e-25, 1e-50, 1e-100, 1e-200, 1e-300),
+                                   show_stat_ticks = TRUE) {
+
+  label <- match.arg(label)
+  lab_col <- if (label == "long") "method_label_long" else "method_label"
+
+  dd <- df %>%
+    dplyr::filter(method_key %in% methods) %>%
+    dplyr::mutate(method_key = factor(method_key, levels = methods),
+                  pval_plot  = dplyr::case_when(
+                    is.na(pval)      ~ NA_real_,
+                    pval == 0        ~ zero_repl,
+                    pval < zero_repl ~ NA_real_,
+                    TRUE             ~ pval
+                  )) %>%
+    dplyr::group_by(method_key) %>%
+    dplyr::arrange(stat, .by_group = TRUE) %>%
+    dplyr::mutate(rank_stat = dplyr::row_number(),
+                  n_m = dplyr::n()) %>%
+    dplyr::ungroup()
+
+  # facet labels + stat range summaries for context
+  sum_tbl <- dd %>% dplyr::group_by(method_key) %>%
+    dplyr::summarise(
+      lbl = dplyr::first(.data[[lab_col]]),
+      stat_min = min(stat, na.rm=TRUE),
+      stat_med = median(stat, na.rm=TRUE),
+      stat_max = max(stat, na.rm=TRUE),
+      .groups = "drop"
+    )
+
+  lab_map <- setNames(
+    paste0(sum_tbl$lbl,
+           if (isTRUE(show_stat_ticks))
+             sprintf("\n[min=%.3g | med=%.3g | max=%.3g]",
+                     sum_tbl$stat_min, sum_tbl$stat_med, sum_tbl$stat_max)
+           else ""),
+    sum_tbl$method_key
+  )
+
+  # y-axis labels
+  log_breaks <- sort(unique(log_breaks))
+  if (isTRUE(add_zero)) log_breaks <- sort(unique(c(log_breaks, zero_repl)))
+  lower_limit <- min(log_breaks)
+  label_fun <- function(b) {
+    out <- b
+    out[b > 1e-5] <- scales::label_scientific()(b[b > 1e-5])
+    if (isTRUE(add_zero)) out[b <= zero_repl * 10] <- "0"
+    out
+  }
+
+  # pretty x breaks per facet (map ranks to corresponding stat values in strip)
+  x_breaks_df <- dd %>%
+    dplyr::group_by(method_key) %>%
+    dplyr::summarise(
+      n = dplyr::n(),
+      b = list(unique(pmax(1, round(stats::quantile(1:n, probs = c(0, .25, .5, .75, 1)))))),
+      .groups = "drop"
+    )
+
+  p <- ggplot(dd, aes(x = rank_stat, y = pval_plot)) +
+    geom_point(aes(fill = ptype), shape = 21, size = 1.5, alpha = 0.7,
+               color = "gray20", stroke = 0.2, na.rm = TRUE) +
+    scale_y_log10(breaks = log_breaks, labels = label_fun) +
+    coord_cartesian(ylim = c(lower_limit, 1)) +
+    facet_wrap(~ method_key, nrow = 1, labeller = as_labeller(lab_map), scales = "free_x") +
+    scale_fill_manual(values = c("GPD fit" = "#F8766D", "empirical" = "gray"),
+                      name = "p-value type") +
+    labs(x = "Rank of test statistic (within method)", y = expression(hat(p))) +
+    theme_minimal() +
+    theme(
+      axis.text = element_text(size = 12),
+      axis.title = element_text(size = 14),
+      strip.text = element_text(size = 14),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      panel.grid.major.y = element_line(color = "gray85")
+    )
+
+  # Per-facet x breaks (keeps ranks readable)
+  p <- p + ggplot2::facet_wrap(
+    ~ method_key, nrow = 1, labeller = as_labeller(lab_map), scales = "free_x"
+  )
+
+  p
+}
+
+```
+
+```{r}
+plot_p_vs_ordered_stat(
+  df_pvals_global,
+  methods = c("permApprox_constrained_1000",
+              "permApprox_constrained_10000"),
+  label = "short"
+)
+```
+
+
+## Visualization of genes
+
+```{r}
+## Combine waddR TS (B = 1000) with permApprox(U/C) results
+
+res_ts <- waddr_res_ts_1k %>%
+  dplyr::rename(
+    p.waddR     = pval,
+    shape.waddR = shape
+  ) %>%
+  dplyr::left_join(
+    tibble::tibble(
+      gene                = waddr_res_ts_1k$gene,
+      p.pApp.unconstr     = papprox_ts_unconstr_1k$p_unadjusted,
+      shape.pApp.unconstr = papprox_ts_unconstr_1k$fit_result$shape
+    ),
+    by = "gene"
+  ) %>%
+  dplyr::left_join(
+    tibble::tibble(
+      gene               = waddr_res_ts_1k$gene,
+      p.pApp.constr      = papprox_ts_constr_1k$p_unadjusted,
+      shape.pApp.constr  = papprox_ts_constr_1k$fit_result$shape
+    ),
+    by = "gene"
+  )
+
+```
+
+### Genes with waddR p = 0
+
+```{r}
+## Genes with waddR p = 0  — TS, B = 1000
+df_zero_ts <- res_ts %>%
+  dplyr::filter(p.waddR == 0) %>%
+  dplyr::arrange(p.pApp.constr)
+
+genes_selected_ts <- df_zero_ts %>% dplyr::pull(gene)
+
+# show a few rows
+kable(head(df_zero_ts))
+
+# pick up to 6 genes to visualize
+genes_to_plot <- head(genes_selected_ts, 6L)
+
+# meta info for titles (ordered by d^2_W)
+pane_meta_ts <- res_ts %>%
+  dplyr::filter(gene %in% genes_to_plot) %>%
+  dplyr::transmute(
+    gene,
+    d_wass2  = `d.wass^2`,
+    p_constr = p.pApp.constr
+  ) %>%
+  dplyr::arrange(p_constr)
+
+# facet order by increasing dW^2
+gene_order_ts <- pane_meta_ts$gene
+
+# facet labels: "GENE\n(d = ...; p = ...)"
+lab_map_ts <- setNames(
+  paste0(
+    pane_meta_ts$gene,
+    "\n(d = ", signif(pane_meta_ts$d_wass2, 3),
+    "; p = ", formatC(pane_meta_ts$p_constr, format = "e", digits = 2), ")"
+  ),
+  pane_meta_ts$gene
+)
+
+```
+
+#### Expression densities 
+
+```{r zero_pvals_density_ts, fig.width=10, fig.height=5, dpi=200}
+## Expression densities (TS, non-zero counts only), log1p(count)
+
+counts_decidua <- counts(sce_decidua)
+rownames(counts_decidua) <- make_short_gene(rownames(counts_decidua))
+counts_blood <- counts(sce_blood)
+rownames(counts_blood) <- make_short_gene(rownames(counts_blood))
+
+
+# group 1 = blood
+counts_blood_sel <- counts_blood[genes_to_plot, , drop = FALSE]
+expr_blood_df <- counts_blood_sel %>%
+  as.matrix() %>%
+  t() %>%                                   # cells as rows
+  tibble::as_tibble() %>%
+  tibble::add_column(cell = colnames(sce_blood), .before = 1) %>%
+  tidyr::pivot_longer(-cell, names_to = "gene", values_to = "count") %>%
+  dplyr::mutate(
+    expression_log = log(count),
+    expression = count,
+    group      = "blood"
+  )
+
+# group 2 = decidua
+counts_decidua_sel <- counts_decidua[genes_to_plot, , drop = FALSE]
+expr_decidua_df <- counts_decidua_sel %>%
+  as.matrix() %>%
+  t() %>%
+  tibble::as_tibble() %>%
+  tibble::add_column(cell = colnames(sce_decidua), .before = 1) %>%
+  tidyr::pivot_longer(-cell, names_to = "gene", values_to = "count") %>%
+  dplyr::mutate(
+    expression_log = log(count),
+    expression = count,
+    group      = "decidua"
+  )
+
+plot_df_expr_ts <- dplyr::bind_rows(expr_blood_df, expr_decidua_df) %>%
+  dplyr::filter(count > 0) %>%                           # non-zero counts only
+  dplyr::mutate(
+    gene  = factor(gene, levels = gene_order_ts),
+    group = factor(group, levels = c("blood", "decidua"))
+  )
+
+ggplot(plot_df_expr_ts, aes(x = expression, fill = group)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = palette_groups) +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    x = "Expression value",
+    y = "Density"
+  ) +
+  scale_x_log10() +
+  theme_minimal() +
+  theme(
+    axis.text          = element_text(size = 12),
+    axis.title         = element_text(size = 14),
+    strip.text         = element_text(size = 12),
+    legend.title       = element_text(size = 14),
+    legend.text        = element_text(size = 12),
+    panel.spacing      = unit(2, "lines"),
+    legend.position    = "bottom",
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_line(color = "gray80")
+  )
+```
+
+#### Histograms
+
+```{r zero_pvals_hist_ts, fig.width=10, fig.height=5, dpi=200}
+## log1p(count) histograms (TS, non-zero counts only)
+
+plot_df_expr_hist_ts <- plot_df_expr_ts   # same data as above
+
+ggplot(plot_df_expr_hist_ts, aes(x = expression, fill = group)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = palette_groups) +
+  scale_x_log10() +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    x = "Expression value",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text          = element_text(size = 12),
+    axis.title         = element_text(size = 14),
+    strip.text         = element_text(size = 12),
+    legend.title       = element_text(size = 14),
+    legend.text        = element_text(size = 12),
+    panel.spacing      = unit(2, "lines"),
+    legend.position    = "bottom",
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_line(color = "gray80")
+  )
+```
+
+#### Quantile plots
+
+```{r zero_pvals_quant_ts, fig.width=10, fig.height=5, dpi=200}
+## Quantile functions (ECDF) for genes with waddR p = 0 (TS, log1p counts)
+
+ggplot(plot_df_expr_ts, aes(x = expression, color = group)) +
+  stat_ecdf(geom = "step", linewidth = 1) +
+  scale_color_manual(values = palette_groups, name = NULL) +
+  scale_y_log10() +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    x = "Expression value",
+    y = "Cumulative probability"
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    axis.text       = element_text(size = 12),
+    axis.title      = element_text(size = 14),
+    legend.text     = element_text(size = 12),
+    strip.text      = element_text(size = 12),
+    panel.spacing   = unit(2, "lines"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+#### Permutation histograms (B = 1000)
+
+```{r zero_pvals_perm_dist_ts, fig.width=10, fig.height=5, dpi=200}
+## Permutation histograms (TS, waddR p = 0, B = 1000)
+
+# Ensure permutation matrix has colnames = gene names
+if (is.null(colnames(perm_stats_ts_1k))) {
+  colnames(perm_stats_ts_1k) <- waddr_res_ts_1k$gene
+}
+
+perm_df_ts <- perm_stats_ts_1k[, genes_to_plot, drop = FALSE]
+
+perm_long_ts <- tibble::as_tibble(perm_df_ts) %>%
+  dplyr::mutate(perm = dplyr::row_number()) %>%
+  tidyr::pivot_longer(cols = -perm,
+                      names_to = "gene",
+                      values_to = "perm_value") %>%
+  dplyr::left_join(
+    waddr_res_ts_1k %>%
+      dplyr::select(gene, d_wass2 = `d.wass^2`),
+    by = "gene"
+  ) %>%
+  dplyr::mutate(gene = factor(gene, levels = gene_order_ts))
+
+ggplot(perm_long_ts, aes(x = perm_value)) +
+  geom_histogram(bins = 30, fill = "gray70", color = "white") +
+  geom_vline(aes(xintercept = d_wass2), color = "red", linewidth = 0.8) +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    title = "Permutation distributions (TS, waddR p = 0)",
+    x = expression(d[W]^2),
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text          = element_text(size = 12),
+    axis.title         = element_text(size = 14),
+    strip.text         = element_text(size = 12),
+    legend.title       = element_text(size = 14),
+    legend.text        = element_text(size = 12),
+    panel.spacing      = unit(2, "lines"),
+    legend.position    = "bottom",
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_line(color = "gray80")
+  )
+```
+
+
+### Further significant genes (TS, B = 1000)
+
+Now the “top non-zero” genes, ordered by constrained permApprox p-values.
+
+```{r}
+## Significant genes with waddR p != 0, ordered by permApprox(C)
+
+df_sig_ts <- res_ts %>%
+  dplyr::filter(p.waddR != 0) %>%
+  dplyr::arrange(p.pApp.constr)
+
+# Pick up to 6 genes
+genes_to_plot <- df_sig_ts$gene[1:6]
+
+pane_meta_ts <- df_sig_ts %>%
+  dplyr::filter(gene %in% genes_to_plot) %>%
+  dplyr::select(gene,
+                d_wass2 = `d.wass^2`,
+                p_constr = p.pApp.constr)
+
+gene_order_ts <- pane_meta_ts$gene
+
+lab_map_ts <- setNames(
+  paste0(
+    pane_meta_ts$gene,
+    "\n(d = ", signif(pane_meta_ts$d_wass2, 3),
+    "; p = ", formatC(pane_meta_ts$p_constr,
+                      format = "e", digits = 2), ")"
+  ),
+  pane_meta_ts$gene
+)
+```
+
+#### Expression densities
+
+```{r sig_pvals_density_ts, fig.width=10, fig.height=5, dpi=200}
+## Expression densities (TS, non-zero counts only), log1p(count)
+
+# blood
+counts_blood_sel <- counts_blood[genes_to_plot, , drop = FALSE]
+expr_blood_df <- counts_blood_sel %>%
+  as.matrix() %>%
+  t() %>%
+  tibble::as_tibble() %>%
+  tibble::add_column(cell = colnames(sce_blood), .before = 1) %>%
+  tidyr::pivot_longer(-cell, names_to = "gene", values_to = "count") %>%
+  dplyr::mutate(
+    abundance = count,
+    group     = "blood"
+  )
+
+# decidua
+counts_decidua_sel <- counts_decidua[genes_to_plot, , drop = FALSE]
+expr_decidua_df <- counts_decidua_sel %>%
+  as.matrix() %>%
+  t() %>%
+  tibble::as_tibble() %>%
+  tibble::add_column(cell = colnames(sce_decidua), .before = 1) %>%
+  tidyr::pivot_longer(-cell, names_to = "gene", values_to = "count") %>%
+  dplyr::mutate(
+    abundance = count,
+    group     = "decidua"
+  )
+
+plot_df_expr_ts <- dplyr::bind_rows(expr_blood_df, expr_decidua_df) %>%
+  dplyr::filter(count > 0) %>%
+  dplyr::mutate(
+    gene  = factor(gene, levels = gene_order_ts),
+    group = factor(group, levels = c("blood", "decidua"))
+  )
+
+ggplot(plot_df_expr_ts, aes(x = abundance, fill = group)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = palette_groups) +
+  scale_x_log10() +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    x = "Expression value",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text          = element_text(size = 12),
+    axis.title         = element_text(size = 14),
+    strip.text         = element_text(size = 12),
+    legend.title       = element_text(size = 14),
+    legend.text        = element_text(size = 12),
+    panel.spacing      = unit(2, "lines"),
+    legend.position    = "bottom",
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_line(color = "gray80")
+  )
+```
+
+#### Histograms
+
+```{r sig_pvals_hist_ts, fig.width=10, fig.height=5, dpi=200}
+
+plot_df_hist_ts <- plot_df_expr_ts
+
+ggplot(plot_df_hist_ts, aes(x = abundance, fill = group)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = palette_groups) +
+  scale_x_log10() +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    x = "Expression value",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text          = element_text(size = 12),
+    axis.title         = element_text(size = 14),
+    strip.text         = element_text(size = 12),
+    legend.title       = element_text(size = 14),
+    legend.text        = element_text(size = 12),
+    panel.spacing      = unit(2, "lines"),
+    legend.position    = "bottom",
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_line(color = "gray80")
+  )
+```
+
+#### Quantile plots
+
+```{r sig_pvals_quant_ts, fig.width=10, fig.height=5, dpi=200}
+## Quantile functions (ECDF) for genes with waddR p = 0 (TS, log1p counts)
+
+ggplot(plot_df_expr_ts, aes(x = abundance, color = group)) +
+  stat_ecdf(geom = "step", linewidth = 1) +
+  scale_color_manual(values = palette_groups, name = NULL) +
+  scale_y_log10() +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    x = "Expression value",
+    y = "Cumulative probability"
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    axis.text       = element_text(size = 12),
+    axis.title      = element_text(size = 14),
+    legend.text     = element_text(size = 12),
+    strip.text      = element_text(size = 12),
+    panel.spacing   = unit(2, "lines"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+#### Permutation histograms (TS, significant genes)
+
+```{r sig_pvals_perm_dist_ts, fig.width=10, fig.height=5, dpi=200}
+## Permutation histograms (TS, further significant genes)
+
+if (is.null(colnames(perm_stats_ts_1k))) {
+  colnames(perm_stats_ts_1k) <- waddr_res_ts_1k$gene
+}
+
+perm_df_ts <- perm_stats_ts_1k[, genes_to_plot, drop = FALSE]
+
+perm_long_ts <- tibble::as_tibble(perm_df_ts) %>%
+  dplyr::mutate(perm = dplyr::row_number()) %>%
+  tidyr::pivot_longer(cols = -perm,
+                      names_to = "gene",
+                      values_to = "perm_value") %>%
+  dplyr::left_join(
+    waddr_res_ts_1k %>%
+      dplyr::select(gene, d_wass2 = `d.wass^2`),
+    by = "gene"
+  ) %>%
+  dplyr::mutate(gene = factor(gene, levels = gene_order_ts))
+
+ggplot(perm_long_ts, aes(x = perm_value)) +
+  geom_histogram(bins = 30, fill = "gray70", color = "white") +
+  geom_vline(aes(xintercept = d_wass2), color = "red", linewidth = 0.8) +
+  facet_wrap(~ gene, scales = "free", labeller = as_labeller(lab_map_ts)) +
+  labs(
+    title = "Permutation distributions (TS, selected significant genes)",
+    x = expression(d[W]^2),
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text          = element_text(size = 12),
+    axis.title         = element_text(size = 14),
+    strip.text         = element_text(size = 12),
+    legend.title       = element_text(size = 14),
+    legend.text        = element_text(size = 12),
+    panel.spacing      = unit(2, "lines"),
+    legend.position    = "bottom",
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_line(color = "gray80")
+  )
+```
+
+### Top significant genes
+
+```{r}
+# Top 3 genes with waddR p = 0 and smallest permApprox(C) p-values (TS, B = 1000)
+
+# Select genes: waddR p = 0, ordered by permApprox(C) p-value
+df_zero_ts_top <- res_ts %>%
+  #dplyr::filter(p.waddR == 0, !is.na(p.pApp.constr)) %>%
+  dplyr::arrange(p.pApp.constr) %>%
+  dplyr::slice_head(n = 4)
+
+genes_to_plot <- df_zero_ts_top$gene
+
+# meta info for facet labels (include d and p from constrained permApprox)
+pane_meta_ts <- df_zero_ts_top %>%
+  dplyr::transmute(
+    gene,
+    d_wass2  = `d.wass^2`,
+    p_constr = p.pApp.constr
+  )
+
+gene_order_ts <- pane_meta_ts$gene
+
+lab_map_ts <- setNames(
+  paste0(
+    pane_meta_ts$gene,
+    "\n(d = ", signif(pane_meta_ts$d_wass2, 3),
+    "; p = ", formatC(pane_meta_ts$p_constr, format = "e", digits = 2), ")"
+  ),
+  pane_meta_ts$gene
+)
+
+lab_map_empty <- setNames(rep("", length(gene_order_ts)), gene_order_ts)
+
+# Build long data frame with non-zero expression counts (blood vs decidua)
+## blood
+counts_blood_sel <- counts_blood[genes_to_plot, , drop = FALSE]
+
+expr_blood_df <- counts_blood_sel %>%
+  as.matrix() %>%
+  t() %>%  # cells as rows
+  tibble::as_tibble() %>%
+  tibble::add_column(cell = colnames(sce_blood), .before = 1) %>%
+  tidyr::pivot_longer(-cell, names_to = "gene", values_to = "count") %>%
+  dplyr::mutate(
+    group = "blood"
+  )
+
+## decidua
+counts_decidua_sel <- counts_decidua[genes_to_plot, , drop = FALSE]
+
+expr_decidua_df <- counts_decidua_sel %>%
+  as.matrix() %>%
+  t() %>%
+  tibble::as_tibble() %>%
+  tibble::add_column(cell = colnames(sce_decidua), .before = 1) %>%
+  tidyr::pivot_longer(-cell, names_to = "gene", values_to = "count") %>%
+  dplyr::mutate(
+    group = "decidua"
+  )
+
+## combined, non-zero only
+plot_df_expr_ts <- dplyr::bind_rows(expr_blood_df, expr_decidua_df) %>%
+  dplyr::filter(count > 0) %>%
+  dplyr::mutate(
+    gene  = factor(gene,  levels = gene_order_ts),
+    group = factor(group, levels = c("blood", "decidua"))
+  )
+
+## Permutation distributions for the same top genes (TS, B = 1000)
+# ensure perm_stats_ts_1k has gene column names
+if (is.null(colnames(perm_stats_ts_1k))) {
+  colnames(perm_stats_ts_1k) <- waddr_res_ts_1k$gene
+}
+
+perm_df_top <- perm_stats_ts_1k[, genes_to_plot, drop = FALSE]
+
+perm_long_top <- tibble::as_tibble(perm_df_top) %>%
+  dplyr::mutate(perm = dplyr::row_number()) %>%
+  tidyr::pivot_longer(
+    cols      = -perm,
+    names_to  = "gene",
+    values_to = "perm_value"
+  ) %>%
+  dplyr::left_join(
+    waddr_res_ts_1k %>%
+      dplyr::select(gene, d_wass2 = `d.wass^2`),
+    by = "gene"
+  ) %>%
+  dplyr::mutate(
+    gene = factor(gene, levels = gene_order_ts)
+  )
+
+```
+
+
+```{r zero_top4_hist_ecdf_ts, fig.width=12, fig.height=8, dpi=200}
+# Top row: histograms (log10 x-axis), titles with d and p
+p_hist <- ggplot(plot_df_expr_ts, aes(x = count, fill = group)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  scale_x_log10() +
+  scale_fill_manual(values = palette_groups, name = NULL) +
+  facet_wrap(~ gene, scales = "free", nrow = 1,
+             labeller = as_labeller(lab_map_ts)) +
+  labs(
+    x = "Expression value",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text        = element_text(size = 13),
+    axis.title       = element_text(size = 14),
+    strip.text       = element_text(size = 13),
+    legend.title     = element_text(size = 14),
+    legend.text      = element_text(size = 14),
+    panel.spacing    = unit(1.5, "lines"),
+    legend.position  = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+# Bottom row: ECDF / quantile plots (same genes, same labels)
+p_ecdf <- ggplot(plot_df_expr_ts, aes(x = count, color = group)) +
+  stat_ecdf(geom = "step", linewidth = 1) +
+  scale_x_log10() +
+  scale_color_manual(values = palette_groups, name = NULL) +
+  facet_wrap(~ gene, scales = "free", nrow = 1,
+             labeller = as_labeller(lab_map_empty)) +
+  labs(
+    x = "Expression value",
+    y = "Cumulative probability"
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    axis.text        = element_text(size = 13),
+    axis.title       = element_text(size = 14),
+    strip.text       = element_text(size = 12),
+    legend.title     = element_text(size = 14),
+    legend.text      = element_text(size = 14),
+    legend.position  = "bottom",  
+    panel.spacing    = unit(1.5, "lines"),
+    panel.grid.minor = element_blank()
+  )
+
+# Third row: permutation distributions with observed statistic (red line)
+p_perm <- ggplot(perm_long_top, aes(x = perm_value)) +
+  geom_histogram(bins = 30, fill = "snow4", colour = "white") +
+  #geom_vline(aes(xintercept = d_wass2), colour = "red", linewidth = 0.8) +
+  facet_wrap(
+    ~ gene, scales = "free", nrow = 1,
+    labeller = as_labeller(lab_map_empty)  # or lab_map_ts if you want d,p again
+  ) +
+  labs(
+    x = expression(d[W]^2),
+    y = "Permutation count"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text          = element_text(size = 13),
+    axis.title         = element_text(size = 14),
+    strip.text         = element_text(size = 12),
+    panel.spacing      = unit(1.5, "lines"),
+    legend.position    = "none",
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_line(color = "gray80")
+  )
+
+# Combine: top = histograms, bottom = ECDF
+(p_hist / p_ecdf / p_perm) +
+  plot_layout(heights = c(1, 1, 1), guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+## LaTeX tables for TS (B = 1000)
+
+```{r}
+sci <- function(x, digits = 2) {
+  ifelse(is.na(x), NA, formatC(x, format = "e", digits = digits))
+}
+```
+
+### Top genes (raw p-values)
+
+```{r table_top_effects_ts, results = "asis", message = FALSE}
+n_top <- 20 
+
+top_tbl_ts <- res_ts %>%
+  dplyr::filter(!is.na(p.pApp.constr)) %>%   # keep rows with permApprox(C) p-values
+  dplyr::arrange(p.pApp.constr) %>%          # sort by constrained permApprox p-value
+  dplyr::slice_head(n = n_top) %>%
+  dplyr::mutate(
+    d_wass2_round  = round(`d.wass^2`, 3),
+    p_waddR_sci    = sci(p.waddR),
+    p_pApp_U_sci   = sci(p.pApp.unconstr),
+    p_pApp_C_sci   = sci(p.pApp.constr),
+    xi_waddR_round = round(shape.waddR, 3),
+    xi_U_round     = round(shape.pApp.unconstr, 3),
+    xi_C_round     = round(shape.pApp.constr, 3)
+  ) %>%
+  dplyr::transmute(
+    Gene                          = gene,
+    `$d_{W}^2$`                   = d_wass2_round,
+    `$p_{\\text{waddR}}$`         = p_waddR_sci,
+    `$p_{\\text{permApprox(U)}}$` = p_pApp_U_sci,
+    `$p_{\\text{permApprox(C)}}$` = p_pApp_C_sci,
+    `$\\hat{\\xi}_{\\text{waddR}}$`         = xi_waddR_round,
+    `$\\hat{\\xi}_{\\text{(U)}}$` = xi_U_round,
+    `$\\hat{\\xi}_{\\text{(C)}}$` = xi_C_round
+  )
+
+tab_latex_ts <- kable(
+  top_tbl_ts,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,
+  caption  = paste0(
+    "Top ", n_top,
+    " genes for the two-stage (TS) waddR approach, ",
+    "sorted by constrained permApprox p-values (B = 1000)."
+  ),
+  label    = "tab:waddr_permApprox_TS_top_effects_sc"
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "striped"),
+    font_size     = 8
+  )
+
+print(tab_latex_ts)
+
+# Save as .tex
+save_kable(tab_latex_ts, path_target("permApprox_waddr_TS_top_effects_sc_table.tex"))
+```
+
+### Top genes (BH-adjusted p-values)
+
+```{r table_top_effects_ts_BH, results = "asis", message = FALSE}
+n_top <- 20 
+
+res_ts_adj <- res_ts %>%
+  dplyr::mutate(
+    p_adj_waddR  = p.adjust(p.waddR,         method = "BH"),
+    p_adj_pApp_U = p.adjust(p.pApp.unconstr, method = "BH"),
+    p_adj_pApp_C = p.adjust(p.pApp.constr,   method = "BH")
+  )
+
+top_tbl_ts_BH <- res_ts_adj %>%
+  dplyr::filter(!is.na(p_adj_pApp_C)) %>%
+  dplyr::arrange(p_adj_pApp_C) %>%
+  dplyr::slice_head(n = n_top) %>%
+  dplyr::mutate(
+    d_wass2_round    = round(`d.wass^2`, 3),
+    p_adj_waddR_sci  = sci(p_adj_waddR),
+    p_adj_pApp_U_sci = sci(p_adj_pApp_U),
+    p_adj_pApp_C_sci = sci(p_adj_pApp_C),
+    xi_waddR_round   = round(shape.waddR, 3),
+    xi_U_round       = round(shape.pApp.unconstr, 3),
+    xi_C_round       = round(shape.pApp.constr, 3)
+  ) %>%
+  dplyr::transmute(
+    Gene                            = gene,
+    `$d_{W}^2$`                     = d_wass2_round,
+    `$p_{\\text{waddR,BH}}$`        = p_adj_waddR_sci,
+    `$p_{\\text{permApprox(U),BH}}$`= p_adj_pApp_U_sci,
+    `$p_{\\text{permApprox(C),BH}}$`= p_adj_pApp_C_sci,
+    `$\\hat{\\xi}_{\\text{waddR}}$` = xi_waddR_round,
+    `$\\hat{\\xi}_{\\text{(U)}}$` = xi_U_round,
+    `$\\hat{\\xi}_{\\text{(C)}}$` = xi_C_round
+  )
+
+tab_latex_ts_BH <- kable(
+  top_tbl_ts_BH,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,
+  caption  = paste0(
+    "Top ", n_top,
+    " genes for the two-stage (TS) waddR approach based on BH-adjusted p-values, ",
+    "sorted by BH-adjusted constrained permApprox p-values (B = 1000)."
+  ),
+  label    = "tab:waddr_permApprox_TS_top_effects_BH_sc"
+) %>%
+  kable_styling(
+    latex_options = c("hold_position", "striped"),
+    font_size     = 8
+  )
+
+print(tab_latex_ts_BH)
+
+save_kable(
+  tab_latex_ts_BH,
+  path_target("permApprox_waddr_TS_top_effects_BH_sc_table.tex")
+)
+```
+
+## Summary
+
+This application study demonstrates the benefit of applying `permApprox` to improve the robustness of p-value estimation in permutation-based differential tests. Especially for extreme test statistics, `permApprox` avoids zero p-values and thus enables more accurate and reproducible results.
+
+## References
+
+* Vento-Tormo,R. et al. (2018) Reconstructing the human ﬁrst trimester fetal--
+maternal interface using single cell transcriptomics. Nature, 563, 347–353.
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```
