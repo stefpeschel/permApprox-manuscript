@@ -1,0 +1,264 @@
+---
+title: "Runtime comparison of GPD fitting methods"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "02_runtime" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "83a2adbb-43b0-41b0-98cc-eeddbe1cedd9")
+```
+
+In this script we compare the runtime of the different methods for GPD parameter fitting.
+
+```{r packages}
+library(conflicted)
+library(microbenchmark)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(tibble)
+library(eva)
+library(ggplot2)
+library(forcats)
+library(kableExtra)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 6, dpi = 200,
+  fig.path = paste0('figures/', params$name, "/")
+)
+```
+
+## Load permApprox functions
+
+```{r permapprox-load}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Set controls
+
+```{r, echo=TRUE}
+set.seed(123456)
+
+# Data-generating params (fixed across scenarios)
+n_vec         <- c(200, 1000)
+shape_true    <- -0.25
+scale_true    <- 1
+
+# Boundary settings to *evaluate*:
+#   NA  -> unconstrained (boundary = NULL in the fit calls)
+#   5   -> constrained (boundary = 5 in the fit calls)
+boundary_vec  <- c(NA_real_, 5)
+
+times_per_scn <- 50
+unit_choice   <- "ms"
+```
+
+```{r}
+# Create scenarios: generate x ONCE per n; reuse across boundary settings
+scenarios <- tibble::tibble(
+  n = n_vec,
+  shape = shape_true,
+  scale = scale_true,
+  x = purrr::map(n, ~ eva::rgpd(n = .x, scale = scale_true, shape = shape_true))
+) %>%
+  tidyr::crossing(boundary = boundary_vec) %>%
+  mutate(boundary_label = ifelse(is.na(boundary), "unconstrained", paste0("boundary=", boundary)))
+
+```
+
+## Helpers
+
+```{r}
+# Helper: call each estimator with boundary & eval_point
+call_fit <- function(fun, x, boundary = NA_real_) {
+  if (is.na(boundary)) {
+    fun(x = x, boundary = NULL, eval_point = NULL)
+  } else {
+    fun(x = x, boundary = boundary, eval_point = boundary)
+  }
+}
+
+estimators <- list(
+  LME    = function(x, boundary) call_fit(.fit_gpd_lme,    x, boundary),
+  MLE1D  = function(x, boundary) call_fit(.fit_gpd_mle1d,  x, boundary),
+  MLE2D  = function(x, boundary) call_fit(.fit_gpd_mle2d,  x, boundary),
+  NLS2   = function(x, boundary) call_fit(.fit_gpd_nls2,   x, boundary),
+  WNLLSM = function(x, boundary) call_fit(.fit_gpd_wnllsm, x, boundary),
+  ZSE    = function(x, boundary) call_fit(.fit_gpd_zse,    x, boundary)
+)
+
+bench_one <- function(x, boundary, times = times_per_scn, 
+                      unit = unit_choice) {
+  microbenchmark::microbenchmark(
+    LME    = estimators$LME(x, boundary),
+    MLE1D  = estimators$MLE1D(x, boundary),
+    MLE2D  = estimators$MLE2D(x, boundary),
+    NLS2   = estimators$NLS2(x, boundary),
+    WNLLSM = estimators$WNLLSM(x, boundary),
+    ZSE    = estimators$ZSE(x, boundary),
+    times = times, unit = unit
+  )
+}
+
+```
+
+## Run benchmark
+
+```{r, eval=FALSE}
+# Run benchmark per (n, boundary) using the SAME x per n
+results <- scenarios %>%
+  mutate(bench = purrr::map2(x, boundary, bench_one)) %>%
+  select(n, boundary, boundary_label, bench)
+
+saveRDS(results, file = path_target("bench_results.rds"))
+```
+
+## Summarize results
+
+```{r}
+# Summarize results and sort by runtime (fastest first)
+results <- readRDS(path_target("bench_results.rds"))
+
+summary_tbl <- results %>%
+  mutate(smmry = purrr::map(bench, ~ tibble::as_tibble(summary(.x)))) %>%
+  select(-bench) %>%
+  tidyr::unnest(smmry) %>%
+  dplyr::rename(method = expr) %>%
+  dplyr::mutate(method = gsub("^\\s+|\\s+$", "", method)) %>%
+  dplyr::select(n, boundary_label, boundary, method, min, lq, median, uq, max, mean) %>%
+  dplyr::arrange(n, boundary_label, median)
+
+summary_tbl %>% kableExtra::kable()
+```
+
+
+```{r}
+# Create the grouped table
+median_wide <- summary_tbl %>%
+  group_by(n, boundary_label) %>%
+  arrange(median, .by_group = TRUE) %>%
+  mutate(rank = row_number()) %>%
+  ungroup() %>%
+  select(n, boundary_label, rank, method, median)
+
+# Make a nice title
+cat("\nMedian runtimes (", unit_choice, ") by scenario (fastest first):\n", sep = "")
+
+# Add a separator for each scenario
+median_wide %>%
+  arrange(n, boundary_label, rank) %>%
+  kableExtra::kable(col.names = c("n", "Boundary", "Rank", "Method", "Median (ms)")) %>%
+  kableExtra::kable_styling(full_width = FALSE) %>%
+  kableExtra::group_rows(
+    index = table(with(median_wide, paste0("n = ", n, ", ", boundary_label)))
+  )
+
+```
+
+```{r runtime_gpd_methods, fig.width=10, fig.height=7}
+my_cols <- c(
+  "LME"    = "#009E73", 
+  "MLE1D"  = "#56B4E9", 
+  "MLE2D"  = "#0072B2",
+  "NLS2"   = "#E69F00",
+  "WNLLSM" = "#D55E00",
+  "ZSE"    = "#CC79A7"
+)
+
+# Prepare long-format data for ggplot
+plot_data <- results %>%
+  dplyr::mutate(tib = purrr::map(bench, ~ tibble::as_tibble(.x))) %>%
+  dplyr::select(n, boundary_label, tib) %>%
+  tidyr::unnest(tib) %>%
+  dplyr::rename(method = expr, runtime_ns = time) %>%
+  dplyr::mutate(
+    method = trimws(method),
+    runtime_ms = runtime_ns / 1e6
+  )
+
+# Order methods by median runtime (so y-axis consistent)
+plot_data <- plot_data %>%
+  dplyr::group_by(method) %>%
+  dplyr::mutate(method = forcats::fct_reorder(method, runtime_ms, median)) %>%
+  dplyr::ungroup()
+
+# Ensure boundary labels are ordered manually (left = unconstrained)
+plot_data <- plot_data %>%
+  mutate(
+    boundary_label = factor(boundary_label,
+                            levels = c("unconstrained", "boundary=5"))
+  )
+
+# Make LME bold
+method_labels <- setNames(
+  lapply(levels(factor(plot_data$method)), function(m) {
+    if (m == "LME") bquote(bold(.(m) * "*")) else m
+  }),
+  levels(factor(plot_data$method))
+)
+
+# Boxplots — facet by n and boundary_label
+ggplot(plot_data, aes(x = method, y = runtime_ms, fill = method)) +
+  geom_boxplot(outlier.shape = 21, outlier.size = 1.5, width = 0.65) +
+  scale_fill_manual(values = my_cols) +
+  facet_wrap(~ n + boundary_label, 
+             labeller = labeller(boundary_label = label_value, 
+                                 n = label_both)) +
+  labs(
+    title = "Runtime distribution of GPD fitting methods",
+    subtitle = paste0("Each box shows ", times_per_scn, 
+                      " runs per method × boundary setting"),
+    x = "Method", y = "Runtime (ms)"
+  ) +
+  scale_y_log10(
+    breaks = c(1, 3, 10, 30, 100, 1000),
+    labels = c("1", "3", "10", "30", "100", "1000")
+  ) +
+  scale_x_discrete(labels = method_labels) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+```
+
+* NLS2 and WNLLSM are the slowest methods across all settings.
+* The runtime of ZSE is highly dependent on the setting (fastest for small n with constraint)
+* MLE2D is the fastest for large n but does also perform well for small n
+* The performance of MLE1D and LME depends on the constraint:
+  + In the unconstrained cases LME is faster
+  + In the constrained case MLE1D is faster
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

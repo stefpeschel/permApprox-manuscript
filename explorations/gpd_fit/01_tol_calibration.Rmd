@@ -1,0 +1,497 @@
+---
+title: "Tolerance calibration for boundary behaviour across GPD fits"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: true
+params:
+  name: "01_tol_calibration" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "9a024ec6-54e3-4a84-9d54-b965923c1282")
+```
+
+Goal: find per-method tolerance so that boundary density matches a consensus.
+
+```{r packages}
+library(conflicted)
+library(eva)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(tibble)
+
+conflicts_prefer(dplyr::filter, dplyr::select)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 6, dpi = 200,
+  fig.path = paste0('figures/', params$name, "/tol_calibration_")
+)
+```
+
+## Load permApprox functions
+
+```{r permapprox-load}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## User setting 
+
+Fixed setting: shape = -0.25, scale = 1, boundary = 5
+
+```{r}
+set.seed(12345)          # reproducibility
+n_rep   <- 100           # number of repetitions
+n       <- 100           # sample size per repetition
+true_xi <- -0.2          # shape
+true_si <- 1             # scale
+bound   <- 7             # constraint boundary (eval point)
+tols    <- c(1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15)
+
+# Label helpers
+format_tol <- function(x) sub("e-0?", "e-", format(x, scientific = TRUE))
+tol_levels <- format_tol(tols)
+```
+
+## Method registry
+
+```{r}
+# Each entry: name, function, extra args if needed
+method_specs <- list(
+  list(name = "MLE1D",  fun = .fit_gpd_mle1d,  extra = list()),
+  list(name = "MLE2D",  fun = .fit_gpd_mle2d,  extra = list()),
+  list(name = "LME",    fun = .fit_gpd_lme,    extra = list()),
+  list(name = "NLS2",   fun = .fit_gpd_nls2,   extra = list()),
+  list(name = "WNLLSM", fun = .fit_gpd_wnllsm, extra = list())
+)
+```
+
+## Run simulation
+
+```{r}
+# --- One repetition over all methods x tolerances -----------------------------
+fit_all_methods <- function(x, boundary, tolerances, methods) {
+  map_dfr(methods, function(m) {
+    map_dfr(tolerances, function(tol) {
+      # robust fit + density extraction
+      res <- try({
+        do.call(m$fun, c(
+          list(x = x, boundary = boundary, eval_point = boundary, tol = tol),
+          m$extra
+        ))
+      }, silent = TRUE)
+
+      if (inherits(res, "try-error") || is.null(res$shape) || is.null(res$scale) ||
+          !is.finite(res$shape) || !is.finite(res$scale)) {
+        tibble(method = m$name, tol = tol, dgpd = NA_real_)
+      } else {
+        dens <- eva::dgpd(boundary, scale = res$scale, shape = res$shape)
+        tibble(method = m$name, tol = tol, dgpd = dens)
+      }
+    })
+  })
+}
+```
+
+
+```{r, eval=FALSE}
+# --- Run all repetitions ------------------------------------------------------
+draws <- replicate(n_rep, eva::rgpd(n = n, scale = true_si, shape = true_xi), 
+                   simplify = FALSE)
+
+res <- map2_dfr(draws, seq_len(n_rep), function(x, r) {
+  fit_all_methods(x, boundary = bound, tolerances = tols, 
+                  methods = method_specs) %>%
+    mutate(rep = r)
+})
+
+saveRDS(res, file = path_target("tol_calibration_res_bound7.rds"))
+```
+
+## Evaluate results
+
+```{r}
+res <- readRDS(path_target("tol_calibration_res_bound7.rds"))
+
+# Clean up factors/labels and log scale
+res <- res %>%
+  mutate(tol_f = factor(format_tol(tol), levels = tol_levels),
+         method = factor(method, 
+                         levels = c("MLE1D", "MLE2D", "LME", "NLS2", 
+                                    "WNLLSM"))) %>%
+  relocate(rep, method, tol_f, dgpd) %>%
+  mutate(log_dgpd = log(dgpd)) 
+
+min_log_dgpd <- min(res$log_dgpd[!is.infinite(res$log_dgpd)])
+
+res <- res %>%
+  mutate(log_dgpd = ifelse(is.infinite(log_dgpd),
+                           min_log_dgpd * 0.001,
+                           log_dgpd))
+```
+
+### Identify ground truth method
+
+Ground truth per repetition = robust center across tolerances (median of log densities)
+
+```{r}
+# For each repetition and method, compute variability across tolerances.
+var_by_rep_method <- res %>%
+  group_by(rep, method) %>%
+  summarise(sd = sd(dgpd, na.rm = TRUE),
+            sd_log = sd(log_dgpd, na.rm = TRUE),
+            mad = mad(dgpd, na.rm = TRUE),
+            mad_log = mad(log_dgpd, constant = 1, na.rm = TRUE),
+            .groups = "drop")
+
+# Aggregate variability across reps
+var_summary <- var_by_rep_method %>%
+  group_by(method) %>%
+  summarise(#mean_sd  = mean(sd, na.rm = TRUE),
+            #median_sd = median(sd, na.rm = TRUE),
+            #mean_mad = mean(mad, na.rm = TRUE),
+            mean_sd_log  = mean(sd_log, na.rm = TRUE),
+            median_sd_log = median(sd_log, na.rm = TRUE),
+            mean_mad_log = mean(mad_log, na.rm = TRUE),
+            n_rep = dplyr::n(),
+            .groups = "drop") %>%
+  arrange(mean_sd_log)
+
+cat("\nWithin-repetition variability (smaller is better):")
+
+var_summary %>%
+  kableExtra::kable()
+
+ground_truth_method <- var_summary$method[1]
+
+cat(sprintf("Ground truth method (lowest mean SD on log scale): %s", 
+                ground_truth_method))
+```
+
+
+```{r}
+# Ground truth per repetition = robust center across tolerances (median of log densities)
+gt <- res %>%
+  filter(method == ground_truth_method) %>%
+  group_by(rep) %>%
+  summarise(gt_log = median(log_dgpd, na.rm = TRUE), .groups = "drop")
+```
+
+### Choose best tolerance per method to match ground truth
+
+For each method and tol, we compute MAE to ground truth across repetitions.
+
+```{r}
+# For each method and tol, compute MAE and RMSE to ground truth across repetitions.
+fit_vs_gt <- res %>%
+  left_join(gt, by = "rep") %>%
+  mutate(abs_err = abs(log_dgpd - gt_log)) %>%
+  group_by(method, tol_f) %>%
+  summarise(MAE_log = mean(abs_err, na.rm = TRUE),
+            RMSE_log = sqrt(mean((log_dgpd - gt_log)^2, na.rm = TRUE)),
+            n = dplyr::n(),
+            .groups = "drop")
+```
+
+```{r}
+# Choose the largest tolerance within a small margin of the minimum MAE
+# rel: relative margin (e.g., 0.02 means within +2% of the min MAE)
+# abs: absolute margin on the MAE scale (set one of rel or abs; rel is default)
+choose_tol_plateau <- function(fit_vs_gt, rel = 0.02, abs = NULL) {
+  stopifnot(all(c("method","tol_f","MAE_log") %in% names(fit_vs_gt)))
+
+  df <- fit_vs_gt %>%
+    dplyr::mutate(
+      tol_num = as.numeric(as.character(tol_f))  # "1e-08" -> 1e-08
+    ) %>%
+    dplyr::group_by(method) %>%
+    dplyr::mutate(
+      min_mae = min(MAE_log, na.rm = TRUE),
+      thr     = if (!is.null(abs)) min_mae + abs else min_mae * (1 + rel)
+    ) %>%
+    # keep candidates within the plateau
+    dplyr::filter(MAE_log <= thr) %>%
+    # pick the LARGEST tolerance within plateau
+    dplyr::slice_max(order_by = tol_num, n = 1, with_ties = TRUE) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(method, tol_f, MAE_log)
+
+  dplyr::rename(df, tol_f = tol_f)
+}
+```
+
+
+```{r}
+tol_f_by_method <- choose_tol_plateau(fit_vs_gt, abs = 0.005)
+
+cat("\nBest tol per method vs ground truth (by MAE on log scale):")
+tol_f_by_method %>%
+  kableExtra::kable()
+```
+
+
+## Plot
+
+We plot repetition vs dgpd (log y), colored by tolerance, shaped by method
+
+### All methods
+
+```{r}
+# --- Map chosen tolerance per method -----------------------------------------
+tol_f_map <- setNames(tol_f_by_method$tol_f, tol_f_by_method$method)
+
+# choose the first 10 reps for display
+res10 <- res |>
+  dplyr::filter(rep <= 10)
+
+# define per-method horizontal offsets (tune width as you like)
+method_levels <- levels(res10$method)
+k <- length(method_levels)
+# symmetric offsets, e.g. -0.3, -0.1, 0.1, 0.3 for 4 methods
+base <- seq(-(k-1)/2, (k-1)/2, by = 1)
+offsets <- 0.15 * base  # control separation width here
+
+offset_map <- setNames(offsets, method_levels)
+res10 <- res %>%
+  dplyr::filter(rep <= 10,
+                tol %in% c(1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13)) %>%
+  dplyr::mutate(
+    x_plot = rep + offset_map[as.character(method)],
+    is_best = tol_f == tol_f_map[as.character(method)]
+  )
+
+# Small subtitle string listing choices
+choice_txt <- paste0(tol_f_by_method$method, ": ", tol_f_by_method$tol_f) %>%
+  paste(collapse = "  |  ")
+```
+
+```{r dgpd_vs_rep_all_methods, fig.width=10, fig.height=5, dpi=200}
+# --- Plot with highlighted chosen tolerances ---------------------------------
+p_side_best <- ggplot(res10, aes(x = x_plot, y = dgpd,
+                                 color = tol_f, shape = method)) +
+  # all points (faded)
+  geom_point(size = 1.8, alpha = 0.5) +
+  #geom_point(alpha = 0.5, size = 1.8) +
+  # halo for chosen tol (black underlay, same shapes)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             color = "black", size = 3.6, alpha = 0.5, show.legend = FALSE) +
+  # colored chosen tol on top (bigger + opaque)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             size = 2.6, alpha = 1, show.legend = FALSE) +
+  scale_y_log10() +
+  scale_color_viridis_d(name = "tol") +
+  scale_shape_discrete(name = "method") +
+  # snap ticks back to integer repetitions
+  scale_x_continuous(breaks = sort(unique(res10$rep)), minor_breaks = NULL) +
+  labs(
+    x = "Repetition (first 10)",
+    y = expression(f[GPD](x[eval])),
+    title = "Boundary density across tolerances with side-by-side methods",
+    subtitle = paste0("Highlighted = chosen tolerance per method:\n", choice_txt)
+  ) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+
+print(p_side_best)
+```
+
+### MLE1D and LME
+
+```{r}
+sel_methods <- c("MLE1D", "LME")
+
+# --- Map chosen tolerance per method -----------------------------------------
+tol_f_by_method_sel <- tol_f_by_method %>% 
+  filter(method %in% sel_methods)
+
+res10 <- res %>%
+  dplyr::filter(rep <= 25,
+                method %in% sel_methods,
+                tol %in% c(1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13)) %>%
+  dplyr::mutate(
+    x_plot = rep + offset_map[as.character(method)],
+    is_best = tol_f == tol_f_map[as.character(method)]
+  )
+
+# Small subtitle string listing choices
+choice_txt <- paste0(tol_f_by_method_sel$method, ": ",
+                     tol_f_by_method_sel$tol_f) %>%
+  paste(collapse = "  |  ")
+```
+
+```{r dgpd_vs_rep_MLE1D_LME, fig.width=10, fig.height=5, dpi=200}
+# --- Plot with highlighted chosen tolerances ---------------------------------
+p_side_best <- ggplot(res10, aes(x = x_plot, y = dgpd,
+                                 color = tol_f, shape = method)) +
+  # all points (faded)
+  geom_point(alpha = 0.5, size = 1.8) +
+  # halo for chosen tol (black underlay, same shapes)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             color = "black", size = 3.6, alpha = 0.5, show.legend = FALSE) +
+  # colored chosen tol on top (bigger + opaque)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             size = 2.6, alpha = 1, show.legend = FALSE) +
+  scale_y_log10() +
+  scale_color_viridis_d(name = "tol") +
+  scale_shape_discrete(name = "method") +
+  # snap ticks back to integer repetitions
+  scale_x_continuous(breaks = sort(unique(res10$rep)), minor_breaks = NULL) +
+  labs(
+    x = "Repetition (first 25)",
+    y = expression(f[GPD](x[eval])),
+    title = "Boundary density across tolerances with side-by-side methods",
+    subtitle = paste0("Highlighted = chosen tolerance per method:\n", choice_txt)
+  ) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+
+print(p_side_best)
+```
+
+
+
+### MLE1D and NLS2
+
+```{r}
+sel_methods <- c("MLE1D", "NLS2")
+
+# --- Map chosen tolerance per method -----------------------------------------
+tol_f_by_method_sel <- tol_f_by_method %>% 
+  filter(method %in% sel_methods)
+
+res10 <- res %>%
+  dplyr::filter(rep <= 25,
+                method %in% sel_methods,
+                tol %in% c(1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13)) %>%
+  dplyr::mutate(
+    x_plot = rep + offset_map[as.character(method)],
+    is_best = tol_f == tol_f_map[as.character(method)]
+  )
+
+# Small subtitle string listing choices
+choice_txt <- paste0(tol_f_by_method_sel$method, ": ",
+                     tol_f_by_method_sel$tol_f) %>%
+  paste(collapse = "  |  ")
+```
+
+```{r dgpd_vs_rep_MLE1D_NLS2, fig.width=10, fig.height=5, dpi=200}
+# --- Plot with highlighted chosen tolerances ---------------------------------
+p_side_best <- ggplot(res10, aes(x = x_plot, y = dgpd,
+                                 color = tol_f, shape = method)) +
+  # all points (faded)
+  geom_point(alpha = 0.5, size = 1.8) +
+  # halo for chosen tol (black underlay, same shapes)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             color = "black", size = 3.6, alpha = 0.5, show.legend = FALSE) +
+  # colored chosen tol on top (bigger + opaque)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             size = 2.6, alpha = 1, show.legend = FALSE) +
+  scale_y_log10() +
+  scale_color_viridis_d(name = "tol") +
+  scale_shape_discrete(name = "method") +
+  # snap ticks back to integer repetitions
+  scale_x_continuous(breaks = sort(unique(res10$rep)), minor_breaks = NULL) +
+  labs(
+    x = "Repetition (first 25)",
+    y = expression(f[GPD](x[eval])),
+    title = "Boundary density across tolerances with side-by-side methods",
+    subtitle = paste0("Highlighted = chosen tolerance per method:\n", choice_txt)
+  ) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+
+print(p_side_best)
+```
+
+### MLE1D and WNLLSM
+
+```{r}
+sel_methods <- c("MLE1D", "WNLLSM")
+
+# --- Map chosen tolerance per method -----------------------------------------
+tol_f_by_method_sel <- tol_f_by_method %>% 
+  filter(method %in% sel_methods)
+
+res10 <- res %>%
+  dplyr::filter(rep <= 25,
+                method %in% sel_methods,
+                tol %in% c(1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13)) %>%
+  dplyr::mutate(
+    x_plot = rep + offset_map[as.character(method)],
+    is_best = tol_f == tol_f_map[as.character(method)]
+  )
+
+# Small subtitle string listing choices
+choice_txt <- paste0(tol_f_by_method_sel$method, ": ",
+                     tol_f_by_method_sel$tol_f) %>%
+  paste(collapse = "  |  ")
+```
+
+```{r dgpd_vs_rep_MLE1D_WNLLSM, fig.width=10, fig.height=5, dpi=200}
+# --- Plot with highlighted chosen tolerances ---------------------------------
+p_side_best <- ggplot(res10, aes(x = x_plot, y = dgpd,
+                                 color = tol_f, shape = method)) +
+  # all points (faded)
+  geom_point(alpha = 0.5, size = 1.8) +
+  # halo for chosen tol (black underlay, same shapes)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             color = "black", size = 3.6, alpha = 0.5, show.legend = FALSE) +
+  # colored chosen tol on top (bigger + opaque)
+  geom_point(data = dplyr::filter(res10, is_best),
+             inherit.aes = TRUE,
+             size = 2.6, alpha = 1, show.legend = FALSE) +
+  scale_y_log10() +
+  scale_color_viridis_d(name = "tol") +
+  scale_shape_discrete(name = "method") +
+  # snap ticks back to integer repetitions
+  scale_x_continuous(breaks = sort(unique(res10$rep)), minor_breaks = NULL) +
+  labs(
+    x = "Repetition (first 25)",
+    y = expression(f[GPD](x[eval])),
+    title = "Boundary density across tolerances with side-by-side methods",
+    subtitle = paste0("Highlighted = chosen tolerance per method:\n", choice_txt)
+  ) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+
+print(p_side_best)
+```
+
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```
