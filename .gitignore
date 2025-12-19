@@ -1,0 +1,9 @@
+.Rproj.user
+.Renviron
+.Renviron_laptop
+.Rbuildignore
+.RData
+.Rhistory
+.Rprofile
+**/01_data_gen/
+applications/data/
