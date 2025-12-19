@@ -1,0 +1,490 @@
+---
+title: "Wilcoxon (Mann–Whitney U) on exponential data — Compare p-value approximation methods"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "04_p_approx_methods" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "8c251fa3-8abd-4ca9-bec7-dd848ebb5a2d")
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 11, fig.height = 6, dpi = 200,
+  fig.path = paste0('figures/', params$name, "/expl_wilcox_methods_")
+)
+```
+
+## Packages & paths
+
+```{r packages, message=FALSE, warning=FALSE}
+library(conflicted)
+
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(future)
+library(future.apply)
+library(kableExtra)
+library(furrr)
+library(progressr)
+library(patchwork)
+library(digest) # For seed stream
+library(scales)
+
+# For permApprox:
+library(fdrtool)
+library(fitdistrplus)
+library(goftest)
+library(limma)
+
+conflicts_prefer(dplyr::select, dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+## Load permApprox functions (+ SLLS)
+
+```{r permapprox-load}
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+
+# permApprox core
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+
+# ε-rule (SLLS) used by permApprox constrained fits
+eps_rule_path <- file.path(proj_path, "functions/permApprox_eps_fct/slls_eps_rule.R")
+source(eps_rule_path)  # provides eps_slls()
+```
+
+## Global design 
+
+```{r design}
+cores <- 8
+
+n_tests <- 1000
+n_per_group_vec <- c(50, 100, 250, 500, 750, 1000)
+B <- 1000
+
+# Effects: mean1 = 1, mean2 = 1 + delta
+effect_blocks <- c(0, 0.5, 1, 1.5, 2)
+delta_vec <- rep(effect_blocks, each = n_tests / length(effect_blocks))
+delta_vec <- factor(delta_vec, levels = effect_blocks)
+```
+
+## Methods to compare
+
+```{r registry}
+methods_registry <- list(
+  gamma = list(
+    label  = "Gamma",
+    engine = "gamma",
+    params = list(
+      gamma_ctrl = make_gamma_ctrl(include_obs = FALSE, 
+                                   gof_test="none", 
+                                   gof_alpha=0.05)
+    )
+  ),
+  gpd_knijnen = list(
+    label  = "GPD (Knijnen)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "MLE1D",
+        tol           = 1e-10,
+        include_obs   = FALSE,
+        constraint    = "unconstrained",
+        thresh_method = "ftr",
+        exceed0       = 250,
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+  gpd_knijnen_pow3 = list(
+    label  = "GPD (Knijnen, pow3)",
+    engine = "gpd",
+    params = list(
+      power = 3,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "MLE1D",
+        tol           = 1e-10,
+        include_obs   = FALSE,
+        constraint    = "unconstrained",
+        thresh_method = "ftr",
+        exceed0       = 250,
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+  gpd_winkler_inclobs = list(
+    label  = "GPD (Winkler, +obs)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "MLE1D",
+        tol           = 1e-10,
+        include_obs   = TRUE,
+        constraint    = "unconstrained",
+        thresh_method = "ftr",
+        exceed0       = 0.25,  # 0.25*B start
+        exceed0_min   = 0,
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  ),
+  gpd_papprox_support = list(
+    label  = "GPD (pApprox, s>obs)",
+    engine = "gpd",
+    params = list(
+      power = 1,
+      gpd_ctrl = make_gpd_ctrl(
+        fit_method    = "LME",
+        tol           = 1e-7,
+        include_obs   = FALSE,
+        constraint    = "support_at_obs",
+        thresh_method = "rob_ftr",
+        exceed0       = 0.25,      # 25% exceedances
+        exceed0_min   = 250,       # at least 250
+        exceed_min    = 10,
+        thresh_step   = 10,
+        gof_test      = "ad",
+        gof_alpha     = 0.05,
+        cores         = 1,
+        verbose       = FALSE
+      )
+    )
+  )
+)
+```
+
+## Engines (compact)
+
+```{r engines}
+path_data <- path_source("01_test_eps_rule")
+
+# Wilcoxon reference loader
+.load_base <- function(n) {
+  obs  <- readRDS(paste0(path_data, "/obs_U_stats_n",  n, "_B1000.rds"))
+  perm <- readRDS(paste0(path_data, "/perm_U_stats_n", n, "_B1000.rds"))
+  pwcx <- readRDS(paste0(path_data, "/pval_wilcox_n", n, "_B1000.rds"))
+  list(obs = obs, perm = perm, p_wilcox = pwcx)
+}
+
+.engine_gamma <- function(obs, perm, n, def) {
+  compute_p_values(
+    obs_stats     = obs,
+    perm_stats    = perm,
+    alternative   = "two_sided",
+    null_center   = "mean",
+    method        = "gamma",
+    fit_thresh    = 0.1,
+    gamma_ctrl    = def$params$gamma_ctrl,
+    adjust_method = "none"
+  )$p_unadjusted
+}
+
+.engine_gpd <- function(obs, perm, n, def) {
+  compute_p_values(
+    obs_stats     = obs,
+    perm_stats    = perm,
+    eps_fct       = eps_slls_tmax,      # for constraints (no-op for unconstrained)
+    sampsize      = n,
+    alternative   = "two_sided",
+    null_center   = "mean",
+    method        = "gpd",
+    fit_thresh    = 0.1,
+    power         = def$params$power,
+    gpd_ctrl      = def$params$gpd_ctrl,
+    adjust_method = "none"
+  )$p_unadjusted
+}
+
+run_methods_for_n <- function(n) {
+  base <- .load_base(n)
+  tibble(
+    idx         = seq_along(base$obs),
+    n_per_group = n,
+    effect_size = delta_vec,
+    obs_stats   = base$obs,
+    p_wilcox    = base$p_wilcox
+  ) %>% {
+    df <- .
+    meth_list <- imap(methods_registry, function(def, key) {
+      pvals <- switch(def$engine,
+        gamma = .engine_gamma(df$obs_stats, base$perm, n, def),
+        gpd   = .engine_gpd(df$obs_stats, base$perm, n, def),
+        stop("Unknown engine")
+      )
+      tibble(method = def$label, p_method = pvals)
+    })
+    bind_rows(meth_list, .id = "method_key") %>%
+      select(-method_key) %>%
+      bind_cols(df[rep(1:nrow(df), times = length(meth_list)), ]) %>%
+      relocate(method, .before = p_method)
+  }
+}
+```
+
+## Compute and combine
+
+```{r compute_all}
+out_dir <- file.path(path_target())
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+
+method_keys <- names(methods_registry)
+
+# Per-n cache files
+out_file_n <- function(n) file.path(out_dir, paste0("pvals_methods_n", 
+                                                    n, "_B1000.rds"))
+
+handlers("txtprogressbar")
+plan(multisession, workers = cores)
+
+with_progress({
+  p <- progressr::progressor(along = n_per_group_vec)
+  res_paths <- future_map(n_per_group_vec, function(n) {
+    fn <- out_file_n(n)
+    if (!file.exists(fn)) {
+      res_n <- run_methods_for_n(n)
+      saveRDS(res_n, fn)
+    }
+    p()
+    fn
+  })
+})
+
+plan(sequential)
+
+results_all <- map_dfr(n_per_group_vec, ~ readRDS(out_file_n(.x)))
+```
+
+## Rename methods
+
+```{r}
+df_n <- results_all %>%
+  mutate(method = dplyr::recode(
+    method,
+    "Gamma"                = "Gamma",
+    "GPD (Knijnen)"        = "Knijnenburg",
+    "GPD (Knijnen, pow3)"  = "Knijnenburg (pow3)",
+    "GPD (Winkler, +obs)"  = "Winkler (+obs)",
+    "GPD (pApprox, s>obs)" = "permApprox"
+  ))
+
+method_order <- c(
+  "Gamma",
+  "Knijnenburg",
+  "Knijnenburg (pow3)",
+  "Winkler (+obs)",
+  "permApprox"
+)
+
+df_n <- df_n %>%
+  mutate(method = factor(method, levels = method_order))
+```
+
+
+## Plot helper (log breaks) and plotter
+
+```{r plot function}
+# Helper for breaks
+.compute_log_breaks <- function(ymin, 
+                                ymax, 
+                                min_ticks = 5, 
+                                breaks_incl = NULL) {
+  ymin <- max(ymin, .Machine$double.xmin); ymax <- min(max(ymin, ymax), 1)
+  e_min <- floor(log10(ymin)); e_max <- min(0, ceiling(log10(ymax)))
+  try_steps <- if (abs(e_min) <= 100) c(20,10,5) else 50
+  brks <- NULL
+  for (s in try_steps) {
+    start_exp <- -s * ceiling(abs(e_min) / s)
+    exps <- seq(from = start_exp, to = -s, by = s)
+    exps <- exps[exps >= e_min & exps <= e_max]
+    cand <- 10^exps; cand <- cand[cand >= ymin & cand <= ymax]
+    if (!is.null(breaks_incl)) {
+      add <- breaks_incl[breaks_incl > 0 & breaks_incl <= 1]
+      cand <- sort(unique(c(cand, add))); cand <- cand[cand >= ymin & cand <= ymax]
+    }
+    if (length(cand) >= min_ticks) { brks <- cand; break }
+    brks <- cand
+  }
+  labs <- paste0("1e", formatC(log10(brks), format="f",
+                               digits = if (any(abs(log10(brks)-round(log10(brks)))>1e-9)) 1 else 0))
+  list(breaks = brks, labels = labs)
+}
+
+#-------------------------------------------------
+# Plot function
+plot_methods <- function(df, n, 
+                         min_ticks = 5, 
+                         breaks_incl = 1e-3, 
+                         nrow = 2,
+                         legend_position = "right",
+                         title = NULL) {
+  # Replace zero p-values with floor
+  min_nonzero <- suppressWarnings(
+    min(c(df$p_wilcox[df$p_wilcox > 0], df$p_method[df$p_method > 0]), na.rm = TRUE)
+  )
+  zero_repl <- if (is.finite(min_nonzero) && min_nonzero > 0) min_nonzero / 100 else 1e-300
+
+  dfp <- df %>%
+    mutate(
+      p_ref_plot = ifelse(p_wilcox == 0, zero_repl, p_wilcox),
+      p_met_plot = ifelse(p_method == 0, zero_repl, p_method)
+    )
+
+  # Range and breaks
+  y_min <- suppressWarnings(min(c(dfp$p_ref_plot, dfp$p_met_plot), na.rm = TRUE))
+  y_max <- suppressWarnings(max(c(dfp$p_ref_plot, dfp$p_met_plot), na.rm = TRUE))
+  br_base <- .compute_log_breaks(y_min, y_max, min_ticks = min_ticks, breaks_incl = breaks_incl)
+  brks <- sort(unique(c(zero_repl, br_base$breaks)))
+  # --- compute labels ---
+  labs <- ifelse(
+    brks == zero_repl, 
+    "0",
+    gsub("\\.0$", "", 
+         paste0("1e", 
+                formatC(log10(brks), format = "f",
+                        digits = if (any(abs(log10(brks) - round(log10(brks))) > 1e-9)) 1 else 0)))
+  )
+  
+  ggplot(dfp, aes(x = obs_stats)) +
+    # --- Wilcoxon reference ---
+    geom_point(aes(y = p_ref_plot, shape = "Wilcoxon"),
+               color = "black", size = 2, stroke = 0.5, alpha = 0.55) +
+    # --- GPD methods ---
+    geom_point(aes(y = p_met_plot, shape = "GPD approx", color = effect_size),
+               size = 1.6, alpha = 0.6) +
+    facet_wrap(~ method, nrow = nrow) +
+    scale_y_log10(
+      breaks = brks, labels = labs, minor_breaks = NULL,
+      limits = c(zero_repl, 1)
+    ) +
+    scale_x_continuous(labels = scales::label_number(scale_cut = cut_short_scale())) +
+    scale_shape_manual(
+      name = "p-value type:",
+      values = c("Wilcoxon" = 1, "GPD approx" = 16)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = c("0"="gold","0.5"="#ffb347","1"="#ff8c00","1.5"="#e55b00","2"="red")
+    ) +
+    labs(
+      # title = ifelse(!is.null(title), title, 
+      #                paste0("p-value approximations vs. Wilcoxon U (n = ", 
+      #                       n, ", B = ", B, ")")),
+      x = expression(U[obs]),
+      y = expression(hat(p))
+    ) +
+    guides(
+      shape = guide_legend(order = 1),
+      color = guide_legend(order = 2)
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text  = element_text(size = 14),
+      axis.title = element_text(size = 16),
+      plot.title = element_text(size = 16),
+      strip.text = element_text(size = 16, face = "bold"),
+      legend.title = element_text(size = 16, face = "bold"),
+      legend.text  = element_text(size = 16),
+      legend.position = legend_position
+    ) +
+    guides(
+    color = guide_legend(override.aes = list(size = 3)),
+    fill = guide_legend(override.aes = list(size = 3)),
+    shape = guide_legend(override.aes = list(size = 3)))
+}
+
+
+```
+
+## Plots
+
+```{r pvals_all_methods, fig.width = 12, fig.height = 5, dpi = 200}
+for (n_val in n_per_group_vec) {
+  p <- df_n %>% 
+    filter(n_per_group == n_val) %>%
+    plot_methods(n = n_val, legend_position = "bottom")
+  print(p)
+}
+```
+
+### n = 250
+
+```{r pvals_n250, fig.width = 10, fig.height = 5, dpi = 200}
+n_val <- 250
+p <- df_n %>% 
+  filter(n_per_group == n_val) %>%
+  filter(method != "Gamma") %>%
+  plot_methods(n = n_val, title = "")
+print(p)
+```
+
+
+### n = 250, three methods
+
+```{r pvals_n250_three_methods, fig.width = 14, fig.height = 5, dpi = 200}
+n_val <- 250
+p <- df_n %>% 
+  filter(n_per_group == n_val) %>%
+  filter(method %in% c("Knijnenburg", "Knijnenburg (pow3)", "permApprox")) %>%
+  plot_methods(n = n_val, title = "", nrow = 1, legend_position = "bottom")
+print(p)
+```
+
+
+### n = 250, four methods
+
+```{r pvals_n250_four_methods, fig.width = 14, fig.height = 5, dpi = 200}
+n_val <- 250
+p <- df_n %>% 
+  filter(n_per_group == n_val) %>%
+  filter(method %in% c("Knijnenburg", "Knijnenburg (pow3)", "permApprox", 
+                       "Winkler (+obs)")) %>%
+  plot_methods(n = n_val, title = "", nrow = 1, legend_position = "bottom")
+print(p)
+```
+
+

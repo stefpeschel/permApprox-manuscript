@@ -1,0 +1,1044 @@
+---
+title: "Wilcoxon (Mann–Whitney U) on exponential data - Test the SLLS epsilon rule"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "01_test_eps_rule" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "efcad4fd-ecce-4206-b899-b1726dff38ea")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 200,
+  fig.path = paste0('figures/', params$name, "/expl_wilcox_eps_rule_"),
+  echo = FALSE
+)
+```
+
+In this script we evaluate our **standardized lifted log-saturation (SLLS)** ε-rule with the **Wilcoxon rank-sum / Mann–Whitney test**, using the **(U) statistic** throughout.
+
+For equal group sizes (n), (U) counts pairwise “wins” of group 1 over group 2 and takes values in ([0, n^2]) with (E_0[U]=n^2/2). It is related to the Wilcoxon rank-sum (W) by a constant shift:
+
+$$
+U = W - \frac{n(n+1)}{2}.
+$$
+
+We fit a GPD to the **right tail** of the permutation distribution of (U) and compare unconstrained vs. constrained (SLLS) fits.
+
+Unlike the two-sample $t$-test setting, the Wilcoxon (U) statistic is **nonparametric** and has a different distributional behavior under the null, which provides a useful test case for evaluating the robustness of our approach. 
+
+```{r packages, message=FALSE, warning=FALSE}
+library(conflicted)
+
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(future)
+library(future.apply)
+library(kableExtra)
+library(furrr)
+library(progressr)
+library(patchwork)
+library(digest) # For seed stream
+
+# For permApprox:
+library(fdrtool)
+library(fitdistrplus)
+library(goftest)
+library(limma)
+
+conflicts_prefer(dplyr::select, dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r load_permApprox}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Data Simulation
+
+```{r}
+cores <- 8
+
+n_tests <- 1000
+n_per_group_vec <- c(50, 100, 250, 500, 750, 1000)
+B <- 1000
+
+# Effect sizes for Exp means: mean1 = 1, mean2 = 1 + delta
+effect_blocks <- c(0, 0.5, 1, 1.5, 2)
+delta_vec <- rep(effect_blocks, each = n_tests / length(effect_blocks))
+
+```
+
+We simulate two groups from **exponential distributions**:
+
+* Group 1: mean (=1) (rate (=1))
+* Group 2: mean (=1+\delta) (rate (=1/(1+\delta)))
+* Sample sizes per group: `r n_per_group_vec`
+* Number of tests: `r n_tests`
+* Effect sizes: `r paste(effect_blocks, collapse = " ")`
+* Tests per effect size: `r paste0("d=", effect_blocks, ": ",table(delta_vec), collapse = ", ")`
+
+We apply the **Wilcoxon rank-sum test** (Mann–Whitney $U$ test) to compare the two exponential samples.
+
+* Statistic: **Mann–Whitney (U)** (converted from rank-sum (W))
+* P-values: classical Wilcoxon (`exact = FALSE, correct = FALSE`) for reference; permutation/GPD for tail modeling
+
+## Simulate data
+
+```{r}
+### Helpers
+
+# Stable 32-bit integer from arbitrary keys
+seed_from <- function(...) {
+  hx <- digest(paste(..., collapse="|"), algo = "xxhash32")
+  s  <- as.integer(strtoi(hx, base = 16L))
+  if (is.na(s) || s == 0L) 1L else s
+}
+
+# One test -> (U_obs, U_perm[B], classical p, empirical p)
+.sim_one_U <- function(n_per_group, B, delta) {
+  # Data (Exp means 1 vs 1+delta)
+  x1 <- rexp(n_per_group, rate = 1)
+  x2 <- rexp(n_per_group, rate = 1 / (1 + as.numeric(delta)))
+
+  # Pooled ranks and W (sum of ranks of sample 1)
+  x_comb <- c(x1, x2)
+  n_comb <- length(x_comb)
+  r_all  <- rank(x_comb, ties.method = "average")
+  W_obs  <- sum(r_all[seq_len(n_per_group)])
+
+  # Convert to U: U = W - n(n+1)/2
+  shift <- n_per_group * (n_per_group + 1) / 2
+  U_obs <- W_obs - shift
+
+  # Permutations: sample “group 1” indices; sum ranks -> W_perm -> U_perm
+  perm_idx_mat <- replicate(B, sample.int(n_comb, n_per_group))
+  W_perm <- colSums(matrix(r_all[perm_idx_mat], nrow = n_per_group, ncol = B))
+  U_perm <- W_perm - shift
+
+  # Classical Wilcoxon p (asymptotic, no continuity corr)
+  p_cl <- wilcox.test(x1, x2, alternative = "two.sided",
+                      exact = FALSE, correct = FALSE)$p.value
+
+  # Two-sided empirical p from U
+  greater <- sum(U_perm >= U_obs)
+  lesser  <- sum(U_perm <= U_obs)
+  p_emp   <- (2 * min(greater, lesser) + 1) / (B + 1)
+
+  list(U_obs = U_obs, U_perm = U_perm, p_cl = p_cl, p_emp = p_emp)
+}
+
+
+simulate_once_wilcoxU <- function(n_per_group, B, n_tests, delta_vec, path_target) {
+  fn_obs  <- path_target(paste0("obs_U_stats_n", n_per_group, "_B", B, ".rds"))
+  fn_perm <- path_target(paste0("perm_U_stats_n", n_per_group, "_B", B, ".rds"))
+  fn_pcl  <- path_target(paste0("pval_wilcox_n", n_per_group, "_B", B, ".rds"))
+  fn_pemp <- path_target(paste0("pval_empwilcox_n", n_per_group, "_B", B, ".rds"))
+
+  if (all(file.exists(fn_obs, fn_perm, fn_pcl, fn_pemp))) return(invisible(NULL))
+
+  message("Simulating (Wilcoxon/Mann–Whitney U, Exponential) for n=", n_per_group, ", B=", B, " ...")
+
+  # Parallel plan + deterministic substreams per g
+  master_seed <- seed_from("wilcox-U-exp", n_per_group, B, n_tests)
+  oplan <- future::plan(multisession, workers = max(1, future::availableCores() - 1))
+  on.exit(future::plan(oplan), add = TRUE)
+
+  obs_stats  <- numeric(n_tests)
+  pval_wcx   <- numeric(n_tests)
+  pval_emp   <- numeric(n_tests)
+  perm_stats <- matrix(NA_real_, nrow = B, ncol = n_tests)
+
+  with_progress({
+    p <- progressr::progressor(along = seq_len(n_tests))
+
+    res_list <- future_lapply(
+      seq_len(n_tests),
+      function(g, p) {
+        p()
+        delta_g <- as.numeric(as.character(delta_vec[g]))
+        .sim_one_U(n_per_group, B, delta_g)
+      },
+      p = p,
+      future.seed = master_seed
+    )
+
+    for (g in seq_len(n_tests)) {
+      obs_stats[g]    <- res_list[[g]]$U_obs
+      pval_wcx[g]     <- res_list[[g]]$p_cl
+      pval_emp[g]     <- res_list[[g]]$p_emp
+      perm_stats[, g] <- res_list[[g]]$U_perm
+    }
+  })
+
+  saveRDS(obs_stats,  fn_obs)
+  saveRDS(perm_stats, fn_perm)
+  saveRDS(pval_wcx,   fn_pcl)
+  saveRDS(pval_emp,   fn_pemp)
+  invisible(NULL)
+}
+
+```
+
+
+```{r simulate_data}
+# Run all (n, B) scenarios
+scenarios <- tidyr::expand_grid(n_per_group = n_per_group_vec, B = B)
+scenarios %>% purrr::pwalk(~ simulate_once_wilcoxU(..1, ..2, n_tests, delta_vec, path_target))
+
+# factor for later grouping
+delta_vec <- factor(delta_vec, levels = effect_blocks)
+```
+
+## Histograms
+
+```{r histograms}
+n_per_group <- 100
+B <- 1000
+
+perm_stats <- readRDS(path_target(paste0("perm_U_stats_n", n_per_group, "_B", B, ".rds")))
+
+# Choose up to the first six columns
+cols <- 1:min(6, ncol(perm_stats))
+
+# Prepare long format for faceting
+df <- as.data.frame(perm_stats[, cols, drop = FALSE])
+colnames(df) <- paste0("Test ", cols)
+
+df_long <- df %>%
+  mutate(.row = row_number()) %>%
+  pivot_longer(-.row, names_to = "stat", values_to = "value")
+
+ggplot(df_long, aes(x = value)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ stat, scales = "free_x") +
+  labs(
+    title = "Permutation statistics: Histograms of first six tests (n = 100)",
+    x = expression(U[perm]), y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+
+## Plot function
+
+
+```{r}
+# ---------- helper: step = 20→10→5 up to 100, then 50 beyond ----------
+.compute_log_breaks <- function(ymin, ymax, min_ticks = 5, breaks_incl = NULL) {
+  
+  ymin <- max(ymin, .Machine$double.xmin)
+  ymax <- min(max(ymin, ymax), 1)
+  
+  e_min <- floor(log10(ymin))
+  e_max <- min(0, ceiling(log10(ymax)))  # p-values ≤ 1
+  
+  # choose step candidates depending on how deep the tail goes
+  if (abs(e_min) <= 100) {
+    try_steps <- c(20, 10, 5)
+  } else {
+    try_steps <- 50
+  }
+  
+  brks <- NULL
+  
+  for (s in try_steps) {
+    start_exp <- -s * ceiling(abs(e_min) / s)
+    exps <- seq(from = start_exp, to = -s, by = s)
+    exps <- exps[exps >= e_min & exps <= e_max]
+    cand <- 10^exps
+    cand <- cand[cand >= ymin & cand <= ymax]
+    
+    if (!is.null(breaks_incl)) {
+      add <- breaks_incl[breaks_incl > 0 & breaks_incl <= 1]
+      cand <- sort(unique(c(cand, add)))
+      cand <- cand[cand >= ymin & cand <= ymax]
+    }
+    
+    if (length(cand) >= min_ticks) { brks <- cand; break }
+    brks <- cand  # fallback if all fail
+  }
+  
+  labs <- paste0("1e", 
+                 formatC(log10(brks), format = "f",
+                         digits = if (any(abs(log10(brks) - 
+                                              round(log10(brks))) > 1e-9)) 1 else 0))
+  list(breaks = brks, labels = labs)
+}
+
+plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE, 
+                       title = NULL, eps_rule = NULL,
+                       min_ticks = 5, breaks_incl = 1e-3) {
+
+  df <- dplyr::mutate(df, effect_size = as.character(effect_size))
+
+  p <- ggplot(df, aes(x = obs_stats)) +
+    geom_point(aes(y = p_wilcox, shape = "Mann-Whitney U"),
+               color = "black", size = 2, stroke = 0.5, alpha = 0.5) +
+    geom_point(aes(y = p_constr, shape = "Constrained GPD", color = effect_size),
+               size = 1.6, alpha = 0.6) +
+    scale_shape_manual(
+      name = "P-value type:",
+      values = c("Constrained GPD" = 16, "Mann-Whitney U" = 1)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = c("0"="gold","0.5"="#ffb347","1"="#ff8c00","1.5"="#e55b00","2"="red")
+    ) +
+    labs(
+      title = ifelse(!is.null(title), title,
+                     paste0("n = ", sampsize, "; epsilon rule: ", eps_rule)),
+      x = expression(U[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text    = element_text(size = 14),
+      axis.title   = element_text(size = 15),
+      plot.title   = element_text(size = 15),
+      strip.text   = element_text(size = 15),
+      legend.title = element_text(size = 14),
+      legend.text  = element_text(size = 12)
+    )
+
+  # range
+  if (is.null(ylim)) {
+    y_min <- suppressWarnings(min(c(df$p_wilcox, df$p_constr), na.rm = TRUE))
+    y_max <- suppressWarnings(max(c(df$p_wilcox, df$p_constr), na.rm = TRUE))
+  } else {
+    y_min <- ylim[1]; y_max <- ylim[2]
+    p <- p + coord_cartesian(ylim = ylim)
+  }
+  
+  if (log_scale) {
+    br <- .compute_log_breaks(ymin = y_min, ymax = y_max,
+                              min_ticks = min_ticks,
+                              breaks_incl = breaks_incl)
+    p <- p + scale_y_log10(breaks = br$breaks, labels = br$labels, minor_breaks = NULL)
+  }
+  
+  p
+}
+
+```
+
+## Function to run permApprox
+
+This function will be used for all p-values approximations with constrained GPD fit.
+
+```{r run_permApprox_function, echo=TRUE}
+run_permApprox <- function(rule_name, eps_fct, constraint = "support_at_obs",
+                           cores = 8) {
+  
+  path_out <- path_target()
+  
+  # ---- pre-check: which outputs already exist?
+  out_files <- paste0(path_out, "/permapprox_constr_", rule_name,
+                      "_n", n_per_group_vec, "_B", B, ".rds")
+  missing_idx <- which(!file.exists(out_files))
+  missing_n   <- n_per_group_vec[missing_idx]
+  
+  # ---- run only for missing n's
+  if (length(missing_n) > 0) {
+    handlers("txtprogressbar")
+    plan(multisession, workers = cores)
+    
+    with_progress({
+      p <- progressor(along = n_per_group_vec)
+      
+      future_map(
+        n_per_group_vec,
+        function(n_per_group) {
+          # file name for this n
+          fname_constr <- paste0(path_out, "/permapprox_constr_", rule_name, "_n",
+                                 n_per_group, "_B", B, ".rds")
+          
+          # skip if already computed
+          if (file.exists(fname_constr)) {
+            p(message = sprintf("n=%s: skip (exists)", n_per_group))
+            return(invisible(NULL))
+          }
+          
+          # Load simulated data for this n
+          obs_stats  <- readRDS(paste0(path_out, "/obs_U_stats_n",  n_per_group, 
+                                       "_B", B, ".rds"))
+          perm_stats <- readRDS(paste0(path_out, "/perm_U_stats_n", n_per_group, 
+                                       "_B", B, ".rds"))
+          
+          # GPD control
+          gpd_ctrl_constr <- make_gpd_ctrl(
+            fit_method   = "LME",
+            tol = 1e-7,
+            include_obs  = FALSE,
+            constraint   = constraint,
+            thresh_method= "ftr",
+            exceed0      = 250,
+            exceed_min   = 10,
+            thresh_step  = 10,
+            gof_test     = "ad",
+            gof_alpha    = 0.05,
+            cores        = 1,
+            verbose      = TRUE
+          )
+          
+          # compute and save
+          papprox_constr <- compute_p_values(
+            obs_stats     = obs_stats,
+            perm_stats    = perm_stats,
+            eps_fct       = eps_fct,
+            sampsize      = n_per_group,
+            alternative   = "two_sided",
+            null_center   = "mean",   # mean of U-perms is n^2/2
+            method        = "gpd",
+            gpd_ctrl      = gpd_ctrl_constr,
+            adjust_method = "BH"
+          )
+          
+          saveRDS(papprox_constr, file = fname_constr)
+          p(message = sprintf("n=%s: done", n_per_group))
+          invisible(NULL)
+        },
+        .options = furrr_options(seed = TRUE)  # reproducible RNG per worker
+      )
+    })
+    
+    plan(sequential)
+  } # else: nothing to compute; fall through to loading
+  
+
+  # Combine results for all n_per_group values
+  results_all <- purrr::map_dfr(n_per_group_vec, function(n_per_group) {
+    obs_stats    <- readRDS(path_target(paste0("obs_U_stats_n",  n_per_group, 
+                                               "_B", B, ".rds")))
+    pval_wilcox  <- readRDS(path_target(paste0("pval_wilcox_n",  n_per_group, 
+                                               "_B", B, ".rds")))
+    papprox_constr <- readRDS(path_target(paste0("permapprox_constr_", rule_name, 
+                                                 "_n", n_per_group, "_B", B, ".rds")))
+
+    tibble(
+      idx         = seq_along(obs_stats),
+      n_per_group = n_per_group,
+      effect_size = delta_vec,
+      obs_stats   = obs_stats,         # on U-scale
+      p_wilcox    = pval_wilcox,
+      gpd_fit     = papprox_constr$gpd_fit$fitted,
+      p_constr    = papprox_constr$p_unadjusted,
+      epsilon     = papprox_constr$gpd_fit$epsilon
+    )
+  })
+
+  results_all
+}
+
+```
+
+## Unconstrained GPD fit
+
+For comparison, we again start with the unconstrained fit.
+
+```{r run_permApprox_unconstr}
+path_out <- path_target()
+
+# ---- pre-check: which outputs already exist?
+out_files <- paste0(path_out, "/permapprox_unconstr_n", 
+                    n_per_group_vec, "_B", B, ".rds")
+missing_idx <- which(!file.exists(out_files))
+missing_n   <- n_per_group_vec[missing_idx]
+
+# ---- run only for missing n's
+if (length(missing_n) > 0) {
+  
+  handlers("txtprogressbar")
+  plan(multisession, workers = 6)
+  
+  with_progress({
+    p <- progressor(along = n_per_group_vec)
+    
+    future_map(
+      n_per_group_vec,
+      function(n_per_group) {
+        # file name for this n
+        fname_unconstr <- paste0(path_out, "/permapprox_unconstr_n", 
+                                 n_per_group, "_B", B, ".rds")
+        
+        # skip if already computed
+        if (file.exists(fname_unconstr)) {
+          p(message = sprintf("n=%s: skip (exists)", n_per_group))
+          return(invisible(NULL))
+        }
+        
+        # Load simulated data for this n
+        obs_stats  <- readRDS(paste0(path_out, "/obs_U_stats_n",  
+                                     n_per_group, "_B", B, ".rds"))
+        perm_stats <- readRDS(paste0(path_out, "/perm_U_stats_n", 
+                                     n_per_group, "_B", B, ".rds"))
+        
+        # GPD control: keep cores=1 to avoid nested parallelism
+        gpd_ctrl_unconstr <- make_gpd_ctrl(
+          fit_method   = "LME",
+          tol          = 1e-7,
+          include_obs  = FALSE,
+          constraint   = "unconstrained",
+          thresh_method= "ftr",
+          exceed0      = 250,
+          exceed_min   = 10,
+          thresh_step  = 10,
+          gof_test     = "ad",
+          gof_alpha    = 0.05,
+          cores        = 1,
+          verbose      = TRUE
+        )
+        
+        # Compute and save
+        papprox_unconstr <- compute_p_values(
+          obs_stats     = obs_stats,
+          perm_stats    = perm_stats,
+          alternative   = "two_sided",
+          null_center   = "mean",   # on U-scale
+          method        = "gpd",
+          gpd_ctrl      = gpd_ctrl_unconstr,
+          adjust_method = "BH"
+        )
+        
+        saveRDS(papprox_unconstr, file = fname_unconstr)
+        p(message = sprintf("n=%s: done", n_per_group))
+        invisible(NULL)
+      },
+      .options = furrr_options(seed = TRUE)  # reproducible RNG per worker
+    )
+  })
+  
+  plan(sequential)
+}
+```
+
+```{r}
+results_all <- purrr::map_dfr(n_per_group_vec, function(n_per_group) {
+  obs_stats     <- readRDS(path_target(paste0("obs_U_stats_n",  n_per_group, "_B", B, ".rds")))
+  pval_wilcox   <- readRDS(path_target(paste0("pval_wilcox_n",  n_per_group, "_B", B, ".rds")))
+  papprox_unconstr <- readRDS(path_target(paste0("permapprox_unconstr_n", n_per_group, "_B", B, ".rds")))
+
+  tibble(
+    idx         = seq_along(obs_stats),
+    n_per_group = n_per_group,
+    effect_size = delta_vec,
+    obs_stats   = obs_stats,                 # U-scale
+    p_wilcox    = pval_wilcox,
+    gpd_fit     = papprox_unconstr$gpd_fit$fitted,
+    p_unconstr  = papprox_unconstr$p_unadjusted
+  )
+})
+
+```
+
+```{r pvals_unconstr, fig.width = 10, fig.height = 6, dpi = 200}
+for (n_val in sort(unique(results_all$n_per_group))) {
+  df_n <- results_all %>% filter(n_per_group == n_val)
+
+  min_nonzero <- min(c(df_n$p_wilcox[df_n$p_wilcox > 0],
+                       df_n$p_unconstr[df_n$p_unconstr > 0]),
+                     na.rm = TRUE)
+  zero_repl <- min_nonzero / 100
+
+  df_n <- df_n %>%
+    mutate(
+      p_wilcox_plot    = ifelse(p_wilcox   == 0, zero_repl, p_wilcox),
+      p_unconstr_plot  = ifelse(p_unconstr == 0, zero_repl, p_unconstr)
+    )
+
+  p <- ggplot(df_n, aes(x = obs_stats)) +
+    geom_point(aes(y = p_wilcox_plot, shape = "Mann-Whitney U"),
+               color = "black", size = 2, stroke = 0.5, alpha = 0.5) +
+    geom_point(aes(y = p_unconstr_plot, shape = "Unconstrained GPD", color = effect_size),
+               size = 1.6, alpha = 0.6) +
+    scale_shape_manual(name = "p-value type",
+                       values = c("Unconstrained GPD" = 16, "Mann-Whitney U" = 1)) +
+    scale_color_manual(name = "Effect size",
+                       values = c("0"="gold",
+                                  "0.5"="#ffb347",
+                                  "1"="#ff8c00",
+                                  "1.5"="#e55b00",
+                                  "2"="red")) +
+    scale_y_log10(
+      breaks = c(zero_repl, 1e-40, 1e-20, 1e-2),
+      labels = c("0", "1e-40", "1e-20", "1e-2"),
+      limits = c(zero_repl, 1),
+      minor_breaks = NULL
+    ) +
+    labs(
+      title = paste("Unconstrained permApprox vs. Mann-Whitney U (n =", n_val, ")"),
+      x = expression(U[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text  = element_text(size = 14),
+      axis.title = element_text(size = 16),
+      plot.title = element_text(size = 16),
+      strip.text = element_text(size = 15),
+      legend.title = element_text(size = 14),
+      legend.text  = element_text(size = 12)
+    )
+
+  print(p)
+}
+```
+
+## Non-standardized Lifted Log-Saturation (LLS) rule
+
+```{r}
+eps_n_power <- function(obs_stats = NULL, sampsize = NULL, C = 1000, p = 2, ...) {
+  abs(obs_stats) * (C / sampsize^p)
+}
+
+# Build T_cap from choice: "perm" or "tmax"
+# - cap_base = "tmax": uses observed maximum across tests
+# - cap_base = "perm": uses high quantile of |perm_stats| inflated by g(n)
+.build_Tcap <- function(cap_base, t_obs, perm_stats, n, 
+                        q_ref = 0.99, alpha = 0.5) {
+  if (identical(cap_base, "tmax")) {
+    # Observed cap (same for all tests)
+    T_cap <- rep(max(abs(t_obs), na.rm = TRUE), length(t_obs))
+
+  } else if (identical(cap_base, "perm")) {
+    # Permutation cap: high quantile of |perm|, inflated by g(n)
+    if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+    Tabs <- abs(perm_stats)
+    Tq <- apply(Tabs, 2, stats::quantile, probs = q_ref, na.rm = TRUE, names = FALSE)
+    
+    # Inflation g(n) = max(1, alpha * sqrt(n))
+    infl <- pmax(1, alpha * sqrt(n))
+    T_cap <- Tq * infl
+
+    # Broadcast if needed
+    if (length(T_cap) == 1L) T_cap <- rep(T_cap, length(t_obs))
+    if (length(T_cap) != length(t_obs)) T_cap <- rep(T_cap[1L], length(t_obs))
+
+  } else {
+    stop("cap_base must be 'perm' or 'tmax'.")
+  }
+
+  # Guardrails: enforce positive finite caps
+  bad <- !is.finite(T_cap) | T_cap <= 0
+  if (any(bad)) {
+    fallback <- max(T_cap[!bad], 1)
+    T_cap[bad] <- fallback
+  }
+  T_cap
+}
+
+# Simplified LLS using unified T_cap
+eps_LLS <- function(obs_stats,
+                    perm_stats,
+                    sampsize,
+                    cap_base = "tmax",
+                    k_factor = 1000,
+                    target_factor = 0.25,
+                    rho_lift = 3,
+                    floor_eps = 1e-6,
+                    q_ref = 0.99,   # quantile of |T_perm|
+                    alpha = 0.5,    # inflation constant
+                    ...) {
+  cap_base <- if (is.character(cap_base)) match.arg(cap_base) else cap_base
+  Tobs <- abs(obs_stats)
+  n <- sampsize
+  
+  # Build cap T_cap according to cap_base
+  T_cap <- .build_Tcap(cap_base, Tobs, perm_stats, n,
+                       q_ref = q_ref, alpha = alpha)
+  
+  # Curvature (k) and plateau (E_target) scale with 1/n
+  k <- k_factor * (500 / n)
+  E_target <- target_factor * (500 / n)
+  
+  # Degenerate guard: if cap fails, return conservative constant
+  if (!any(is.finite(T_cap)) || all(T_cap <= 0)) {
+    return(rep(max(E_target + rho_lift, floor_eps), length(Tobs)))
+  }
+  
+  # Scale-free index s and smooth Wendland C^2 lift
+  s <- pmin(Tobs / T_cap, 1)                # clamp to [0,1]
+  psi_wendland_c2 <- (1 - s)^4 * (1 + 4*s)  # lift vanishes at s=1
+  
+  # Simplified LLS core (no A,B), numerically stable via log1p
+  eps_core <- E_target * log1p(k * s) / log1p(k) + rho_lift * psi_wendland_c2
+  
+  # Floor to avoid vanishing constraints
+  pmax(eps_core, floor_eps)
+}
+```
+
+```{r rule_LLS}
+n_val <- 100
+  obs_stats <- readRDS(path_target(paste0("obs_U_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_U_stats_n", n_val, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_LLS= eps_LLS(obs_stats, perm_stats = perm_stats, sampsize = n_val)
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+    geom_line(size = 1.2, alpha = 0.7) +
+    labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(W[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+```
+
+
+```{r run_permApprox_constr_LLS}
+results_all <- run_permApprox(rule_name = "LLS", eps_fct = eps_LLS)
+```
+
+```{r pvals_constr_LLS}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val)#, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "LLS")
+  print(p)
+}
+```
+
+As expected, the LLS rule does not work for the Wilcoxon test statistics as their range is extremely large.
+
+## Standardized Lifted Log-Saturation (SLLS) rule
+
+```{r}
+# Build T_cap from choice: "perm" or "tmax"
+# - cap_base = "tmax": uses observed maximum across tests
+# - cap_base = "perm": uses high quantile of |perm_stats| inflated by g(n)
+.build_Tcap <- function(cap_base, t_obs, perm_stats, n, 
+                        q_ref = 0.99, alpha = 0.5) {
+  if (identical(cap_base, "tmax")) {
+    # Observed cap (same for all tests)
+    T_cap <- rep(max(abs(t_obs), na.rm = TRUE), length(t_obs))
+
+  } else if (identical(cap_base, "perm")) {
+    # Permutation cap: high quantile of |perm|, inflated by g(n)
+    if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+    Tabs <- abs(perm_stats)
+    Tq <- apply(Tabs, 2, stats::quantile, probs = q_ref, na.rm = TRUE, names = FALSE)
+    
+    # Inflation g(n) = max(1, alpha * sqrt(n))
+    infl <- pmax(1, alpha * sqrt(n))
+    T_cap <- Tq * infl
+
+    # Broadcast if needed
+    if (length(T_cap) == 1L) T_cap <- rep(T_cap, length(t_obs))
+    if (length(T_cap) != length(t_obs)) T_cap <- rep(T_cap[1L], length(t_obs))
+
+  } else {
+    stop("cap_base must be 'perm' or 'tmax'.")
+  }
+
+  # Guardrails: enforce positive finite caps
+  bad <- !is.finite(T_cap) | T_cap <= 0
+  if (any(bad)) {
+    fallback <- max(T_cap[!bad], 1)
+    T_cap[bad] <- fallback
+  }
+  T_cap
+}
+
+# Standardized Lifted Log-Saturation (SLLS) using unified Z-cap
+# - Standardize to Z using permutation mean/sd per test
+# - Build the cap on the Z-scale via .build_Tcap (cap_base = "perm" or "tmax")
+# - Apply simplified LLS on Z
+# - Map epsilon back to T-scale via sigma_j
+eps_SLLS <- function(obs_stats,
+                     perm_stats,
+                     sampsize,
+                     cap_base      = "tmax",  # Z-cap choice
+                     alpha         = 0.5, # g(n) = max(1, alpha*sqrt(n))
+                     q_ref         = 0.99, # quantile of |Z_perm|
+                     rho_lift      = 3,
+                     k_factor      = 1000,
+                     target_factor = 0.25,
+                     floor_epsZ    = 1e-6,
+                     ...) {
+  cap_base <- if (is.character(cap_base)) match.arg(cap_base) else cap_base
+  n <- sampsize
+  stopifnot(n > 0)
+  
+  # Shape inputs --------------------------------------------------------------
+  # Allow vector perm_stats for single test
+  if (is.null(dim(perm_stats))) perm_stats <- matrix(perm_stats, ncol = 1)
+  Tobs <- as.numeric(obs_stats)
+  
+  # Z-standardization per test -----------------------------------------------
+  mu  <- colMeans(perm_stats, na.rm = TRUE)
+  sig <- apply(perm_stats, 2, sd, na.rm = TRUE)
+
+  # Guard against non-finite or zero SDs: replace with a small positive fallback
+  valid_sig <- sig[is.finite(sig) & sig > 0]
+  sig_fallback <- if (length(valid_sig)) max(min(valid_sig), 1e-12) else 1e-12
+  sig_ok <- sig
+  sig_ok[!is.finite(sig_ok) | sig_ok <= 0] <- sig_fallback
+
+  Zobs  <- abs((Tobs - mu) / sig_ok)
+  Zperm <- sweep(sweep(perm_stats, 2, mu, "-"), 2, sig_ok, "/")  # same shape as perm_stats
+
+  # Build Z-cap (unified) -----------------------------------------------------
+  # Uses: "tmax" => max(Zobs); "perm" => Q_q(|Zperm|) * g(n) with g(n)=max(1, alpha*sqrt(n))
+  T_cap_Z <- .build_Tcap(cap_base = cap_base,
+                         t_obs    = Zobs,
+                         perm_stats = Zperm,
+                         n        = n,
+                         q_ref    = q_ref,
+                         alpha    = alpha)
+
+  # LLS core on Z -------------------------------------------------------------
+  k        <- k_factor      * (500 / n)
+  E_target <- target_factor * (500 / n)
+
+  if (!any(is.finite(T_cap_Z)) || all(T_cap_Z <= 0)) {
+    # Conservative constant if the cap failed
+    epsZ <- rep(max(E_target + rho_lift, floor_epsZ), length(Zobs))
+  } else {
+    s   <- pmin(Zobs / T_cap_Z, 1)        # scale-free index in [0,1]
+    psi <- (1 - s)^4 * (1 + 4*s)          # Wendland C^2 lift
+    epsZ_core <- E_target * log1p(k * s) / log1p(k) + rho_lift * psi
+    epsZ <- pmax(epsZ_core, floor_epsZ)
+  }
+
+  # Map back to T-scale -------------------------------------------------------
+  epsT <- epsZ * sig_ok
+  epsT
+}
+```
+
+```{r rule_SLLS}
+n_val <- 100
+  obs_stats <- readRDS(path_target(paste0("obs_U_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_U_stats_n", n_val, "_B", B, ".rds")))
+  
+  p <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_SLLS= eps_SLLS(obs_stats, perm_stats = perm_stats, sampsize = n_val)
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    ggplot(aes(t_obs, eps, color = rule)) +
+    geom_line(size = 1.2, alpha = 0.7) +
+    labs(
+      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
+      x = expression(W[obs]),
+      y = expression(epsilon)
+    ) +
+    theme_minimal(base_size = 14)
+  print(p)
+```
+
+```{r run_permApprox_constr_SLLS}
+results_all <- run_permApprox(rule_name = "SLLS", eps_fct = eps_SLLS)
+```
+
+```{r pvals_constr_SLLS}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val)#, gpd_fit == TRUE)
+  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "SLLS")
+  print(p)
+}
+```
+
+## Constrained vs. unconstrained fit
+
+```{r}
+# Load & combine results: wilcox, unconstrained GPD, constrained GPD
+rule_name <- "SLLS"   # <- change if you used a different rule_name
+
+results_three <- purrr::map_dfr(n_per_group_vec, function(n_per_group) {
+
+  # base inputs
+  obs_stats   <- readRDS(path_target(paste0("obs_U_stats_n", 
+                                            n_per_group, "_B", B, ".rds")))
+  pval_wilcox  <- readRDS(path_target(paste0("pval_wilcox_n", 
+                                             n_per_group, "_B", B, ".rds")))
+
+  # GPD results
+  papprox_unconstr <- readRDS(path_target(paste0("permapprox_unconstr_n", 
+                                                 n_per_group, "_B", B, ".rds")))
+  papprox_constr   <- readRDS(path_target(paste0("permapprox_constr_", 
+                                                 rule_name, "_n", n_per_group, "_B", B, ".rds")))
+
+  tibble::tibble(
+    idx           = seq_along(obs_stats),
+    n_per_group   = n_per_group,
+    effect_size   = factor(delta_vec, levels = c(0, 0.5, 1, 1.5, 2)),
+    obs_stats     = abs(obs_stats),
+    p_wilcox       = pval_wilcox,
+    p_unconstr    = papprox_unconstr$p_unadjusted,
+    p_constr      = papprox_constr$p_unadjusted,
+    gpd_unconstr_fit = papprox_unconstr$gpd_fit$fitted,
+    gpd_constr_fit   = papprox_constr$gpd_fit$fitted
+  )
+})
+```
+
+
+```{r}
+# Plot function: three p-value types in one panel
+plot_pvals_three <- function(df, sampsize, log_scale = TRUE) {
+  df_plot <- df
+
+  # find smallest nonzero across all three types for stable zero replacement on log scale
+  min_nonzero <- min(
+    c(df_plot$p_wilcox[df_plot$p_wilcox > 0],
+      df_plot$p_unconstr[df_plot$p_unconstr > 0],
+      df_plot$p_constr[df_plot$p_constr > 0]),
+    na.rm = TRUE
+  )
+  min_nonzero <- max(min_nonzero, 1e-320)
+  zero_repl   <- min_nonzero / 100
+  
+  df_long <- df_plot %>%
+    dplyr::mutate(
+      p_wilcox_plot     = ifelse(p_wilcox     == 0, zero_repl, p_wilcox),
+      p_unconstr_plot  = ifelse(p_unconstr  == 0, zero_repl, p_unconstr),
+      p_constr_plot    = ifelse(p_constr    == 0, zero_repl, p_constr)
+    ) %>%
+    tidyr::pivot_longer(
+      cols = c(p_wilcox_plot, p_unconstr_plot, p_constr_plot),
+      names_to = "ptype", values_to = "pval"
+    ) %>%
+    dplyr::mutate(
+      ptype = dplyr::recode(ptype,
+                            p_wilcox_plot    = "Mann-Whitney U",
+                            p_unconstr_plot = "Unconstrained",
+                            p_constr_plot   = "Constrained"
+      ),
+      # set the legend order
+      ptype = factor(ptype, levels = c("Mann-Whitney U", "Constrained", 
+                                       "Unconstrained"))
+    ) %>%
+    # this controls the draw order in a single geom_point layer
+    dplyr::arrange(ptype)
+  
+  p <- ggplot2::ggplot(df_long, ggplot2::aes(x = obs_stats, y = pval, 
+                                             color = ptype, size = ptype)) +
+    ggplot2::geom_point(alpha = 0.6) +
+    ggplot2::scale_color_manual(
+      name   = "P-value type:",
+      values = c("Mann-Whitney U" = "grey40", 
+                 "Unconstrained" = "#1f77b4",
+                 "Constrained" = "darkorange")
+    ) + 
+    scale_size_manual(
+      values = c("Mann-Whitney U" = 1.6,
+                 "Constrained" = 1.6,
+                 "Unconstrained" = 1.2)  # smaller dots here
+    ) +
+    ggplot2::labs(
+      title = paste0("n = ", sampsize),
+      x = expression(U[obs]),
+      y = expression(hat(p))
+    ) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      axis.text    = ggplot2::element_text(size = 14),
+      axis.title   = ggplot2::element_text(size = 16),
+      plot.title   = ggplot2::element_text(size = 16),
+      legend.title = ggplot2::element_text(size = 14),
+      legend.text  = ggplot2::element_text(size = 12)
+    ) +
+    guides(size = "none")
+
+  if (log_scale) {
+    p <- p +
+      ggplot2::scale_y_log10(
+        breaks = c(zero_repl, 1e-300, 1e-200, 1e-100, 1e-80, 1e-60, 1e-40, 
+                   1e-20, 1e-2),
+        labels = c("0", "1e-300", "1e-200", "1e-100", "1e-80", "1e-60", "1e-40", 
+                   "1e-20", "1e-2"),
+        limits = c(zero_repl, 1),
+        minor_breaks = NULL
+      )
+  }
+
+  return(p)
+}
+```
+
+
+```{r pvals_unconstrained_vs_constrained, fig.width=10, fig.height=6, dpi=200}
+# Make the plots for each sample size
+for (n_val in n_per_group_vec) {
+  df_n <- dplyr::filter(results_three, n_per_group == n_val)
+  cat("n =", n_val,
+      "| zeros (wilcox, unconst, const):",
+      sum(df_n$p_wilcox == 0, na.rm = TRUE), ",",
+      sum(df_n$p_unconstr == 0, na.rm = TRUE), ",",
+      sum(df_n$p_constr == 0, na.rm = TRUE), "\n")
+  print(plot_pvals_three(df_n, sampsize = n_val))
+}
+
+```
+
+## Combined plot
+
+```{r}
+results_lls  <- run_permApprox(rule_name = "LLS", eps_fct = eps_factor)
+results_slls <- run_permApprox(rule_name = "SLLS", eps_fct = eps_factor)
+```
+
+```{r eps_rules_combined, fig.width=10, fig.height=4, dpi=200}
+sampsize <- 100
+
+p_lls <- results_lls  %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "Lifted log-saturation (LLS)",
+             ylim = c(1e-45, 1))
+
+p_slls <- results_slls %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, 
+             title = "Standardized lifted log-saturation (SLLS)",
+             ylim = c(1e-45, 1))
+
+
+# All four plots
+(p_lls | p_slls) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+```
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

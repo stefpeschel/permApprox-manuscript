@@ -1,0 +1,604 @@
+---
+title: "Mann–Whitney U - Exceedances & Permutations (SLLS vs. unconstrained)"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "03_exceedances"
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "395a0ba5-185a-4db3-a7c0-d661b80ab60f")
+```
+
+In this script we extend the exceedance study to **iterate over the number of permutations** `B` *and* the starting exceedances `exceed0`.
+We compare **unconstrained** vs. **constrained (SLLS rule)** GPD fits against the **Mann–Whitney U** reference.
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 200,
+  fig.path = paste0('figures/', params$name, "/"),
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r packages, message=FALSE, warning=FALSE}
+# Load packages
+library(conflicted)
+
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(future)
+library(future.apply)
+library(kableExtra)
+library(furrr)
+library(patchwork)
+library(digest)     # seed_from
+
+# For permApprox:
+library(fdrtool)
+library(fitdistrplus)
+library(goftest)
+library(limma)
+library(progressr)
+
+conflicts_prefer(dplyr::select, dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load permApprox functions
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+```
+
+## Design
+
+```{r design}
+cores <- 8
+
+n_tests            <- 1000
+n_per_group_vec    <- c(100, 500)      # per-group n
+B_vec              <- c(1000, 10000)   # permutations
+exceed0_vec        <- c(100, 250, 0.25, 0.10) # absolute OR proportion of B
+
+# Effect sizes by blocks
+effect_blocks <- c(0, 0.5, 1, 1.5, 2)
+delta_vec     <- rep(effect_blocks, each = n_tests / length(effect_blocks)) %>%
+  factor(levels = effect_blocks)
+
+# Scenario grid
+scenarios <- tidyr::expand_grid(
+  n_per_group = n_per_group_vec,
+  B           = B_vec,
+  exceed0     = exceed0_vec
+)
+
+scenarios
+```
+
+> Notes:
+>
+> * If `exceed0 < 1`, we treat it as a **proportion of B** (e.g., `0.25 → ceiling(0.25*B)`); otherwise it’s used as a fixed integer.
+> * We never trim the tail to fewer exceedances than requested if the observed statistic already sits in the tail.
+
+## Simulation (once per $n, B$)
+
+```{r}
+### Helpers
+
+# Stable 32-bit integer from arbitrary keys
+seed_from <- function(...) {
+  hx <- digest(paste(..., collapse="|"), algo = "xxhash32")
+  s  <- as.integer(strtoi(hx, base = 16L))
+  if (is.na(s) || s == 0L) 1L else s
+}
+
+# One test -> (U_obs, U_perm[B], classical p asymptotic)
+.sim_one_U <- function(n_per_group, B, delta) {
+  # Exponential data
+  x1 <- rexp(n_per_group, rate = 1)                       # mean 1
+  x2 <- rexp(n_per_group, rate = 1 / (1 + as.numeric(delta)))  # mean 1+delta
+
+  # Pooled ranks and W (sum ranks of group 1), then convert to U
+  x_comb <- c(x1, x2)
+  n_comb <- length(x_comb)
+  r_all  <- rank(x_comb, ties.method = "average")
+
+  W_obs  <- sum(r_all[seq_len(n_per_group)])
+  shift  <- n_per_group * (n_per_group + 1) / 2
+  U_obs  <- W_obs - shift
+
+  # Permutations: indices of group 1 (columns), then W -> U
+  perm_idx_mat <- replicate(B, sample.int(n_comb, n_per_group))
+  W_perm <- colSums(matrix(r_all[perm_idx_mat], nrow = n_per_group, ncol = B))
+  U_perm <- W_perm - shift
+
+  # Asymptotic Wilcoxon p (no continuity corr)
+  p_cl <- wilcox.test(x1, x2, alternative = "two.sided",
+                      exact = FALSE, correct = FALSE)$p.value
+
+  list(U_obs = U_obs, U_perm = U_perm, p_cl = p_cl)
+}
+
+simulate_once_U <- function(n_per_group, B, n_tests, delta_vec, path_target) {
+  fn_obs <- path_target(paste0("obs_U_stats_n",  n_per_group, "_B", B, ".rds"))
+  fn_perm<- path_target(paste0("perm_U_stats_n", n_per_group, "_B", B, ".rds"))
+  fn_pwc <- path_target(paste0("pval_wilcox_n", n_per_group, "_B", B, ".rds"))
+  
+  if (all(file.exists(fn_obs, fn_perm, fn_pwc))) return(invisible(NULL))
+
+  message("Simulating (Mann–Whitney U, Exponential) for n=", n_per_group, ", B=", B, " ...")
+
+  # scenario-specific master seed (subset-invariant)
+  master_seed <- seed_from("wilcoxU-exp", n_per_group, B, n_tests)
+
+  oplan <- future::plan(multisession, workers = cores)
+  on.exit(future::plan(oplan), add = TRUE)
+
+  obs_stats  <- numeric(n_tests)
+  pval_wcx   <- numeric(n_tests)
+  perm_stats <- matrix(NA_real_, nrow = B, ncol = n_tests)
+
+  with_progress({
+    p <- progressr::progressor(along = seq_len(n_tests))
+
+    res_list <- future_lapply(
+      seq_len(n_tests),
+      function(g, p) {
+        p()
+        delta_g <- as.numeric(as.character(delta_vec[g]))
+        .sim_one_U(n_per_group, B, delta_g)
+      },
+      p = p,
+      future.seed = master_seed
+    )
+
+    for (g in seq_len(n_tests)) {
+      obs_stats[g]    <- res_list[[g]]$U_obs
+      pval_wcx[g]     <- res_list[[g]]$p_cl
+      perm_stats[, g] <- res_list[[g]]$U_perm
+    }
+  })
+
+  saveRDS(obs_stats,  fn_obs)
+  saveRDS(perm_stats, fn_perm)
+  saveRDS(pval_wcx,   fn_pwc)
+  invisible(NULL)
+}
+```
+
+```{r simulate, eval=TRUE}
+# Create full grid, then simulate each (n, B) scenario once
+scenarios_data <- expand_grid(n_per_group = n_per_group_vec, B = B_vec) 
+
+scenarios_data %>% 
+  pwalk(~ simulate_once_U(..1, ..2, n_tests, delta_vec, path_target))
+```
+
+## Helpers for filenames & exceed0 handling
+
+```{r helpers}
+# Tag exceed0 in filenames robustly (keeps proportion info)
+tag_exceed0 <- function(exceed0) {
+  if (exceed0 < 1) {
+    paste0("p", gsub("\\.", "", sprintf("%.4f", exceed0)))
+  } else {
+    paste0(exceed0)
+  }
+}
+```
+
+## permApprox runs
+
+We compute both **unconstrained** and **constrained (SLLS)** $p$-values for every scenario.
+All results are saved per-scenario and then **combined safely** afterward.
+
+```{r run-permapprox}
+run_permapprox_unconstr <- function(n_per_group, B, exceed0) {
+  ex_tag <- tag_exceed0(exceed0)
+  fn_out <- path_target(paste0("permapprox_unconstr_n", n_per_group, 
+                               "_B", B, "_ex", ex_tag,".rds"))
+  if (file.exists(fn_out)) return(invisible(NULL))
+
+  message("Unconstrained: n=", n_per_group, ", B=", B, ", exceed0=", exceed0)
+  obs_stats  <- readRDS(path_target(paste0("obs_U_stats_n",  n_per_group, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_U_stats_n", n_per_group, "_B", B, ".rds")))
+
+  gpd_ctrl <- make_gpd_ctrl(
+    fit_method   = "LME",
+    include_obs  = FALSE,
+    constraint   = "unconstrained",
+    thresh_method= "ftr",
+    exceed0      = exceed0,
+    exceed_min   = 10,
+    thresh_step  = 10,
+    gof_test     = "ad",
+    gof_alpha    = 0.05,
+    cores        = 1,
+    verbose      = TRUE
+  )
+
+  res <- compute_p_values(
+    obs_stats     = obs_stats,
+    perm_stats    = perm_stats,
+    alternative   = "two_sided",
+    null_center   = "mean",   # on U-scale
+    method        = "gpd",
+    gpd_ctrl      = gpd_ctrl,
+    adjust_method = "BH"
+  )
+
+  saveRDS(res, fn_out)
+  invisible(NULL)
+}
+
+run_permapprox_constr <- function(n_per_group, B, exceed0,
+                                  rule_name = "slls_std",
+                                  eps_fct   = eps_SLLS) {
+  ex_tag <- tag_exceed0(exceed0)
+  fn_out <- path_target(paste0("permapprox_constr_n", n_per_group, 
+                               "_B", B, "_ex", ex_tag,".rds"))
+  if (file.exists(fn_out)) return(invisible(NULL))
+
+  message("Constrained(SLLS): n=", n_per_group, ", B=", B, ", exceed0=", exceed0)
+  obs_stats  <- readRDS(path_target(paste0("obs_U_stats_n",  n_per_group, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_U_stats_n", n_per_group, "_B", B, ".rds")))
+
+  gpd_ctrl <- make_gpd_ctrl(
+    fit_method   = "LME",
+    include_obs  = FALSE,
+    constraint   = "support_at_obs",
+    thresh_method= "ftr",
+    exceed0      = exceed0,
+    exceed_min   = 10,
+    thresh_step  = 10,
+    gof_test     = "ad",
+    gof_alpha    = 0.05,
+    cores        = 1,
+    verbose      = TRUE
+  )
+
+  res <- compute_p_values(
+    obs_stats     = obs_stats,
+    perm_stats    = perm_stats,
+    eps_fct       = eps_fct,
+    sampsize      = n_per_group,
+    alternative   = "two_sided",
+    null_center   = "mean",
+    method        = "gpd",
+    gpd_ctrl      = gpd_ctrl,
+    adjust_method = "BH"
+  )
+
+  saveRDS(res, fn_out)
+  invisible(NULL)
+}
+
+# Run for all scenarios
+walk2(seq_len(nrow(scenarios)), 1, function(i, .) {
+  sc <- scenarios[i,]
+  run_permapprox_unconstr(sc$n_per_group, sc$B, sc$exceed0)
+  run_permapprox_constr(sc$n_per_group, sc$B, sc$exceed0)
+})
+```
+
+## Safe combination of results
+
+```{r combine}
+combine_results <- function(scenarios, delta_vec) {
+  purrr::pmap_dfr(list(scenarios$n_per_group, scenarios$B, scenarios$exceed0),
+                  function(n_per_group, B, exceed0) {
+    ex_tag     <- tag_exceed0(exceed0)
+    fn_obs     <- path_target(paste0("obs_U_stats_n",  n_per_group, "_B", B, ".rds"))
+    fn_pwc     <- path_target(paste0("pval_wilcox_n", n_per_group, "_B", B, ".rds"))
+    fn_un      <- path_target(paste0("permapprox_unconstr_n", n_per_group, 
+                                     "_B", B, "_ex", ex_tag,".rds"))
+    fn_con     <- path_target(paste0("permapprox_constr_n", n_per_group, 
+                                     "_B", B, "_ex", ex_tag,".rds"))
+    
+    obs_stats   <- readRDS(fn_obs)
+    pval_wcx    <- readRDS(fn_pwc)
+    res_un      <- readRDS(fn_un)
+    res_con     <- readRDS(fn_con)
+    
+    tibble(
+      idx             = seq_along(obs_stats),
+      n_per_group     = n_per_group,
+      B               = B,
+      exceed0         = exceed0,
+      effect_size     = delta_vec,
+      obs_stats       = obs_stats,              # U-scale
+      p_U_asympt      = pval_wcx,               # Mann–Whitney U
+      p_unconstr      = res_un$p_unadjusted,
+      p_constr        = res_con$p_unadjusted,
+      method_constr   = res_con$method_used,
+      method_unconstr = res_un$method_used,
+      gpd_un_fit      = res_un$gpd_fit$fitted,
+      gpd_con_fit     = res_con$gpd_fit$fitted,
+      epsilon         = res_con$gpd_fit$epsilon
+    )
+  })
+}
+
+results_all <- combine_results(scenarios, delta_vec)
+glimpse(results_all)
+```
+
+## Plotting
+
+```{r plotting-helpers}
+zero_safe_long <- function(df, factor = 100, cols = c("p_U_asympt","p_unconstr","p_constr")) {
+  # smallest nonzero across requested columns
+  min_nonzero <- min(unlist(lapply(cols, function(cl)
+    df[[cl]][df[[cl]] > 0])), na.rm = TRUE)
+  min_nonzero <- max(min_nonzero, 1e-320)
+  zero_repl   <- min_nonzero / factor
+
+  df2 <- df
+  for (cl in cols) df2[[paste0(cl, "_plot")]] <- ifelse(df2[[cl]] == 0, zero_repl, df2[[cl]])
+
+  list(df = df2, zero_repl = zero_repl)
+}
+
+plot_pvals_three <- function(df, title = NULL, log_scale = TRUE,
+                             facet_by = c("n_per_group","B","exceed0"),
+                             facet_ncol = 3,
+                             show_types = c("Mann-Whitney U","constrained","unconstrained"),
+                             exceed0_order = c(100, 250, 0.1, 0.25),
+                             exceed0_digits = 2,
+                             zero_factor = 100,
+                             y_breaks = c(1e-300, 1e-200, 1e-100, 1e-60, 1e-40, 1e-20, 1e-2)) {
+
+  label_exceed0 <- function(x, digits = 2) {
+    ifelse(x < 1,
+           paste0(formatC(x, format = "f", digits = digits), "\u00D7B"),
+           as.character(x))
+  }
+
+  z <- zero_safe_long(df, factor = zero_factor)
+  df2 <- z$df
+  zero_repl <- z$zero_repl
+
+  df_long <- df2 %>%
+    dplyr::transmute(
+      obs_stats, effect_size,
+      n_per_group, B, exceed0,
+      `Mann-Whitney U` = p_U_asympt_plot,
+      constrained      = p_constr_plot,
+      unconstrained    = p_unconstr_plot
+    ) %>%
+    tidyr::pivot_longer(
+      cols = c(`Mann-Whitney U`, constrained, unconstrained),
+      names_to = "ptype", values_to = "pval"
+    ) %>%
+    dplyr::filter(ptype %in% show_types) %>%
+    dplyr::mutate(
+      ptype = factor(ptype, levels = c("Mann-Whitney U","constrained","unconstrained")),
+      effect_size = factor(effect_size, levels = c(0,0.5,1,1.5,2)),
+      exceed0_lab = label_exceed0(exceed0, digits = exceed0_digits),
+      exceed0_lab = factor(exceed0_lab,
+                           levels = label_exceed0(exceed0_order, digits = exceed0_digits))
+    ) %>%
+    arrange(ptype)   # draw U first, then constrained, then unconstrained
+
+  p <- ggplot2::ggplot(df_long, ggplot2::aes(x = obs_stats, y = pval, color = ptype, size = ptype)) +
+    ggplot2::geom_point() +
+    ggplot2::scale_color_manual(
+      name   = "P-value type:",
+      values = c("Mann-Whitney U" = "black", 
+                 "constrained"    = alpha("darkorange2", alpha = 0.6), 
+                 "unconstrained"  = "#1f77b4")
+    ) +
+    ggplot2::scale_size_manual(values = c("Mann-Whitney U"=1.6,
+                                          "constrained"    =1.6,
+                                          "unconstrained"  =1),
+                               guide = "none") +
+    ggplot2::labs(
+      title = title %||% "P-values vs. U_obs",
+      x = expression(U[obs]),
+      y = expression(hat(p))
+    ) +
+    ggplot2::theme_minimal(base_size = 14) +
+    ggplot2::theme(
+      axis.text       = element_text(size = 14),
+      axis.title      = element_text(size = 15),
+      strip.text      = element_text(size = 15),
+      legend.title    = element_text(size = 14),
+      legend.text     = element_text(size = 14),
+      legend.position = "bottom")
+
+  sci02_with_zero <- function(zero) {
+    function(x) {
+      lab <- sprintf("%.0e", x)
+      lab[x < zero*1.1] <- "0"
+      lab
+    }
+  }
+
+  if (log_scale) {
+    p <- p + ggplot2::scale_y_log10(
+      breaks = c(zero_repl, y_breaks),
+      labels = sci02_with_zero(zero_repl),
+      limits = c(zero_repl, 1),
+      minor_breaks = NULL
+    )
+  }
+
+  facet_by <- ifelse(facet_by == "exceed0", "exceed0_lab", facet_by)
+  facet_by <- intersect(facet_by, c("n_per_group","B","exceed0_lab"))
+
+  lab_eq <- labeller(
+    B = function(x) paste0("B = ", x),
+    exceed0_lab = function(x) paste0("exc0 = ", x),
+    n_per_group = function(x) paste0("n = ", x)
+  )
+
+  if (length(facet_by) > 0) {
+    p <- p + ggplot2::facet_wrap(as.formula(paste("~", paste(facet_by, collapse = " + "))),
+                                 ncol = facet_ncol, scales = "free_x",
+                                 labeller = lab_eq)
+  }
+
+  p
+}
+```
+
+### n = 100
+
+#### n=100, B=1000, varying exceed0
+
+```{r pvals_Uobs_n100_B1000_vary_exc0, fig.width=10, fig.height=4, dpi = 200}
+df_n100_B1k <- results_all %>% filter(n_per_group == 100, exceed0 %in% c(100, 250),
+                                      B == 1000, gpd_con_fit)
+plot_pvals_three(df_n100_B1k,
+                 title = "n=100, B=1000, varying exceed0",
+                 facet_by = "exceed0", exceed0_order = c(100, 250),
+                 zero_factor = 1e20,
+                 y_breaks = c(1e-60, 1e-40, 1e-20, 1e-2))
+```
+
+#### n=100, B=10000, varying exceed0
+
+```{r pvals_Uobs_n100_B10000_vary_exc0, fig.width=10, fig.height=6, dpi = 200}
+df_n100_B10k <- results_all %>% filter(n_per_group == 100, B == 10000, gpd_con_fit)
+plot_pvals_three(df_n100_B10k,
+                 title = "n=100, B=10000, varying exceed0",
+                 facet_by = "exceed0", facet_ncol = 2,
+                 zero_factor = 1e20,
+                 exceed0_order = c(100, 250, 0.1, 0.25))
+```
+
+#### n=100, varying B and exceed0
+
+```{r pvals_Uobs_n100_vary_B_exc0, fig.width=10, fig.height=8, dpi = 200}
+df_n100_B1k10k <- rbind(df_n100_B1k, df_n100_B10k)
+plot_pvals_three(df_n100_B1k10k,
+                 title = "n=100, varying B and exceed0",
+                 facet_by = c("B","exceed0"), facet_ncol = 2,
+                 zero_factor = 1e20,
+                 exceed0_order = c(100, 250, 0.1, 0.25))
+```
+
+### n = 500
+
+#### n=500, B=1000, varying exceed0
+
+```{r pvals_Uobs_n500_B1000_vary_exc0, fig.width=10, fig.height=4, dpi = 200}
+df_n500_B1k <- results_all %>% filter(n_per_group == 500, exceed0 %in% c(100, 250),
+                                      B == 1000, gpd_con_fit)
+plot_pvals_three(df_n500_B1k,
+                 title = "n=500, B=1000, varying exceed0",
+                 facet_by = "exceed0", exceed0_order = c(100, 250),
+                 y_breaks = c(1e-300, 1e-200, 1e-150, 1e-100, 1e-75, 1e-50, 1e-25, 1e-2),
+                 zero_factor = 1e30)
+```
+
+#### n=500, B=10000, varying exceed0
+
+```{r pvals_Uobs_n500_B10000_vary_exc0, fig.width=10, fig.height=6, dpi = 200}
+df_n500_B10k <- results_all %>% filter(n_per_group == 500, B == 10000, gpd_con_fit)
+plot_pvals_three(df_n500_B10k,
+                 title = "n=500, B=10000, varying exceed0",
+                 facet_by = "exceed0", facet_ncol = 2,
+                 exceed0_order = c(100, 250, 0.1, 0.25),
+                 y_breaks = c(1e-300, 1e-200, 1e-150, 1e-100, 1e-50, 1e-2),
+                 zero_factor = 1e20)
+```
+
+#### n=500, varying B and exceed0
+
+```{r pvals_Uobs_n500_vary_B_exc0, fig.width=10, fig.height=8, dpi = 200}
+df_n500_B1k10k <- rbind(df_n500_B1k, df_n500_B10k)
+plot_pvals_three(df_n500_B1k10k,
+                 title = "n=500, varying B and exceed0",
+                 facet_by = c("B","exceed0"), facet_ncol = 2,
+                 exceed0_order = c(100, 250, 0.1, 0.25),
+                 y_breaks = c(1e-300, 1e-200, 1e-150, 1e-100, 1e-50, 1e-2),
+                 zero_factor = 1e5)
+```
+
+## Zero counts
+
+```{r zero-counts}
+zero_tbl <- results_all %>%
+  summarize(
+    zeros_U_asympt  = sum(p_U_asympt  == 0, na.rm = TRUE),
+    zeros_unconstr  = sum(p_unconstr  == 0, na.rm = TRUE),
+    zeros_constr    = sum(p_constr    == 0, na.rm = TRUE),
+    .by = c(n_per_group, B, exceed0)
+  ) %>%
+  arrange(n_per_group, B, exceed0)
+
+zero_tbl %>% knitr::kable()
+```
+
+## How often are the approximated p-values smaller?
+
+```{r}
+# Approximated vs. asymptotic U: how often are approximations smaller?
+# (i.e., more optimistic than U-asymptotic)
+cmp_tbl <- results_all %>%
+  mutate(
+    unconst_lt_U = p_unconstr < p_U_asympt,
+    const_lt_U   = p_constr   < p_U_asympt
+  ) %>%
+  summarize(
+    n_tests          = dplyr::n(),
+    unconst_smaller  = sum(unconst_lt_U, na.rm = TRUE),
+    const_smaller    = sum(const_lt_U,   na.rm = TRUE),
+    unconst_share    = unconst_smaller / n_tests,
+    const_share      = const_smaller   / n_tests,
+    .by = c(n_per_group, B, exceed0)
+  ) %>%
+  arrange(n_per_group, B, exceed0) %>%
+  mutate(
+    unconst_share = scales::percent(unconst_share, accuracy = 0.1),
+    const_share   = scales::percent(const_share,   accuracy = 0.1)
+  )
+
+# Pretty table
+cmp_tbl %>%
+  dplyr::rename(
+    n      = n_per_group,
+    B_perm = B,
+    exc0   = exceed0,
+    `# smaller (unconstr)` = unconst_smaller,
+    `# smaller (constr)`   = const_smaller,
+    `% smaller (unconstr)`= unconst_share,
+    `% smaller (constr)`   = const_share
+  ) %>%
+  knitr::kable(caption = "Counts and shares of approximated p-values smaller than Mann-Whitney U p-values.")
+
+```
+
+## Files written
+
+```{r list-files}
+projthis::proj_dir_info(path_target())
+```

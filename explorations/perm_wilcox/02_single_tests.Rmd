@@ -1,0 +1,278 @@
+---
+title: "Wilcoxon rank-sum on exponential data - Test epsilon rule for single tests"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output:
+  github_document: default
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  name: "02_single_tests" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "f6f7de73-abcc-4ebe-b039-ea102462293e")
+```
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 200,
+  fig.path = paste0('figures/', params$name, "/"),
+  echo = FALSE
+)
+```
+
+In this script we investigate the performance of our **final $\varepsilon$-rule (the SLLS rule)** when applied to data generated from exponential distributions and analyzed with the **Wilcoxon rank-sum test**.
+
+In contrast to the previous script, which depicted a multiple-testing setting, we are examining a single-test setting here. That means, each test is treated independently: the $p$-value approximation is computed per test, and the choice of $\varepsilon$ depends only on the test’s own permutation distribution rather than on the maximum statistic across multiple tests. 
+
+```{r packages, message=FALSE, warning=FALSE}
+library(conflicted)
+library(ggplot2)
+library(patchwork)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(future)
+library(future.apply)
+library(kableExtra)
+library(furrr)
+library(fdrtool)
+library(fitdistrplus)
+library(goftest)
+library(limma)
+library(progressr)
+
+conflicts_prefer(dplyr::select, dplyr::filter)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+```{r load_permApprox}
+proj_path <- rprojroot::find_root(rprojroot::has_file("README.md"))
+
+# Load permApprox functions
+permApprox_path <- file.path(proj_path, "functions/permApprox_eps_fct/R")
+permApprox_functions <- list.files(permApprox_path, pattern = "\\.R$",
+                                   full.names = TRUE)
+invisible(sapply(permApprox_functions, source))
+
+# Load epsilon functions
+eps_rule_path <- file.path(proj_path, 
+                           "functions/permApprox_eps_fct/slls_eps_rule.R")
+source(eps_rule_path)
+```
+
+## Data Simulation
+
+```{r}
+n_tests <- 1000
+n_per_group_vec <- c(50, 100, 250, 500, 750, 1000)
+B <- 1000
+
+effect_blocks <- c(0, 0.5, 1, 1.5, 2)
+delta_vec <- rep(effect_blocks, each = n_tests / length(effect_blocks)) %>% 
+  factor(levels = effect_blocks)
+```
+
+We reuse the data from the former simulation study, where we simulated two groups from **exponential distributions** with increasing effect sizes:
+
+* Group 1: mean (=1) (rate (=1))
+* Group 2: mean (=1+\delta) (rate (=1/(1+\delta)))
+* Sample sizes per group: `r n_per_group_vec`
+* Number of tests: `r n_tests`
+* Effect sizes: `r paste(effect_blocks, collapse = " ")`
+* Tests per effect size: `r paste0("d=", effect_blocks, ": ",table(delta_vec), collapse = ", ")`
+
+We apply the **Wilcoxon rank-sum test** (Mann–Whitney $U$ test) to compare the two exponential samples.
+
+* Statistic: **Mann–Whitney (U)** (converted from rank-sum (W))
+* P-values: classical Wilcoxon (`exact = FALSE, correct = FALSE`) for reference; permutation/GPD for tail modeling
+
+## Plot function
+
+```{r}
+plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE) {
+  p <- ggplot(df, aes(x = obs_stats)) +
+    # Mann–Whitney U in black
+    geom_point(
+      aes(y = p_wilcox, shape = "Mann–Whitney U"),
+      color = "black", size = 2, stroke = 0.5, alpha = 0.5
+    ) +
+    # Constrained GPD p-values colored by effect size
+    geom_point(
+      aes(y = p_constr, shape = "Constrained GPD", color = effect_size),
+      size = 1.6, alpha = 0.6
+    ) +
+    scale_shape_manual(
+      name = "P-value type:",
+      values = c("Constrained GPD" = 16, "Mann–Whitney U" = 1)
+    ) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = c("0"="gold","0.5"="#ffb347","1"="#ff8c00","1.5"="#e55b00","2"="red")
+    ) +
+    labs(
+      title = 
+        paste0("Mann–Whitney U vs. constrained GPD fit (single tests, n = ", 
+               sampsize, ")"),
+      x = expression(U[obs]),
+      y = expression(hat(p))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text  = element_text(size = 14),
+      axis.title = element_text(size = 16),
+      plot.title = element_text(size = 16),
+      strip.text = element_text(size = 15),
+      legend.title = element_text(size = 14),
+      legend.text  = element_text(size = 12)
+    )
+  if (log_scale) p <- p + scale_y_log10(labels = scales::scientific)
+  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
+  p
+}
+
+```
+
+## Function to run permApprox
+
+```{r run_permApprox_function}
+run_permApprox <- function(rule_name, eps_fct, constraint = "support_at_obs",
+                           cores = 8) {
+
+  for (n_per_group in n_per_group_vec) {
+
+    # Load simulated data (Mann–Whitney U, from the multi-test simulator with B in name)
+    obs_stats   <- readRDS(path_source("01_test_eps_rule",
+                                       paste0("obs_U_stats_n",  n_per_group, 
+                                              "_B", B, ".rds")))
+    perm_stats  <- readRDS(path_source("01_test_eps_rule",
+                                       paste0("perm_U_stats_n", n_per_group, 
+                                              "_B", B, ".rds")))
+    pval_wilcox <- readRDS(path_source("01_test_eps_rule",
+                                       paste0("pval_wilcox_n",  n_per_group, 
+                                              "_B", B, ".rds")))
+
+    fname_constr <- path_target(paste0("single_test_constr_", rule_name, "_n",
+                                       n_per_group, "_B", B, ".rds"))
+    if (file.exists(fname_constr)) next
+
+    cat("n:", n_per_group, "\n")
+
+    gpd_ctrl_constr <- make_gpd_ctrl(
+      fit_method   = "LME",
+      tol          = 1e-7,
+      include_obs  = FALSE,
+      constraint   = constraint,
+      thresh_method= "ftr",
+      exceed0      = 250,
+      exceed_min   = 10,
+      thresh_step  = 10,
+      gof_test     = "ad",
+      gof_alpha    = 0.05,
+      cores        = 1,
+      verbose      = TRUE
+    )
+
+    # Parallelize across tests (each test is independent)
+    oplan <- future::plan(multisession, workers = cores)
+    on.exit(future::plan(oplan), add = TRUE)
+
+    with_progress({
+      p <- progressr::progressor(along = seq_len(n_tests))
+
+      papprox_list <- future_lapply(
+        seq_len(n_tests),
+        function(m, p) {
+          p()
+          compute_p_values(
+            obs_stats     = obs_stats[m],          # single number (U_obs)
+            perm_stats    = perm_stats[, m],       # vector (U_perm)
+            eps_fct       = eps_fct,               # SLLS
+            sampsize      = n_per_group,
+            alternative   = "two_sided",
+            null_center   = "mean",                # mean(U_perm) ~ n^2/2
+            method        = "gpd",
+            gpd_ctrl      = gpd_ctrl_constr,
+            adjust_method = "BH"
+          )
+        },
+        p = p,
+        future.seed = TRUE   # not used by compute_p_values(), but silences RNG warnings
+      )
+    })
+
+    saveRDS(papprox_list, file = fname_constr)
+  }
+
+  # ---- Combine results for all n_per_group values ----
+  results_all <- purrr::map_dfr(n_per_group_vec, function(n_per_group) {
+
+    obs_stats <- readRDS(path_source("01_test_eps_rule",
+                                     paste0("obs_U_stats_n",  n_per_group, 
+                                            "_B", B, ".rds")))
+    pval_wilcox <- readRDS(path_source("01_test_eps_rule",
+                                       paste0("pval_wilcox_n",  n_per_group, 
+                                              "_B", B, ".rds")))
+    papprox_list <- readRDS(path_target(paste0("single_test_constr_", rule_name, 
+                                               "_n", n_per_group, "_B", B, ".rds")))
+
+    stopifnot(length(papprox_list) == length(obs_stats),
+              length(pval_wilcox)  == length(obs_stats))
+
+    purrr::map_dfr(seq_along(papprox_list), function(m) {
+      fit <- papprox_list[[m]]
+      tibble::tibble(
+        idx         = m,
+        n_per_group = n_per_group,
+        effect_size = delta_vec[m],
+        obs_stats   = obs_stats[m],                     # U-scale (no abs)
+        p_wilcox    = pval_wilcox[m],                   # “Mann–Whitney U (asymptotic)”
+        gpd_fit     = ifelse(is.null(fit$gpd_fit), NA, fit$gpd_fit$fitted),
+        p_constr    = fit$p_unadjusted,
+        epsilon     = ifelse(is.null(fit$gpd_fit), NA, fit$gpd_fit$epsilon)
+      )
+    })
+  })
+
+  results_all
+}
+```
+
+## Run permApprox 
+
+```{r run_permApprox_constr_SLLS}
+results_all <- run_permApprox(rule_name = "SLLS", eps_fct = eps_slls_perm)
+```
+
+## Constrained GPD vs Mann-Whitney U p-values
+
+```{r pvalues_wilcox_vs_constrained_SLSL, fig.width=10, fig.height=6, dpi=200}
+for (n_val in n_per_group_vec) {
+  df_n <- results_all %>% filter(n_per_group == n_val)
+  p <- plot_pvals(df = df_n, sampsize = n_val)
+  print(p)
+}
+```
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```
