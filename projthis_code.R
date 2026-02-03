@@ -29,6 +29,7 @@ render_file <- function(folder, subfolder = NULL, file, output_format = "all") {
 ## Applications
 render_file("applications", NULL, "01_sc_diff_distr")
 render_file("applications", NULL, "02_micro_diff_abund")
+render_file("applications", NULL, "03_micro_diff_abund_runtime")
 
 # --- Explorations -------------------------------------------------------------
 ## GPD fit
