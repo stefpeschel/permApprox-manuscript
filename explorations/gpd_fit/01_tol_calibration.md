@@ -1,9 +1,39 @@
 Tolerance calibration for boundary behaviour across GPD fits
 ================
-Compiled at 2025-12-19 11:12:20 UTC
+Compiled at 2026-02-02 18:59:31 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "9a024ec6-54e3-4a84-9d54-b965923c1282")
+```
 
 Goal: find per-method tolerance so that boundary density matches a
 consensus.
+
+``` r
+library(conflicted)
+library(eva)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(tibble)
+
+conflicts_prefer(dplyr::filter, dplyr::select)
+```
+
+    ## [conflicted] Will prefer dplyr::filter over any other package.
+    ## [conflicted] Will prefer dplyr::select over any other package.
+
+``` r
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
 
 ## Load permApprox functions
 

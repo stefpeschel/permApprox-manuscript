@@ -15,11 +15,16 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "cce9dcb1-e519-4e92-89e6-f629fd4c
 ```
 
 ```{r global-options, include=FALSE}
-knitr::opts_chunk$set(fig.width = 5, 
-                      fig.height = 3, 
-                      dpi = 200,
-                      fig.path = paste0('figures/', params, "/sim_GPD_asymp_"),
-                      echo = FALSE)
+knitr::opts_chunk$set(
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 5, 
+  fig.height = 3, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/sim_GPD_asymp_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 This simulation study investigates the behavior of constrained GPD parameter estimation with a fixed shape parameter and a fixed support constraint $s_c$. As the sample size increases, the maximum observed value approaches the true boundary, reducing the degree of misspecification induced by the constraint. We analyze how this convergence affects estimation accuracy across different GPD fitting methods.

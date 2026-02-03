@@ -16,12 +16,15 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "5e646f9e-bea7-4678-8776-a33608cb
 
 ```{r global-options, include=FALSE}
 knitr::opts_chunk$set(
-  fig.width = 10,
-  fig.height = 6,
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
   dpi = 200,
-  fig.path = paste0('figures/', params$name, "/expl_single_"),
-  echo = FALSE
-)
+  fig.path = paste0('figures/', params, "/expl_single_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 
@@ -148,7 +151,7 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE) {
     labs(
       title = paste0( "t-test vs. constrained GPD fit (n = ", sampsize, ")"),
       x = expression(t[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(

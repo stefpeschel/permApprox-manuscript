@@ -1,6 +1,21 @@
 Assess the optimal number of starting exceedances
 ================
-Compiled at 2025-12-19 15:46:16 UTC
+Compiled at 2026-02-02 19:28:53 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "907ec83f-a14f-4333-abdd-a7b00d861428")
+```
+
+``` r
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
 
 ## Load permApprox functions
 

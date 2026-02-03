@@ -1,6 +1,15 @@
 Generate Gaussian data for permutation-based p-value simulations
 ================
-Compiled at 2025-12-19 15:20:12 UTC
+Compiled at 2026-02-02 19:25:30 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "5bde0cc7-05ce-483d-944a-feac8192384e")
+```
+
+    ## [conflicted] Removing existing preference.
+    ## [conflicted] Will prefer dplyr::filter over any other package.
+    ## [conflicted] Removing existing preference.
+    ## [conflicted] Will prefer dplyr::select over any other package.
 
 ## Parameter settings
 

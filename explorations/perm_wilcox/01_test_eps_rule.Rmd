@@ -16,12 +16,15 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "efcad4fd-ecce-4206-b899-b1726dff
 
 ```{r global-options, include=FALSE}
 knitr::opts_chunk$set(
-  fig.width = 10,
-  fig.height = 6,
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
   dpi = 200,
-  fig.path = paste0('figures/', params$name, "/expl_wilcox_eps_rule_"),
-  echo = FALSE
-)
+  fig.path = paste0('figures/', params, "/expl_wilcox_eps_rule_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 In this script we evaluate our **standardized lifted log-saturation (SLLS)** ε-rule with the **Wilcoxon rank-sum / Mann–Whitney test**, using the **(U) statistic** throughout.
@@ -319,7 +322,7 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE,
       title = ifelse(!is.null(title), title,
                      paste0("n = ", sampsize, "; epsilon rule: ", eps_rule)),
       x = expression(U[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -598,7 +601,7 @@ for (n_val in sort(unique(results_all$n_per_group))) {
     labs(
       title = paste("Unconstrained permApprox vs. Mann-Whitney U (n =", n_val, ")"),
       x = expression(U[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -965,7 +968,7 @@ plot_pvals_three <- function(df, sampsize, log_scale = TRUE) {
     ggplot2::labs(
       title = paste0("n = ", sampsize),
       x = expression(U[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     ggplot2::theme_minimal() +
     ggplot2::theme(

@@ -16,11 +16,16 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "52a6b799-d49a-4efe-9bb8-22bea6c7
 ```
 
 ```{r global-options, include=FALSE}
-knitr::opts_chunk$set(fig.width = 10, 
-                      fig.height = 5, 
-                      dpi = 200,
-                      fig.path = paste0('figures/', params, "/sim_GPD_unconstr_"),
-                      echo = FALSE)
+knitr::opts_chunk$set(
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 5, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/sim_GPD_unconstr_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 In this document, several existing methods for estimating parameters of the Generalized Pareto Distribution (GPD) are compared and evaluated regarding their estimation accuracy. 

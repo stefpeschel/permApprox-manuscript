@@ -1,6 +1,10 @@
 Two-sample t-test - Try different epsilon factors
 ================
-Compiled at 2025-12-19 11:15:57 UTC
+Compiled at 2026-02-02 19:00:51 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "8e44924a-ef1f-49be-8525-758bc60311e2")
+```
 
 In **permApprox**, permutation $p$-values are obtained by fitting a GPD
 to the tail of permutation test statistics. When the fitted shape is

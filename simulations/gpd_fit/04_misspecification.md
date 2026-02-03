@@ -1,7 +1,11 @@
 Simulation study: Robustness of GPD estimation under boundary
 misspecification
 ================
-Compiled at 2025-12-19 15:10:42 UTC
+Compiled at 2026-02-02 19:19:28 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "1e46eb1d-6a01-485d-aa23-9c71660a8549")
+```
 
 We evaluate how GPD parameter estimation methods behave under varying
 degrees of misspecification with respect to a boundary constraint. We

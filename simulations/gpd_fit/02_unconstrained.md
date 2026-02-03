@@ -1,6 +1,10 @@
 Evaluate GPD parameter estimation methods
 ================
-Compiled at 2025-12-19 15:04:19 UTC
+Compiled at 2026-02-02 19:15:02 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "52a6b799-d49a-4efe-9bb8-22bea6c7d463")
+```
 
 In this document, several existing methods for estimating parameters of
 the Generalized Pareto Distribution (GPD) are compared and evaluated

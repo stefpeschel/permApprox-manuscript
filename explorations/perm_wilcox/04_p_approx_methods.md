@@ -1,7 +1,11 @@
 Wilcoxon (Mann–Whitney U) on exponential data — Compare p-value
 approximation methods
 ================
-Compiled at 2025-12-19 14:43:06 UTC
+Compiled at 2026-02-02 19:13:27 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "8c251fa3-8abd-4ca9-bec7-dd848ebb5a2d")
+```
 
 ## Packages & paths
 

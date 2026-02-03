@@ -28,10 +28,15 @@ path_source <- projthis::proj_path_source(params$name)
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE, message = FALSE, warning = FALSE,
-  fig.width = 10, fig.height = 6, dpi = 200,
-  fig.path = paste0('figures/', params$name, "/")
-)
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 ```{r packages}
@@ -430,7 +435,7 @@ gg_acc <- ggplot(df_plot, aes(x = factor(n), y = pval_plot, fill = method)) +
       ifelse(x < p_floor * 1.1, "0",
              paste0("1e", log10(x)))
     })+  
-  labs(title = "", x = "n", y = expression(hat(p))) +
+  labs(title = "", x = "n", y = expression(p)) +
   theme_minimal(base_size = 13) +
   theme(
     !!!theme_params,
@@ -568,7 +573,7 @@ plot_permapprox <- function(acc_long,
       scale_y_log10(breaks = brks, labels = y_labs) +
       labs(title = "", 
            x = ifelse(is.null(xlab), x, xlab), 
-           y = expression(hat(p))) +
+           y = expression(p)) +
       theme_minimal(base_size = 13) +
       do.call(theme, c(theme_params, list(
         legend.position = "bottom",
@@ -652,7 +657,7 @@ plot_permapprox <- function(acc_long,
     scale_y_log10(breaks = brks_r, labels = lab_plain) +
     labs(title = "", 
          x = ifelse(is.null(xlab), x, xlab), 
-         y = expression(hat(p)[method] / hat(p)[ttest])) +
+         y = expression(p[method] / p[ttest])) +
     theme_minimal(base_size = 13) +
     do.call(theme, c(theme_params, list(
       legend.position = "bottom",
@@ -958,8 +963,8 @@ ggplot(df_plot, aes(x = p_ttest_plot, y = p_method_plot, color = method)) +
   labs(
     title = "Correlation of approximated p-values vs. t-test (n=100, d=1, B=1000)",
     subtitle = sub_txt,
-    x = expression(paste("t-test ", hat(p))),
-    y = expression(paste(hat(p), " (method)"))
+    x = expression(paste("t-test ", p)),
+    y = expression(paste(p, " (method)"))
   ) +
   theme_minimal(base_size = 13) +
   theme(

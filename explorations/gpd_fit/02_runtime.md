@@ -1,9 +1,37 @@
 Runtime comparison of GPD fitting methods
 ================
-Compiled at 2025-12-19 11:13:29 UTC
+Compiled at 2026-02-02 19:00:13 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "83a2adbb-43b0-41b0-98cc-eeddbe1cedd9")
+```
 
 In this script we compare the runtime of the different methods for GPD
 parameter fitting.
+
+``` r
+library(conflicted)
+library(microbenchmark)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(tibble)
+library(eva)
+library(ggplot2)
+library(forcats)
+library(kableExtra)
+```
+
+``` r
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
 
 ## Load permApprox functions
 
@@ -835,7 +863,7 @@ WNLLSM
 
 </table>
 
-![](figures/02_runtime/runtime_gpd_methods-1.png)<!-- -->
+![](figures/02_runtime/gpd_runtime_runtime_gpd_methods-1.png)<!-- -->
 
 - NLS2 and WNLLSM are the slowest methods across all settings.
 - The runtime of ZSE is highly dependent on the setting (fastest for

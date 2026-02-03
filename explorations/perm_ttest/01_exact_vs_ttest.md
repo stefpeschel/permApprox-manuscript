@@ -1,6 +1,10 @@
 Validation: Student’s t-test vs. exact permutation test
 ================
-Compiled at 2025-12-19 11:15:39 UTC
+Compiled at 2026-02-02 19:00:40 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "88a30f86-0df6-4db8-8217-c59705f33b34")
+```
 
 ## Objective
 

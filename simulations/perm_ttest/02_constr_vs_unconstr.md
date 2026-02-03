@@ -1,7 +1,22 @@
 Accuracy and error-rate study - Unconstrained vs. constrained (fact,
 SLLS)
 ================
-Compiled at 2025-12-19 15:35:49 UTC
+Compiled at 2026-02-02 19:25:32 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "7146734b-7152-4fe6-a555-ed990432b2bd")
+```
+
+``` r
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
 
 ## Load permApprox functions
 

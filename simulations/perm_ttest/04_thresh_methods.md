@@ -1,6 +1,21 @@
 Accuracy study - Compare threshold methods
 ================
-Compiled at 2025-12-19 15:47:25 UTC
+Compiled at 2026-02-02 19:29:41 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "8c524a7c-7a6c-474e-8519-34397abf40d9")
+```
+
+``` r
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
 
 ## Load permApprox functions
 

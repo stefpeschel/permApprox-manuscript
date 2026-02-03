@@ -15,11 +15,16 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "88a30f86-0df6-4db8-8217-c59705f3
 ```
 
 ```{r global-options, include=FALSE}
-knitr::opts_chunk$set(fig.width = 10, 
-                      fig.height = 5, 
-                      dpi = 200,
-                      fig.path = paste0('figures/', params, "/"),
-                      echo = FALSE)
+knitr::opts_chunk$set(
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 5, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 ## Objective

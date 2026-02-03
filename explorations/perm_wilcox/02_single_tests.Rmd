@@ -16,12 +16,15 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "f6f7de73-abcc-4ebe-b039-ea102462
 
 ```{r global-options, include=FALSE}
 knitr::opts_chunk$set(
-  fig.width = 10,
-  fig.height = 6,
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
   dpi = 200,
-  fig.path = paste0('figures/', params$name, "/"),
-  echo = FALSE
-)
+  fig.path = paste0('figures/', params, "/expl_wilcox_single_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 In this script we investigate the performance of our **final $\varepsilon$-rule (the SLLS rule)** when applied to data generated from exponential distributions and analyzed with the **Wilcoxon rank-sum test**.
@@ -130,7 +133,7 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE) {
         paste0("Mann–Whitney U vs. constrained GPD fit (single tests, n = ", 
                sampsize, ")"),
       x = expression(U[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(

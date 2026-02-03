@@ -16,11 +16,14 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "3f0a7f60-7a25-4421-89f9-e2d5fe40
 ```
 
 ```{r global-options, include=FALSE}
-knitr::opts_chunk$set(fig.width = 10, 
-                      fig.height = 6, 
-                      dpi = 200,
-                      fig.path = paste0('figures/', params, "/app_ddistr_sc_"),
-                      echo = FALSE)
+knitr::opts_chunk$set(
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/app_ddistr_sc_"),
+  echo = FALSE)
 ```
 
 
@@ -1128,7 +1131,7 @@ plot_pvals_three_zero_colored <- function(df,
     ) +
     labs(
       x = expression(d[W]^2),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -1482,7 +1485,7 @@ plot_pvals_single_method <- function(df_long,
     labs(
       title = title_text,
       x     = expression(d[W]^2),
-      y     = expression(hat(p))
+      y     = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -1773,7 +1776,7 @@ plot_pvals_ranked <- function(df,
   # vertical guide per rank (== per gene)
   grid_df <- ref_order %>% dplyr::transmute(rank, ymin = lower_limit, ymax = 1)
 
-  x_title <- bquote("Test index (ordered by decreasing " ~ hat(p)[emp_100k] ~ ")")
+  x_title <- bquote("Test index (ordered by decreasing " ~ p[emp_100k] ~ ")")
 
   # --- Legend mapping: color by method_key, labels from short/long ------------
   legend_df_all <- dd %>%
@@ -1822,7 +1825,7 @@ plot_pvals_ranked <- function(df,
                        expand = expansion(mult = c(0, 0))) +
     scale_y_log10(breaks = log_breaks, labels = label_fun) +
     coord_cartesian(ylim = c(lower_limit, 1)) +
-    labs(x = x_title, y = expression(hat(p)), color = "Method") +
+    labs(x = x_title, y = expression(p), color = "Method") +
     theme_minimal() +
     theme(
       axis.text   = element_text(size = 12),
@@ -2165,7 +2168,7 @@ plot_pval_ratio_ranked <- function(df,
   grid_df <- ref_order %>% dplyr::transmute(rank, ymin = min(ratio_breaks), 
                                             ymax = max(ratio_breaks))
 
-  x_title <- bquote("Test index (ordered by decreasing " ~ hat(p)[emp_100k] ~ ")")
+  x_title <- bquote("Test index (ordered by decreasing " ~ p[emp_100k] ~ ")")
 
   # Legend keys/labels
   legend_df_all <- dd %>%
@@ -2197,7 +2200,7 @@ plot_pval_ratio_ranked <- function(df,
     scale_x_continuous(limits = x_limits, breaks = x_breaks, 
                        expand = expansion(mult = c(0, 0))) +
     scale_y_log10(breaks = ratio_breaks, labels = scales::label_scientific()) +
-    labs(x = x_title, y = expression(hat(p)[method]/hat(p)[emp_100k]), 
+    labs(x = x_title, y = expression(p[method]/p[emp_100k]), 
          color = "Method") +
     theme_minimal() +
     theme(
@@ -2404,7 +2407,7 @@ plot_p_vs_stat_ordered <- function(df,
     scale_fill_manual(values = c("GPD fit" = "#F8766D", "empirical" = "gray"),
                       name = "p-value type") +
     labs(x = expression(d[W]^2 ~ "(ordered)"),
-         y = expression(hat(p))) +
+         y = expression(p)) +
     theme_minimal() +
     theme(
       axis.text = element_text(size = 12),
@@ -2509,7 +2512,7 @@ plot_p_vs_ordered_stat <- function(df,
     facet_wrap(~ method_key, nrow = 1, labeller = as_labeller(lab_map), scales = "free_x") +
     scale_fill_manual(values = c("GPD fit" = "#F8766D", "empirical" = "gray"),
                       name = "p-value type") +
-    labs(x = "Rank of test statistic (within method)", y = expression(hat(p))) +
+    labs(x = "Rank of test statistic (within method)", y = expression(p)) +
     theme_minimal() +
     theme(
       axis.text = element_text(size = 12),

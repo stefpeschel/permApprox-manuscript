@@ -1,7 +1,11 @@
 Generate exponential data for permutation p-value simulations
 (Mann–Whitney U)
 ================
-Compiled at 2025-12-19 15:57:34 UTC
+Compiled at 2026-02-02 19:37:00 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "a2428bff-9ba8-452e-89b9-af01268d0f2f")
+```
 
 ``` r
 library(conflicted)
@@ -13,6 +17,11 @@ library(progressr)
 
 conflicts_prefer(dplyr::filter, dplyr::select)
 ```
+
+    ## [conflicted] Removing existing preference.
+    ## [conflicted] Will prefer dplyr::filter over any other package.
+    ## [conflicted] Removing existing preference.
+    ## [conflicted] Will prefer dplyr::select over any other package.
 
 ``` r
 # create or *empty* the target directory, used to write this file's data: 

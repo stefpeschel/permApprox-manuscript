@@ -1,7 +1,11 @@
 Wilcoxon rank-sum on exponential data - Test epsilon rule for single
 tests
 ================
-Compiled at 2025-12-19 14:40:37 UTC
+Compiled at 2026-02-02 19:11:31 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "f6f7de73-abcc-4ebe-b039-ea102462293e")
+```
 
 In this script we investigate the performance of our **final
 $\varepsilon$-rule (the SLLS rule)** when applied to data generated from
@@ -44,7 +48,7 @@ compare the two exponential samples.
 
 ## Constrained GPD vs Mann-Whitney U p-values
 
-![](figures/02_single_tests/pvalues_wilcox_vs_constrained_SLSL-1.png)<!-- -->![](figures/02_single_tests/pvalues_wilcox_vs_constrained_SLSL-2.png)<!-- -->![](figures/02_single_tests/pvalues_wilcox_vs_constrained_SLSL-3.png)<!-- -->![](figures/02_single_tests/pvalues_wilcox_vs_constrained_SLSL-4.png)<!-- -->![](figures/02_single_tests/pvalues_wilcox_vs_constrained_SLSL-5.png)<!-- -->![](figures/02_single_tests/pvalues_wilcox_vs_constrained_SLSL-6.png)<!-- -->
+![](figures/02_single_tests/expl_wilcox_single_pvalues_wilcox_vs_constrained_SLSL-1.png)<!-- -->![](figures/02_single_tests/expl_wilcox_single_pvalues_wilcox_vs_constrained_SLSL-2.png)<!-- -->![](figures/02_single_tests/expl_wilcox_single_pvalues_wilcox_vs_constrained_SLSL-3.png)<!-- -->![](figures/02_single_tests/expl_wilcox_single_pvalues_wilcox_vs_constrained_SLSL-4.png)<!-- -->![](figures/02_single_tests/expl_wilcox_single_pvalues_wilcox_vs_constrained_SLSL-5.png)<!-- -->![](figures/02_single_tests/expl_wilcox_single_pvalues_wilcox_vs_constrained_SLSL-6.png)<!-- -->
 
 ## Files written
 

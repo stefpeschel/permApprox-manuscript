@@ -16,12 +16,15 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "8e44924a-ef1f-49be-8525-758bc603
 
 ```{r global-options, include=FALSE}
 knitr::opts_chunk$set(
-  fig.width = 10,
-  fig.height = 6,
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
   dpi = 200,
-  fig.path = paste0('figures/', params$name, "/expl_trials_"),
-  echo = FALSE
-)
+  fig.path = paste0('figures/', params, "/expl_trials_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 
@@ -334,7 +337,7 @@ p <- ggplot(df_plot, aes(x = obs_stats)) +
   labs(
     title = "Unconstrained permApprox vs. t-test",
     x = expression(t[obs]),
-    y = expression(hat(p))
+    y = expression(p)
   ) +
   theme_minimal() +
   theme(
@@ -483,7 +486,7 @@ p <- ggplot(df_eps, aes(x = obs_stats)) +
       plot_constraint, " test, eps = 0)"
     ),
     x = expression(t[obs]),
-    y = expression(hat(p))
+    y = expression(p)
   ) +
   theme_minimal() +
   theme(
@@ -540,7 +543,7 @@ for (eps in eps_values[-1]) {
         plot_constraint, " test, eps_fact = ", eps, ")"
       ),
       x = expression(t[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -688,7 +691,7 @@ for (eps in eps_values) {
         plot_constraint, " test, eps_fact = ", eps, ")"
       ),
       x = expression(t[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -768,7 +771,7 @@ p <- ggplot(df_plot, aes(x = obs_stats)) +
       plot_constraint, " tests, eps = ", eps, ")"
     ),
     x = expression(t[obs]),
-    y = expression(hat(p))
+    y = expression(p)
   ) +
   theme_minimal() +
   theme(
@@ -825,7 +828,7 @@ p <- ggplot(df_eps, aes(x = obs_stats)) +
       plot_constraint, " tests, eps = ", eps, ")"
     ),
     x = expression(t[obs]),
-    y = expression(hat(p))
+    y = expression(p)
   ) +
   theme_minimal() +
   theme(
@@ -914,7 +917,7 @@ p <- ggplot(df_plot, aes(x = obs_stats)) +
       plot_constraint, ", eps = ", eps, ")"
     ),
     x = expression(t[obs]),
-    y = expression(hat(p))
+    y = expression(p)
   ) +
   theme_minimal() +
   theme(

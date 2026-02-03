@@ -43,10 +43,15 @@ path_source <- projthis::proj_path_source(params$name)
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE, message = FALSE, warning = FALSE,
-  fig.width = 10, fig.height = 6, dpi = 200,
-  fig.path = paste0('figures/', params$name, "/")
-)
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/gpd_runtime_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 ## Load permApprox functions

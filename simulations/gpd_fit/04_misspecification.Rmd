@@ -15,11 +15,16 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "1e46eb1d-6a01-485d-aa23-9c71660a
 ```
 
 ```{r global-options, include=FALSE}
-knitr::opts_chunk$set(fig.width = 7, 
-                      fig.height = 5, 
-                      dpi = 200,
-                      fig.path = paste0('figures/', params, "/sim_GPD_misspec_"),
-                      echo = FALSE)
+knitr::opts_chunk$set(
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 7, 
+  fig.height = 5, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/sim_GPD_misspec_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 We evaluate how GPD parameter estimation methods behave under varying degrees of misspecification with respect to a boundary constraint. We simulate data where the true upper boundary $s_0$ of the GPD is below a fixed constraint point $s_c$ and compare constrained and unconstrained fits.

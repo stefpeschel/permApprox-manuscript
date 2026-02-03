@@ -15,11 +15,16 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "39c54387-5000-48bc-a7db-a7ed41e6
 ```
 
 ```{r global-options, include=FALSE}
-knitr::opts_chunk$set(fig.width = 10, 
-                      fig.height = 5, 
-                      dpi = 200,
-                      fig.path = paste0('figures/', params, "/sim_GPD_evalpoint_"),
-                      echo = FALSE)
+knitr::opts_chunk$set(
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 5, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/sim_GPD_evalpoint_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 This simulation study examines how GPD parameter estimation behaves under a boundary constraint that requires the estimated support to include a predefined evaluation point above the true boundary. We assess the impact of varying sample sizes and distances (ε) between the evaluation point and the boundary across multiple estimation methods.

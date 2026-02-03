@@ -604,50 +604,55 @@ padding-top: 0px;
 <h1 id="generate-exponential-data-for-permutation-p-value-simulations-mannwhitney-u">Generate
 exponential data for permutation p-value simulations (Mann–Whitney
 U)</h1>
-<p>Compiled at 2025-12-19 15:57:34 UTC</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(conflicted)</span>
-<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
-<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">library</span>(tidyr)</span>
-<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="fu">library</span>(tibble)</span>
-<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="fu">library</span>(furrr)</span>
-<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="fu">library</span>(progressr)</span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a></span>
-<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="fu">conflicts_prefer</span>(dplyr<span class="sc">::</span>filter, dplyr<span class="sc">::</span>select)</span></code></pre></div>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># create or *empty* the target directory, used to write this file&#39;s data: </span></span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co">#projthis::proj_create_dir_target(params$name, clean = TRUE)</span></span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a></span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co"># function to get path to target directory: path_target(&quot;sample.csv&quot;)</span></span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>path_target <span class="ot">&lt;-</span> projthis<span class="sc">::</span><span class="fu">proj_path_target</span>(params<span class="sc">$</span>name)</span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a></span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co"># function to get path to previous data: path_source(&quot;00-import&quot;, &quot;sample.csv&quot;)</span></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>path_source <span class="ot">&lt;-</span> projthis<span class="sc">::</span><span class="fu">proj_path_source</span>(params<span class="sc">$</span>name)</span></code></pre></div>
+<p>Compiled at 2026-02-02 19:37:00 UTC</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>here<span class="sc">::</span><span class="fu">i_am</span>(<span class="fu">paste0</span>(params<span class="sc">$</span>name, <span class="st">&quot;.Rmd&quot;</span>), <span class="at">uuid =</span> <span class="st">&quot;a2428bff-9ba8-452e-89b9-af01268d0f2f&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">library</span>(conflicted)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="fu">library</span>(tidyr)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="fu">library</span>(tibble)</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="fu">library</span>(furrr)</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="fu">library</span>(progressr)</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="fu">conflicts_prefer</span>(dplyr<span class="sc">::</span>filter, dplyr<span class="sc">::</span>select)</span></code></pre></div>
+<pre><code>## [conflicted] Removing existing preference.
+## [conflicted] Will prefer dplyr::filter over any other package.
+## [conflicted] Removing existing preference.
+## [conflicted] Will prefer dplyr::select over any other package.</code></pre>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># create or *empty* the target directory, used to write this file&#39;s data: </span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="co">#projthis::proj_create_dir_target(params$name, clean = TRUE)</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co"># function to get path to target directory: path_target(&quot;sample.csv&quot;)</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>path_target <span class="ot">&lt;-</span> projthis<span class="sc">::</span><span class="fu">proj_path_target</span>(params<span class="sc">$</span>name)</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co"># function to get path to previous data: path_source(&quot;00-import&quot;, &quot;sample.csv&quot;)</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>path_source <span class="ot">&lt;-</span> projthis<span class="sc">::</span><span class="fu">proj_path_source</span>(params<span class="sc">$</span>name)</span></code></pre></div>
 <h1 id="parameter-settings">Parameter settings</h1>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># Which part to generate this run: &quot;accuracy&quot; or &quot;error&quot;</span></span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>part <span class="ot">&lt;-</span> <span class="st">&quot;accuracy&quot;</span></span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a></span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co"># ---------------- Accuracy ----------------</span></span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>acc_n_fix      <span class="ot">&lt;-</span> <span class="dv">100</span>                    <span class="co"># per-group size</span></span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>acc_n_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">25</span>, <span class="dv">50</span>, <span class="dv">75</span>, <span class="dv">100</span>, <span class="dv">250</span>, <span class="dv">500</span>, <span class="dv">750</span>, <span class="dv">1000</span>)</span>
-<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>acc_d_fix      <span class="ot">&lt;-</span> <span class="fl">1.0</span>                    <span class="co"># delta on the *mean* scale (mean2 = 1 + d)</span></span>
-<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>acc_d_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="fl">1.5</span>, <span class="fl">2.0</span>)</span>
-<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>acc_n_perm_fix <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
-<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>acc_n_perm_vec <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">500</span>, <span class="dv">1000</span>, <span class="dv">5000</span>, <span class="dv">10000</span>)</span>
-<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>acc_n_test     <span class="ot">&lt;-</span> <span class="dv">1</span></span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>acc_n_rep      <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
-<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a></span>
-<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co"># ---------------- Error rates ----------------</span></span>
-<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>err_n_fix      <span class="ot">&lt;-</span> <span class="dv">100</span></span>
-<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>err_n_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">25</span>, <span class="dv">50</span>, <span class="dv">75</span>, <span class="dv">100</span>, <span class="dv">250</span>, <span class="dv">500</span>, <span class="dv">750</span>, <span class="dv">1000</span>)</span>
-<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>err_d_fix      <span class="ot">&lt;-</span> <span class="fl">1.0</span></span>
-<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>err_d_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="fl">1.5</span>, <span class="fl">2.0</span>)</span>
-<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>err_n_perm_fix <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
-<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>err_n_perm_vec <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">500</span>, <span class="dv">1000</span>, <span class="dv">5000</span>, <span class="dv">10000</span>)</span>
-<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>err_pi1_fix    <span class="ot">&lt;-</span> <span class="fl">0.05</span></span>
-<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>err_pi1_vec    <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.00</span>, <span class="fl">0.01</span>, <span class="fl">0.05</span>, <span class="fl">0.10</span>)  <span class="co"># non-null fractions</span></span>
-<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a>err_n_test     <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
-<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a>err_n_rep      <span class="ot">&lt;-</span> <span class="dv">100</span></span>
-<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a></span>
-<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a>cores <span class="ot">&lt;-</span> <span class="dv">8</span></span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># Which part to generate this run: &quot;accuracy&quot; or &quot;error&quot;</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>part <span class="ot">&lt;-</span> <span class="st">&quot;accuracy&quot;</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co"># ---------------- Accuracy ----------------</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>acc_n_fix      <span class="ot">&lt;-</span> <span class="dv">100</span>                    <span class="co"># per-group size</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>acc_n_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">25</span>, <span class="dv">50</span>, <span class="dv">75</span>, <span class="dv">100</span>, <span class="dv">250</span>, <span class="dv">500</span>, <span class="dv">750</span>, <span class="dv">1000</span>)</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>acc_d_fix      <span class="ot">&lt;-</span> <span class="fl">1.0</span>                    <span class="co"># delta on the *mean* scale (mean2 = 1 + d)</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>acc_d_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="fl">1.5</span>, <span class="fl">2.0</span>)</span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>acc_n_perm_fix <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>acc_n_perm_vec <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">500</span>, <span class="dv">1000</span>, <span class="dv">5000</span>, <span class="dv">10000</span>)</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>acc_n_test     <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>acc_n_rep      <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="co"># ---------------- Error rates ----------------</span></span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a>err_n_fix      <span class="ot">&lt;-</span> <span class="dv">100</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a>err_n_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">25</span>, <span class="dv">50</span>, <span class="dv">75</span>, <span class="dv">100</span>, <span class="dv">250</span>, <span class="dv">500</span>, <span class="dv">750</span>, <span class="dv">1000</span>)</span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>err_d_fix      <span class="ot">&lt;-</span> <span class="fl">1.0</span></span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a>err_d_vec      <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="fl">1.5</span>, <span class="fl">2.0</span>)</span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a>err_n_perm_fix <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a>err_n_perm_vec <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">500</span>, <span class="dv">1000</span>, <span class="dv">5000</span>, <span class="dv">10000</span>)</span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a>err_pi1_fix    <span class="ot">&lt;-</span> <span class="fl">0.05</span></span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a>err_pi1_vec    <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.00</span>, <span class="fl">0.01</span>, <span class="fl">0.05</span>, <span class="fl">0.10</span>)  <span class="co"># non-null fractions</span></span>
+<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a>err_n_test     <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb5-24"><a href="#cb5-24" tabindex="-1"></a>err_n_rep      <span class="ot">&lt;-</span> <span class="dv">100</span></span>
+<span id="cb5-25"><a href="#cb5-25" tabindex="-1"></a></span>
+<span id="cb5-26"><a href="#cb5-26" tabindex="-1"></a>cores <span class="ot">&lt;-</span> <span class="dv">8</span></span></code></pre></div>
 <p>This script generates <strong>exponential</strong> data for two
 groups:</p>
 <ul>
@@ -663,221 +668,221 @@ W − n(n+1)/2) and store:</p>
 <code>exact = FALSE, correct = FALSE</code>).</li>
 </ul>
 <h1 id="helpers">Helpers</h1>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># One two-sample Wilcoxon/Mann–Whitney (U) test on exponentials:</span></span>
-<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="co"># returns observed U, vector of permuted U&#39;s (length n_perm), and classical p</span></span>
-<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>get_one_test_U <span class="ot">&lt;-</span> <span class="cf">function</span>(n, delta, <span class="at">n_perm =</span> <span class="dv">1000</span>) {</span>
-<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="co"># Data: Exp(rate1 = 1), Exp(rate2 = 1/(1+delta))  ⇒ means 1 vs 1+delta</span></span>
-<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  x1 <span class="ot">&lt;-</span> <span class="fu">rexp</span>(n, <span class="at">rate =</span> <span class="dv">1</span>)</span>
-<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  x2 <span class="ot">&lt;-</span> <span class="fu">rexp</span>(n, <span class="at">rate =</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> delta))</span>
-<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a></span>
-<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>  <span class="co"># Pooled ranks</span></span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>  x  <span class="ot">&lt;-</span> <span class="fu">c</span>(x1, x2)</span>
-<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>  nn <span class="ot">&lt;-</span> <span class="fu">length</span>(x)</span>
-<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>  r  <span class="ot">&lt;-</span> <span class="fu">rank</span>(x, <span class="at">ties.method =</span> <span class="st">&quot;average&quot;</span>)</span>
-<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a></span>
-<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>  <span class="co"># Wilcoxon rank-sum for group 1, then shift to U</span></span>
-<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>  W_obs <span class="ot">&lt;-</span> <span class="fu">sum</span>(r[<span class="fu">seq_len</span>(n)])</span>
-<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>  shift <span class="ot">&lt;-</span> n <span class="sc">*</span> (n <span class="sc">+</span> <span class="dv">1</span>) <span class="sc">/</span> <span class="dv">2</span></span>
-<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>  U_obs <span class="ot">&lt;-</span> W_obs <span class="sc">-</span> shift</span>
-<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a></span>
-<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a>  <span class="co"># Permutation: sample group-1 indices; compute W_perm and U_perm</span></span>
-<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a>  <span class="co"># (matrix sampling is faster than a loop for moderate sizes)</span></span>
-<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a>  idx_mat <span class="ot">&lt;-</span> <span class="fu">replicate</span>(n_perm, <span class="fu">sample.int</span>(nn, n, <span class="at">replace =</span> <span class="cn">FALSE</span>))</span>
-<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a>  W_perm  <span class="ot">&lt;-</span> <span class="fu">colSums</span>(<span class="fu">matrix</span>(r[idx_mat], <span class="at">nrow =</span> n, <span class="at">ncol =</span> n_perm))</span>
-<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a>  U_perm  <span class="ot">&lt;-</span> W_perm <span class="sc">-</span> shift</span>
-<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a></span>
-<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a>  <span class="co"># Classical Wilcoxon p-value (asymptotic, no cont. correction)</span></span>
-<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a>  p_wcx <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">wilcox.test</span>(x1, x2,</span>
-<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a>                              <span class="at">alternative =</span> <span class="st">&quot;two.sided&quot;</span>,</span>
-<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a>                              <span class="at">exact =</span> <span class="cn">FALSE</span>, <span class="at">correct =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>p.value</span>
-<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a></span>
-<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">U_obs =</span> U_obs, <span class="at">U_perm =</span> U_perm, <span class="at">p_wilcox =</span> p_wcx)</span>
-<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a>}</span>
-<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a></span>
-<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co"># Build matrix [n_test x (n_perm+2)] with columns 1:n_perm, &quot;uobs&quot;, &quot;p_wilcox&quot;</span></span>
-<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co"># If delta_vec has length n_test, it can mix H0/H1; otherwise a scalar delta for all tests.</span></span>
-<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a>make_panel_matrix_U <span class="ot">&lt;-</span> <span class="cf">function</span>(n, delta_vec, <span class="at">n_perm =</span> <span class="dv">1000</span>) {</span>
-<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(delta_vec) <span class="sc">==</span> <span class="dv">1</span><span class="dt">L</span>) delta_vec <span class="ot">&lt;-</span> <span class="fu">rep</span>(delta_vec, <span class="at">length.out =</span> <span class="dv">1</span><span class="dt">L</span>)</span>
-<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a>  n_test <span class="ot">&lt;-</span> <span class="fu">length</span>(delta_vec)</span>
-<span id="cb4-37"><a href="#cb4-37" tabindex="-1"></a></span>
-<span id="cb4-38"><a href="#cb4-38" tabindex="-1"></a>  M <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, <span class="at">nrow =</span> n_test, <span class="at">ncol =</span> n_perm <span class="sc">+</span> <span class="dv">2</span>)</span>
-<span id="cb4-39"><a href="#cb4-39" tabindex="-1"></a>  <span class="fu">colnames</span>(M) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">as.character</span>(<span class="fu">seq_len</span>(n_perm)), <span class="st">&quot;uobs&quot;</span>, <span class="st">&quot;p_wilcox&quot;</span>)</span>
-<span id="cb4-40"><a href="#cb4-40" tabindex="-1"></a></span>
-<span id="cb4-41"><a href="#cb4-41" tabindex="-1"></a>  <span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_len</span>(n_test)) {</span>
-<span id="cb4-42"><a href="#cb4-42" tabindex="-1"></a>    rs <span class="ot">&lt;-</span> <span class="fu">get_one_test_U</span>(<span class="at">n =</span> n, <span class="at">delta =</span> delta_vec[t], <span class="at">n_perm =</span> n_perm)</span>
-<span id="cb4-43"><a href="#cb4-43" tabindex="-1"></a>    M[t, <span class="dv">1</span><span class="sc">:</span>n_perm]     <span class="ot">&lt;-</span> rs<span class="sc">$</span>U_perm</span>
-<span id="cb4-44"><a href="#cb4-44" tabindex="-1"></a>    M[t, <span class="st">&quot;uobs&quot;</span>]       <span class="ot">&lt;-</span> rs<span class="sc">$</span>U_obs</span>
-<span id="cb4-45"><a href="#cb4-45" tabindex="-1"></a>    M[t, <span class="st">&quot;p_wilcox&quot;</span>]   <span class="ot">&lt;-</span> rs<span class="sc">$</span>p_wilcox</span>
-<span id="cb4-46"><a href="#cb4-46" tabindex="-1"></a>  }</span>
-<span id="cb4-47"><a href="#cb4-47" tabindex="-1"></a>  M</span>
-<span id="cb4-48"><a href="#cb4-48" tabindex="-1"></a>}</span>
-<span id="cb4-49"><a href="#cb4-49" tabindex="-1"></a></span>
-<span id="cb4-50"><a href="#cb4-50" tabindex="-1"></a><span class="co"># Reproducible seed streams per (setting, rep) using L&#39;Ecuyer-CMRG</span></span>
-<span id="cb4-51"><a href="#cb4-51" tabindex="-1"></a>make_seed_stream <span class="ot">&lt;-</span> <span class="cf">function</span>(n_streams, master_seed) {</span>
-<span id="cb4-52"><a href="#cb4-52" tabindex="-1"></a>  <span class="fu">set.seed</span>(master_seed, <span class="at">kind =</span> <span class="st">&quot;L&#39;Ecuyer-CMRG&quot;</span>)</span>
-<span id="cb4-53"><a href="#cb4-53" tabindex="-1"></a>  s <span class="ot">&lt;-</span> .Random.seed</span>
-<span id="cb4-54"><a href="#cb4-54" tabindex="-1"></a>  streams <span class="ot">&lt;-</span> <span class="fu">vector</span>(<span class="st">&quot;list&quot;</span>, n_streams)</span>
-<span id="cb4-55"><a href="#cb4-55" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(n_streams)) {</span>
-<span id="cb4-56"><a href="#cb4-56" tabindex="-1"></a>    s <span class="ot">&lt;-</span> parallel<span class="sc">::</span><span class="fu">nextRNGStream</span>(s)</span>
-<span id="cb4-57"><a href="#cb4-57" tabindex="-1"></a>    streams[[i]] <span class="ot">&lt;-</span> s</span>
-<span id="cb4-58"><a href="#cb4-58" tabindex="-1"></a>  }</span>
-<span id="cb4-59"><a href="#cb4-59" tabindex="-1"></a>  streams</span>
-<span id="cb4-60"><a href="#cb4-60" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># One two-sample Wilcoxon/Mann–Whitney (U) test on exponentials:</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="co"># returns observed U, vector of permuted U&#39;s (length n_perm), and classical p</span></span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>get_one_test_U <span class="ot">&lt;-</span> <span class="cf">function</span>(n, delta, <span class="at">n_perm =</span> <span class="dv">1000</span>) {</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  <span class="co"># Data: Exp(rate1 = 1), Exp(rate2 = 1/(1+delta))  ⇒ means 1 vs 1+delta</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>  x1 <span class="ot">&lt;-</span> <span class="fu">rexp</span>(n, <span class="at">rate =</span> <span class="dv">1</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>  x2 <span class="ot">&lt;-</span> <span class="fu">rexp</span>(n, <span class="at">rate =</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> delta))</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>  <span class="co"># Pooled ranks</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a>  x  <span class="ot">&lt;-</span> <span class="fu">c</span>(x1, x2)</span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>  nn <span class="ot">&lt;-</span> <span class="fu">length</span>(x)</span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>  r  <span class="ot">&lt;-</span> <span class="fu">rank</span>(x, <span class="at">ties.method =</span> <span class="st">&quot;average&quot;</span>)</span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a>  <span class="co"># Wilcoxon rank-sum for group 1, then shift to U</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a>  W_obs <span class="ot">&lt;-</span> <span class="fu">sum</span>(r[<span class="fu">seq_len</span>(n)])</span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a>  shift <span class="ot">&lt;-</span> n <span class="sc">*</span> (n <span class="sc">+</span> <span class="dv">1</span>) <span class="sc">/</span> <span class="dv">2</span></span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a>  U_obs <span class="ot">&lt;-</span> W_obs <span class="sc">-</span> shift</span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a></span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a>  <span class="co"># Permutation: sample group-1 indices; compute W_perm and U_perm</span></span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a>  <span class="co"># (matrix sampling is faster than a loop for moderate sizes)</span></span>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a>  idx_mat <span class="ot">&lt;-</span> <span class="fu">replicate</span>(n_perm, <span class="fu">sample.int</span>(nn, n, <span class="at">replace =</span> <span class="cn">FALSE</span>))</span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a>  W_perm  <span class="ot">&lt;-</span> <span class="fu">colSums</span>(<span class="fu">matrix</span>(r[idx_mat], <span class="at">nrow =</span> n, <span class="at">ncol =</span> n_perm))</span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a>  U_perm  <span class="ot">&lt;-</span> W_perm <span class="sc">-</span> shift</span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a></span>
+<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a>  <span class="co"># Classical Wilcoxon p-value (asymptotic, no cont. correction)</span></span>
+<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a>  p_wcx <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">wilcox.test</span>(x1, x2,</span>
+<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a>                              <span class="at">alternative =</span> <span class="st">&quot;two.sided&quot;</span>,</span>
+<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a>                              <span class="at">exact =</span> <span class="cn">FALSE</span>, <span class="at">correct =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>p.value</span>
+<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a></span>
+<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">U_obs =</span> U_obs, <span class="at">U_perm =</span> U_perm, <span class="at">p_wilcox =</span> p_wcx)</span>
+<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a>}</span>
+<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a></span>
+<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a><span class="co"># Build matrix [n_test x (n_perm+2)] with columns 1:n_perm, &quot;uobs&quot;, &quot;p_wilcox&quot;</span></span>
+<span id="cb6-33"><a href="#cb6-33" tabindex="-1"></a><span class="co"># If delta_vec has length n_test, it can mix H0/H1; otherwise a scalar delta for all tests.</span></span>
+<span id="cb6-34"><a href="#cb6-34" tabindex="-1"></a>make_panel_matrix_U <span class="ot">&lt;-</span> <span class="cf">function</span>(n, delta_vec, <span class="at">n_perm =</span> <span class="dv">1000</span>) {</span>
+<span id="cb6-35"><a href="#cb6-35" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(delta_vec) <span class="sc">==</span> <span class="dv">1</span><span class="dt">L</span>) delta_vec <span class="ot">&lt;-</span> <span class="fu">rep</span>(delta_vec, <span class="at">length.out =</span> <span class="dv">1</span><span class="dt">L</span>)</span>
+<span id="cb6-36"><a href="#cb6-36" tabindex="-1"></a>  n_test <span class="ot">&lt;-</span> <span class="fu">length</span>(delta_vec)</span>
+<span id="cb6-37"><a href="#cb6-37" tabindex="-1"></a></span>
+<span id="cb6-38"><a href="#cb6-38" tabindex="-1"></a>  M <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, <span class="at">nrow =</span> n_test, <span class="at">ncol =</span> n_perm <span class="sc">+</span> <span class="dv">2</span>)</span>
+<span id="cb6-39"><a href="#cb6-39" tabindex="-1"></a>  <span class="fu">colnames</span>(M) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">as.character</span>(<span class="fu">seq_len</span>(n_perm)), <span class="st">&quot;uobs&quot;</span>, <span class="st">&quot;p_wilcox&quot;</span>)</span>
+<span id="cb6-40"><a href="#cb6-40" tabindex="-1"></a></span>
+<span id="cb6-41"><a href="#cb6-41" tabindex="-1"></a>  <span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_len</span>(n_test)) {</span>
+<span id="cb6-42"><a href="#cb6-42" tabindex="-1"></a>    rs <span class="ot">&lt;-</span> <span class="fu">get_one_test_U</span>(<span class="at">n =</span> n, <span class="at">delta =</span> delta_vec[t], <span class="at">n_perm =</span> n_perm)</span>
+<span id="cb6-43"><a href="#cb6-43" tabindex="-1"></a>    M[t, <span class="dv">1</span><span class="sc">:</span>n_perm]     <span class="ot">&lt;-</span> rs<span class="sc">$</span>U_perm</span>
+<span id="cb6-44"><a href="#cb6-44" tabindex="-1"></a>    M[t, <span class="st">&quot;uobs&quot;</span>]       <span class="ot">&lt;-</span> rs<span class="sc">$</span>U_obs</span>
+<span id="cb6-45"><a href="#cb6-45" tabindex="-1"></a>    M[t, <span class="st">&quot;p_wilcox&quot;</span>]   <span class="ot">&lt;-</span> rs<span class="sc">$</span>p_wilcox</span>
+<span id="cb6-46"><a href="#cb6-46" tabindex="-1"></a>  }</span>
+<span id="cb6-47"><a href="#cb6-47" tabindex="-1"></a>  M</span>
+<span id="cb6-48"><a href="#cb6-48" tabindex="-1"></a>}</span>
+<span id="cb6-49"><a href="#cb6-49" tabindex="-1"></a></span>
+<span id="cb6-50"><a href="#cb6-50" tabindex="-1"></a><span class="co"># Reproducible seed streams per (setting, rep) using L&#39;Ecuyer-CMRG</span></span>
+<span id="cb6-51"><a href="#cb6-51" tabindex="-1"></a>make_seed_stream <span class="ot">&lt;-</span> <span class="cf">function</span>(n_streams, master_seed) {</span>
+<span id="cb6-52"><a href="#cb6-52" tabindex="-1"></a>  <span class="fu">set.seed</span>(master_seed, <span class="at">kind =</span> <span class="st">&quot;L&#39;Ecuyer-CMRG&quot;</span>)</span>
+<span id="cb6-53"><a href="#cb6-53" tabindex="-1"></a>  s <span class="ot">&lt;-</span> .Random.seed</span>
+<span id="cb6-54"><a href="#cb6-54" tabindex="-1"></a>  streams <span class="ot">&lt;-</span> <span class="fu">vector</span>(<span class="st">&quot;list&quot;</span>, n_streams)</span>
+<span id="cb6-55"><a href="#cb6-55" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(n_streams)) {</span>
+<span id="cb6-56"><a href="#cb6-56" tabindex="-1"></a>    s <span class="ot">&lt;-</span> parallel<span class="sc">::</span><span class="fu">nextRNGStream</span>(s)</span>
+<span id="cb6-57"><a href="#cb6-57" tabindex="-1"></a>    streams[[i]] <span class="ot">&lt;-</span> s</span>
+<span id="cb6-58"><a href="#cb6-58" tabindex="-1"></a>  }</span>
+<span id="cb6-59"><a href="#cb6-59" tabindex="-1"></a>  streams</span>
+<span id="cb6-60"><a href="#cb6-60" tabindex="-1"></a>}</span></code></pre></div>
 <h2 id="accuracy">Accuracy</h2>
 <p>We vary <strong>n</strong> at <strong>d = 1</strong>, vary
 <strong>d</strong> at <strong>n = 100</strong>, and vary
 <strong>n_perm</strong> at (n=100, d=1).</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>acc_grid_vary_n <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
-<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="at">n      =</span> acc_n_vec,</span>
-<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="at">d      =</span> acc_d_fix,</span>
-<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="at">n_perm =</span> acc_n_perm_fix</span>
-<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>)</span>
-<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>acc_grid_vary_d <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
-<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>  <span class="at">n      =</span> acc_n_fix,</span>
-<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>  <span class="at">d      =</span> acc_d_vec,</span>
-<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="at">n_perm =</span> acc_n_perm_fix</span>
-<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>)</span>
-<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>acc_grid_vary_nperm <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>  <span class="at">n      =</span> acc_n_fix,</span>
-<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>  <span class="at">d      =</span> acc_d_fix,</span>
-<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a>  <span class="at">n_perm =</span> acc_n_perm_vec</span>
-<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a>)</span>
-<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a></span>
-<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>acc_grid <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(acc_grid_vary_n, acc_grid_vary_d, acc_grid_vary_nperm) <span class="sc">%&gt;%</span></span>
-<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a>  <span class="fu">distinct</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">n_test =</span> acc_n_test,</span>
-<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a>         <span class="at">n_rep  =</span> acc_n_rep)</span></code></pre></div>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>out_path <span class="ot">&lt;-</span> <span class="fu">path_target</span>(<span class="st">&quot;sim_accuracy_data&quot;</span>)</span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="fu">dir.create</span>(out_path, <span class="at">showWarnings =</span> <span class="cn">FALSE</span>, <span class="at">recursive =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
-<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="fu">handlers</span>(<span class="st">&quot;txtprogressbar&quot;</span>)</span>
-<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="fu">plan</span>(multisession, <span class="at">workers =</span> cores)</span>
-<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a></span>
-<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="fu">with_progress</span>({</span>
-<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">progressor</span>(<span class="at">steps =</span> <span class="fu">nrow</span>(acc_grid))</span>
-<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a></span>
-<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>  <span class="fu">invisible</span>(furrr<span class="sc">::</span><span class="fu">future_walk</span>(</span>
-<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>    <span class="fu">split</span>(acc_grid, <span class="fu">seq_len</span>(<span class="fu">nrow</span>(acc_grid))),</span>
-<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a>    <span class="cf">function</span>(row) {</span>
-<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a>      row <span class="ot">&lt;-</span> tibble<span class="sc">::</span><span class="fu">as_tibble</span>(row)</span>
-<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a>      n      <span class="ot">&lt;-</span> row<span class="sc">$</span>n[[<span class="dv">1</span>]]</span>
-<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a>      d      <span class="ot">&lt;-</span> row<span class="sc">$</span>d[[<span class="dv">1</span>]]</span>
-<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a>      n_perm <span class="ot">&lt;-</span> row<span class="sc">$</span>n_perm[[<span class="dv">1</span>]]</span>
-<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a>      n_rep  <span class="ot">&lt;-</span> row<span class="sc">$</span>n_rep[[<span class="dv">1</span>]]</span>
-<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a></span>
-<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a>      out_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(</span>
-<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a>        out_path,</span>
-<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a>        <span class="fu">sprintf</span>(<span class="st">&quot;sim_acc_n%d_d%.1f_nperm%d.rds&quot;</span>, n, d, n_perm)</span>
-<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a>      )</span>
-<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">file.exists</span>(out_file)) { <span class="fu">p</span>(); <span class="fu">return</span>(<span class="fu">invisible</span>()) }</span>
-<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a></span>
-<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a>      streams  <span class="ot">&lt;-</span> <span class="fu">make_seed_stream</span>(<span class="at">n_streams =</span> n_rep, <span class="at">master_seed =</span> <span class="dv">987654</span>)</span>
-<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a>      res_list <span class="ot">&lt;-</span> <span class="fu">vector</span>(<span class="st">&quot;list&quot;</span>, n_rep)</span>
-<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a></span>
-<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a>      <span class="co"># Accuracy: 1 test per rep; if d&gt;0 it&#39;s H1 (shift in means), if d==0 it&#39;s H0</span></span>
-<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a>      <span class="cf">for</span> (r <span class="cf">in</span> <span class="fu">seq_len</span>(n_rep)) {</span>
-<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a>        .Random.seed <span class="ot">&lt;&lt;-</span> streams[[r]]</span>
-<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a>        mat <span class="ot">&lt;-</span> <span class="fu">make_panel_matrix_U</span>(<span class="at">n =</span> n, <span class="at">delta_vec =</span> d, <span class="at">n_perm =</span> n_perm)</span>
-<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a>        res_list[[r]] <span class="ot">&lt;-</span> mat</span>
-<span id="cb6-33"><a href="#cb6-33" tabindex="-1"></a>      }</span>
-<span id="cb6-34"><a href="#cb6-34" tabindex="-1"></a></span>
-<span id="cb6-35"><a href="#cb6-35" tabindex="-1"></a>      <span class="fu">saveRDS</span>(res_list, <span class="at">file =</span> out_file)</span>
-<span id="cb6-36"><a href="#cb6-36" tabindex="-1"></a>      <span class="fu">p</span>()</span>
-<span id="cb6-37"><a href="#cb6-37" tabindex="-1"></a>    },</span>
-<span id="cb6-38"><a href="#cb6-38" tabindex="-1"></a>    <span class="at">.options =</span> furrr<span class="sc">::</span><span class="fu">furrr_options</span>(<span class="at">seed =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb6-39"><a href="#cb6-39" tabindex="-1"></a>  ))</span>
-<span id="cb6-40"><a href="#cb6-40" tabindex="-1"></a>})</span>
-<span id="cb6-41"><a href="#cb6-41" tabindex="-1"></a></span>
-<span id="cb6-42"><a href="#cb6-42" tabindex="-1"></a><span class="fu">plan</span>(sequential)</span></code></pre></div>
-<h2 id="error-rates">Error rates</h2>
-<p>Here, we vary <strong>n</strong> at <strong>d = 1</strong>; vary
-<strong>d</strong> at <strong>n = 100</strong>; plus focused
-<strong>(n=100, d=1)</strong> with multiple <strong>n_perm</strong> and
-<strong>pi1</strong>.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>err_grid_vary_n <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="at">n      =</span> err_n_vec,</span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">d      =</span> err_d_fix,</span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_fix,</span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_fix</span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>)</span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>err_grid_vary_d <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  <span class="at">n      =</span> err_n_fix,</span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>  <span class="at">d      =</span> err_d_vec,</span>
-<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_fix,</span>
-<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_fix</span>
-<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>)</span>
-<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a></span>
-<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a>err_grid_vary_nperm <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a>  <span class="at">n      =</span> err_n_fix,</span>
-<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a>  <span class="at">d      =</span> err_d_fix,</span>
-<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_vec,</span>
-<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_fix</span>
-<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a>)</span>
-<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a></span>
-<span id="cb7-22"><a href="#cb7-22" tabindex="-1"></a>err_grid_vary_pi1 <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb7-23"><a href="#cb7-23" tabindex="-1"></a>  <span class="at">n      =</span> err_n_fix,</span>
-<span id="cb7-24"><a href="#cb7-24" tabindex="-1"></a>  <span class="at">d      =</span> err_d_fix,</span>
-<span id="cb7-25"><a href="#cb7-25" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_fix,</span>
-<span id="cb7-26"><a href="#cb7-26" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_vec</span>
-<span id="cb7-27"><a href="#cb7-27" tabindex="-1"></a>)</span>
-<span id="cb7-28"><a href="#cb7-28" tabindex="-1"></a></span>
-<span id="cb7-29"><a href="#cb7-29" tabindex="-1"></a>err_grid <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(err_grid_vary_n, err_grid_vary_d, </span>
-<span id="cb7-30"><a href="#cb7-30" tabindex="-1"></a>                      err_grid_vary_nperm, err_grid_vary_pi1) <span class="sc">%&gt;%</span></span>
-<span id="cb7-31"><a href="#cb7-31" tabindex="-1"></a>  <span class="fu">distinct</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb7-32"><a href="#cb7-32" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">n_test =</span> err_n_test,</span>
-<span id="cb7-33"><a href="#cb7-33" tabindex="-1"></a>         <span class="at">n_rep  =</span> err_n_rep)</span></code></pre></div>
-<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>out_path <span class="ot">&lt;-</span> <span class="fu">path_target</span>(<span class="st">&quot;sim_error_data&quot;</span>)</span>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>acc_grid_vary_n <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="at">n      =</span> acc_n_vec,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">d      =</span> acc_d_fix,</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="at">n_perm =</span> acc_n_perm_fix</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>)</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>acc_grid_vary_d <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="at">n      =</span> acc_n_fix,</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>  <span class="at">d      =</span> acc_d_vec,</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  <span class="at">n_perm =</span> acc_n_perm_fix</span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>)</span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>acc_grid_vary_nperm <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>  <span class="at">n      =</span> acc_n_fix,</span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>  <span class="at">d      =</span> acc_d_fix,</span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>  <span class="at">n_perm =</span> acc_n_perm_vec</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a>)</span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a>acc_grid <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(acc_grid_vary_n, acc_grid_vary_d, acc_grid_vary_nperm) <span class="sc">%&gt;%</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a>  <span class="fu">distinct</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">n_test =</span> acc_n_test,</span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a>         <span class="at">n_rep  =</span> acc_n_rep)</span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>out_path <span class="ot">&lt;-</span> <span class="fu">path_target</span>(<span class="st">&quot;sim_accuracy_data&quot;</span>)</span>
 <span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="fu">dir.create</span>(out_path, <span class="at">showWarnings =</span> <span class="cn">FALSE</span>, <span class="at">recursive =</span> <span class="cn">TRUE</span>)</span>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a></span>
 <span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="fu">handlers</span>(<span class="st">&quot;txtprogressbar&quot;</span>)</span>
 <span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="fu">plan</span>(multisession, <span class="at">workers =</span> cores)</span>
 <span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a></span>
 <span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="fu">with_progress</span>({</span>
-<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">progressor</span>(<span class="at">steps =</span> <span class="fu">nrow</span>(err_grid))</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">progressor</span>(<span class="at">steps =</span> <span class="fu">nrow</span>(acc_grid))</span>
 <span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a></span>
 <span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>  <span class="fu">invisible</span>(furrr<span class="sc">::</span><span class="fu">future_walk</span>(</span>
-<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>    <span class="fu">split</span>(err_grid, <span class="fu">seq_len</span>(<span class="fu">nrow</span>(err_grid))),</span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>    <span class="fu">split</span>(acc_grid, <span class="fu">seq_len</span>(<span class="fu">nrow</span>(acc_grid))),</span>
 <span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>    <span class="cf">function</span>(row) {</span>
 <span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a>      row <span class="ot">&lt;-</span> tibble<span class="sc">::</span><span class="fu">as_tibble</span>(row)</span>
 <span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a>      n      <span class="ot">&lt;-</span> row<span class="sc">$</span>n[[<span class="dv">1</span>]]</span>
 <span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a>      d      <span class="ot">&lt;-</span> row<span class="sc">$</span>d[[<span class="dv">1</span>]]</span>
 <span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a>      n_perm <span class="ot">&lt;-</span> row<span class="sc">$</span>n_perm[[<span class="dv">1</span>]]</span>
-<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a>      pi1    <span class="ot">&lt;-</span> row<span class="sc">$</span>pi1[[<span class="dv">1</span>]]</span>
-<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a>      n_test <span class="ot">&lt;-</span> row<span class="sc">$</span>n_test[[<span class="dv">1</span>]]</span>
-<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a>      n_rep  <span class="ot">&lt;-</span> row<span class="sc">$</span>n_rep[[<span class="dv">1</span>]]</span>
-<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a></span>
-<span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a>      out_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(</span>
-<span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a>        out_path,</span>
-<span id="cb8-23"><a href="#cb8-23" tabindex="-1"></a>        <span class="fu">sprintf</span>(<span class="st">&quot;sim_err_n%d_d%.1f_nperm%d_pi1%.2f.rds&quot;</span>, n, d, n_perm, pi1)</span>
-<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a>      )</span>
-<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">file.exists</span>(out_file)) { <span class="fu">p</span>(); <span class="fu">return</span>(<span class="fu">invisible</span>()) }</span>
-<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a></span>
-<span id="cb8-27"><a href="#cb8-27" tabindex="-1"></a>      streams  <span class="ot">&lt;-</span> <span class="fu">make_seed_stream</span>(<span class="at">n_streams =</span> n_rep, <span class="at">master_seed =</span> <span class="dv">987654</span>)</span>
-<span id="cb8-28"><a href="#cb8-28" tabindex="-1"></a>      res_list <span class="ot">&lt;-</span> <span class="fu">vector</span>(<span class="st">&quot;list&quot;</span>, n_rep)</span>
-<span id="cb8-29"><a href="#cb8-29" tabindex="-1"></a></span>
-<span id="cb8-30"><a href="#cb8-30" tabindex="-1"></a>      n_alt    <span class="ot">&lt;-</span> <span class="fu">round</span>(n_test <span class="sc">*</span> pi1)</span>
-<span id="cb8-31"><a href="#cb8-31" tabindex="-1"></a>      <span class="co"># Non-nulls have delta = d (mean2 = 1 + d); nulls have delta = 0</span></span>
-<span id="cb8-32"><a href="#cb8-32" tabindex="-1"></a>      delta_vec <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">rep</span>(d, n_alt), <span class="fu">rep</span>(<span class="dv">0</span>, n_test <span class="sc">-</span> n_alt))</span>
-<span id="cb8-33"><a href="#cb8-33" tabindex="-1"></a></span>
-<span id="cb8-34"><a href="#cb8-34" tabindex="-1"></a>      <span class="cf">for</span> (r <span class="cf">in</span> <span class="fu">seq_len</span>(n_rep)) {</span>
-<span id="cb8-35"><a href="#cb8-35" tabindex="-1"></a>        .Random.seed <span class="ot">&lt;&lt;-</span> streams[[r]]</span>
-<span id="cb8-36"><a href="#cb8-36" tabindex="-1"></a>        mat <span class="ot">&lt;-</span> <span class="fu">make_panel_matrix_U</span>(<span class="at">n =</span> n, <span class="at">delta_vec =</span> delta_vec, <span class="at">n_perm =</span> n_perm)</span>
-<span id="cb8-37"><a href="#cb8-37" tabindex="-1"></a>        res_list[[r]] <span class="ot">&lt;-</span> mat</span>
-<span id="cb8-38"><a href="#cb8-38" tabindex="-1"></a>      }</span>
-<span id="cb8-39"><a href="#cb8-39" tabindex="-1"></a></span>
-<span id="cb8-40"><a href="#cb8-40" tabindex="-1"></a>      <span class="fu">saveRDS</span>(res_list, <span class="at">file =</span> out_file)</span>
-<span id="cb8-41"><a href="#cb8-41" tabindex="-1"></a>      <span class="fu">p</span>()</span>
-<span id="cb8-42"><a href="#cb8-42" tabindex="-1"></a>    },</span>
-<span id="cb8-43"><a href="#cb8-43" tabindex="-1"></a>    <span class="at">.options =</span> furrr<span class="sc">::</span><span class="fu">furrr_options</span>(<span class="at">seed =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb8-44"><a href="#cb8-44" tabindex="-1"></a>  ))</span>
-<span id="cb8-45"><a href="#cb8-45" tabindex="-1"></a>})</span>
-<span id="cb8-46"><a href="#cb8-46" tabindex="-1"></a></span>
-<span id="cb8-47"><a href="#cb8-47" tabindex="-1"></a><span class="fu">plan</span>(sequential)</span></code></pre></div>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a>      n_rep  <span class="ot">&lt;-</span> row<span class="sc">$</span>n_rep[[<span class="dv">1</span>]]</span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a></span>
+<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a>      out_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(</span>
+<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a>        out_path,</span>
+<span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a>        <span class="fu">sprintf</span>(<span class="st">&quot;sim_acc_n%d_d%.1f_nperm%d.rds&quot;</span>, n, d, n_perm)</span>
+<span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a>      )</span>
+<span id="cb8-23"><a href="#cb8-23" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">file.exists</span>(out_file)) { <span class="fu">p</span>(); <span class="fu">return</span>(<span class="fu">invisible</span>()) }</span>
+<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a></span>
+<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a>      streams  <span class="ot">&lt;-</span> <span class="fu">make_seed_stream</span>(<span class="at">n_streams =</span> n_rep, <span class="at">master_seed =</span> <span class="dv">987654</span>)</span>
+<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a>      res_list <span class="ot">&lt;-</span> <span class="fu">vector</span>(<span class="st">&quot;list&quot;</span>, n_rep)</span>
+<span id="cb8-27"><a href="#cb8-27" tabindex="-1"></a></span>
+<span id="cb8-28"><a href="#cb8-28" tabindex="-1"></a>      <span class="co"># Accuracy: 1 test per rep; if d&gt;0 it&#39;s H1 (shift in means), if d==0 it&#39;s H0</span></span>
+<span id="cb8-29"><a href="#cb8-29" tabindex="-1"></a>      <span class="cf">for</span> (r <span class="cf">in</span> <span class="fu">seq_len</span>(n_rep)) {</span>
+<span id="cb8-30"><a href="#cb8-30" tabindex="-1"></a>        .Random.seed <span class="ot">&lt;&lt;-</span> streams[[r]]</span>
+<span id="cb8-31"><a href="#cb8-31" tabindex="-1"></a>        mat <span class="ot">&lt;-</span> <span class="fu">make_panel_matrix_U</span>(<span class="at">n =</span> n, <span class="at">delta_vec =</span> d, <span class="at">n_perm =</span> n_perm)</span>
+<span id="cb8-32"><a href="#cb8-32" tabindex="-1"></a>        res_list[[r]] <span class="ot">&lt;-</span> mat</span>
+<span id="cb8-33"><a href="#cb8-33" tabindex="-1"></a>      }</span>
+<span id="cb8-34"><a href="#cb8-34" tabindex="-1"></a></span>
+<span id="cb8-35"><a href="#cb8-35" tabindex="-1"></a>      <span class="fu">saveRDS</span>(res_list, <span class="at">file =</span> out_file)</span>
+<span id="cb8-36"><a href="#cb8-36" tabindex="-1"></a>      <span class="fu">p</span>()</span>
+<span id="cb8-37"><a href="#cb8-37" tabindex="-1"></a>    },</span>
+<span id="cb8-38"><a href="#cb8-38" tabindex="-1"></a>    <span class="at">.options =</span> furrr<span class="sc">::</span><span class="fu">furrr_options</span>(<span class="at">seed =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb8-39"><a href="#cb8-39" tabindex="-1"></a>  ))</span>
+<span id="cb8-40"><a href="#cb8-40" tabindex="-1"></a>})</span>
+<span id="cb8-41"><a href="#cb8-41" tabindex="-1"></a></span>
+<span id="cb8-42"><a href="#cb8-42" tabindex="-1"></a><span class="fu">plan</span>(sequential)</span></code></pre></div>
+<h2 id="error-rates">Error rates</h2>
+<p>Here, we vary <strong>n</strong> at <strong>d = 1</strong>; vary
+<strong>d</strong> at <strong>n = 100</strong>; plus focused
+<strong>(n=100, d=1)</strong> with multiple <strong>n_perm</strong> and
+<strong>pi1</strong>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>err_grid_vary_n <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="at">n      =</span> err_n_vec,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="at">d      =</span> err_d_fix,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_fix,</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_fix</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>)</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>err_grid_vary_d <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">crossing</span>(</span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>  <span class="at">n      =</span> err_n_fix,</span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>  <span class="at">d      =</span> err_d_vec,</span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_fix,</span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_fix</span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a>)</span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a>err_grid_vary_nperm <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a>  <span class="at">n      =</span> err_n_fix,</span>
+<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a>  <span class="at">d      =</span> err_d_fix,</span>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_vec,</span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_fix</span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a>)</span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a>err_grid_vary_pi1 <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a>  <span class="at">n      =</span> err_n_fix,</span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a>  <span class="at">d      =</span> err_d_fix,</span>
+<span id="cb9-25"><a href="#cb9-25" tabindex="-1"></a>  <span class="at">n_perm =</span> err_n_perm_fix,</span>
+<span id="cb9-26"><a href="#cb9-26" tabindex="-1"></a>  <span class="at">pi1    =</span> err_pi1_vec</span>
+<span id="cb9-27"><a href="#cb9-27" tabindex="-1"></a>)</span>
+<span id="cb9-28"><a href="#cb9-28" tabindex="-1"></a></span>
+<span id="cb9-29"><a href="#cb9-29" tabindex="-1"></a>err_grid <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(err_grid_vary_n, err_grid_vary_d, </span>
+<span id="cb9-30"><a href="#cb9-30" tabindex="-1"></a>                      err_grid_vary_nperm, err_grid_vary_pi1) <span class="sc">%&gt;%</span></span>
+<span id="cb9-31"><a href="#cb9-31" tabindex="-1"></a>  <span class="fu">distinct</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb9-32"><a href="#cb9-32" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">n_test =</span> err_n_test,</span>
+<span id="cb9-33"><a href="#cb9-33" tabindex="-1"></a>         <span class="at">n_rep  =</span> err_n_rep)</span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>out_path <span class="ot">&lt;-</span> <span class="fu">path_target</span>(<span class="st">&quot;sim_error_data&quot;</span>)</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="fu">dir.create</span>(out_path, <span class="at">showWarnings =</span> <span class="cn">FALSE</span>, <span class="at">recursive =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a></span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="fu">handlers</span>(<span class="st">&quot;txtprogressbar&quot;</span>)</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="fu">plan</span>(multisession, <span class="at">workers =</span> cores)</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="fu">with_progress</span>({</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">progressor</span>(<span class="at">steps =</span> <span class="fu">nrow</span>(err_grid))</span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a>  <span class="fu">invisible</span>(furrr<span class="sc">::</span><span class="fu">future_walk</span>(</span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a>    <span class="fu">split</span>(err_grid, <span class="fu">seq_len</span>(<span class="fu">nrow</span>(err_grid))),</span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a>    <span class="cf">function</span>(row) {</span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a>      row <span class="ot">&lt;-</span> tibble<span class="sc">::</span><span class="fu">as_tibble</span>(row)</span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a>      n      <span class="ot">&lt;-</span> row<span class="sc">$</span>n[[<span class="dv">1</span>]]</span>
+<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a>      d      <span class="ot">&lt;-</span> row<span class="sc">$</span>d[[<span class="dv">1</span>]]</span>
+<span id="cb10-16"><a href="#cb10-16" tabindex="-1"></a>      n_perm <span class="ot">&lt;-</span> row<span class="sc">$</span>n_perm[[<span class="dv">1</span>]]</span>
+<span id="cb10-17"><a href="#cb10-17" tabindex="-1"></a>      pi1    <span class="ot">&lt;-</span> row<span class="sc">$</span>pi1[[<span class="dv">1</span>]]</span>
+<span id="cb10-18"><a href="#cb10-18" tabindex="-1"></a>      n_test <span class="ot">&lt;-</span> row<span class="sc">$</span>n_test[[<span class="dv">1</span>]]</span>
+<span id="cb10-19"><a href="#cb10-19" tabindex="-1"></a>      n_rep  <span class="ot">&lt;-</span> row<span class="sc">$</span>n_rep[[<span class="dv">1</span>]]</span>
+<span id="cb10-20"><a href="#cb10-20" tabindex="-1"></a></span>
+<span id="cb10-21"><a href="#cb10-21" tabindex="-1"></a>      out_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(</span>
+<span id="cb10-22"><a href="#cb10-22" tabindex="-1"></a>        out_path,</span>
+<span id="cb10-23"><a href="#cb10-23" tabindex="-1"></a>        <span class="fu">sprintf</span>(<span class="st">&quot;sim_err_n%d_d%.1f_nperm%d_pi1%.2f.rds&quot;</span>, n, d, n_perm, pi1)</span>
+<span id="cb10-24"><a href="#cb10-24" tabindex="-1"></a>      )</span>
+<span id="cb10-25"><a href="#cb10-25" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">file.exists</span>(out_file)) { <span class="fu">p</span>(); <span class="fu">return</span>(<span class="fu">invisible</span>()) }</span>
+<span id="cb10-26"><a href="#cb10-26" tabindex="-1"></a></span>
+<span id="cb10-27"><a href="#cb10-27" tabindex="-1"></a>      streams  <span class="ot">&lt;-</span> <span class="fu">make_seed_stream</span>(<span class="at">n_streams =</span> n_rep, <span class="at">master_seed =</span> <span class="dv">987654</span>)</span>
+<span id="cb10-28"><a href="#cb10-28" tabindex="-1"></a>      res_list <span class="ot">&lt;-</span> <span class="fu">vector</span>(<span class="st">&quot;list&quot;</span>, n_rep)</span>
+<span id="cb10-29"><a href="#cb10-29" tabindex="-1"></a></span>
+<span id="cb10-30"><a href="#cb10-30" tabindex="-1"></a>      n_alt    <span class="ot">&lt;-</span> <span class="fu">round</span>(n_test <span class="sc">*</span> pi1)</span>
+<span id="cb10-31"><a href="#cb10-31" tabindex="-1"></a>      <span class="co"># Non-nulls have delta = d (mean2 = 1 + d); nulls have delta = 0</span></span>
+<span id="cb10-32"><a href="#cb10-32" tabindex="-1"></a>      delta_vec <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">rep</span>(d, n_alt), <span class="fu">rep</span>(<span class="dv">0</span>, n_test <span class="sc">-</span> n_alt))</span>
+<span id="cb10-33"><a href="#cb10-33" tabindex="-1"></a></span>
+<span id="cb10-34"><a href="#cb10-34" tabindex="-1"></a>      <span class="cf">for</span> (r <span class="cf">in</span> <span class="fu">seq_len</span>(n_rep)) {</span>
+<span id="cb10-35"><a href="#cb10-35" tabindex="-1"></a>        .Random.seed <span class="ot">&lt;&lt;-</span> streams[[r]]</span>
+<span id="cb10-36"><a href="#cb10-36" tabindex="-1"></a>        mat <span class="ot">&lt;-</span> <span class="fu">make_panel_matrix_U</span>(<span class="at">n =</span> n, <span class="at">delta_vec =</span> delta_vec, <span class="at">n_perm =</span> n_perm)</span>
+<span id="cb10-37"><a href="#cb10-37" tabindex="-1"></a>        res_list[[r]] <span class="ot">&lt;-</span> mat</span>
+<span id="cb10-38"><a href="#cb10-38" tabindex="-1"></a>      }</span>
+<span id="cb10-39"><a href="#cb10-39" tabindex="-1"></a></span>
+<span id="cb10-40"><a href="#cb10-40" tabindex="-1"></a>      <span class="fu">saveRDS</span>(res_list, <span class="at">file =</span> out_file)</span>
+<span id="cb10-41"><a href="#cb10-41" tabindex="-1"></a>      <span class="fu">p</span>()</span>
+<span id="cb10-42"><a href="#cb10-42" tabindex="-1"></a>    },</span>
+<span id="cb10-43"><a href="#cb10-43" tabindex="-1"></a>    <span class="at">.options =</span> furrr<span class="sc">::</span><span class="fu">furrr_options</span>(<span class="at">seed =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb10-44"><a href="#cb10-44" tabindex="-1"></a>  ))</span>
+<span id="cb10-45"><a href="#cb10-45" tabindex="-1"></a>})</span>
+<span id="cb10-46"><a href="#cb10-46" tabindex="-1"></a></span>
+<span id="cb10-47"><a href="#cb10-47" tabindex="-1"></a><span class="fu">plan</span>(sequential)</span></code></pre></div>
 <h2 id="files-written">Files written</h2>
 <p>These files have been written to the target directory,
 <code>data/01_data_gen</code>:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>projthis<span class="sc">::</span><span class="fu">proj_dir_info</span>(<span class="fu">path_target</span>())</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>projthis<span class="sc">::</span><span class="fu">proj_dir_info</span>(<span class="fu">path_target</span>())</span></code></pre></div>
 <pre><code>## # A tibble: 2 × 4
 ##   path              type             size modification_time  
 ##   &lt;fs::path&gt;        &lt;fct&gt;     &lt;fs::bytes&gt; &lt;dttm&gt;             

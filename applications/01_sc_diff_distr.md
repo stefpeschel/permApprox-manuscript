@@ -1,7 +1,11 @@
 Differential distribution analysis of single-cell gene expression using
 `waddR` and `permApprox`
 ================
-Compiled at 2025-12-19 14:30:34 UTC
+Compiled at 2026-02-02 16:36:03 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "3f0a7f60-7a25-4421-89f9-e2d5fe4071a7")
+```
 
 ## Description
 
@@ -60,9 +64,9 @@ both data sets have the same number of cells.
 
     ## [1] 1000  569
 
-    ##             used   (Mb) gc trigger   (Mb)   max used   (Mb)
-    ## Ncells  12238890  653.7   20534180 1096.7   20534180 1096.7
-    ## Vcells 358452640 2734.8 1048999605 8003.3 1048990186 8003.2
+    ##            used  (Mb) gc trigger   (Mb)  max used   (Mb)
+    ## Ncells  9762725 521.4   19520765 1042.6  14223347  759.7
+    ## Vcells 22412066 171.0  121386292  926.2 131131436 1000.5
 
 ## Exploratory Analysis
 
@@ -82,6 +86,11 @@ distributions between conditions.
 ![](figures/01_sc_diff_distr/app_ddistr_sc_hist_top6-1.png)<!-- -->
 
 ### Quantile plot
+
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once every 8 hours.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was generated.
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_quantf_top6-1.png)<!-- -->
 
@@ -405,7 +414,15 @@ distributions of `waddR` test statistics.
 
 #### B = 1000
 
+    ## Warning: Duplicated `override.aes` is ignored.
+
+    ## Warning: Removed 21 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_wad_pau_pac_1k-1.png)<!-- -->
+
+    ## Warning: Duplicated `override.aes` is ignored.
+
+    ## Warning: Removed 21 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_wad_pau_pac_1k_ann-1.png)<!-- -->
 
@@ -564,6 +581,12 @@ waddR + permApprox(C) (B = 1k)
 
 #### B = 10000
 
+    ## Warning: Duplicated `override.aes` is ignored.
+
+    ## Warning: Removed 24 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 1 row containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_wad_pau_pac_10k-1.png)<!-- -->
 
 <table class="table" style="color: black; width: auto !important; ">
@@ -721,32 +744,71 @@ waddR + permApprox(C) (B = 10k)
 
 ### P-values with annotations
 
+    ## Warning: Removed 13 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 4 rows containing missing values or values outside the scale range (`geom_point()`).
+    ## Removed 4 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_dw2_ts_wad_pac_1k-1.png)<!-- -->
 
 ### P-values vs. ranked tests
 
 #### 1,000 vs. 10,000 permutations
 
+    ## Warning: Removed 84 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 57 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_wad1k_wad10k_all-1.png)<!-- -->
 
 Since the Empirical p-values with B = 100k are constant from approx
 index 130 on, we plot only up to this test in the following.
 
+    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_wad1k_wad10k-1.png)<!-- -->
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pau1k_pau10k_all-1.png)<!-- -->
 
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pau1k_pau10k-1.png)<!-- -->
 
+    ## Warning: Removed 14 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 20 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pac1k_pac10k_all-1.png)<!-- -->
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_emp_pac1k_pac10k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 1,000)
 
+    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+    ## Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_wad_pau_pac_1k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 10,000)
+
+    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+    ## Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_pvals_vs_idx_wad_pau_pac_10k-1.png)<!-- -->
 
@@ -754,17 +816,39 @@ index 130 on, we plot only up to this test in the following.
 
 #### 1,000 vs. 10,000 permutations
 
+    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_emp_wad1k_wad10k-1.png)<!-- -->
 
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_emp_pau1k_pau10k-1.png)<!-- -->
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_emp_pac1k_pac10k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 1,000)
 
+    ## Warning: Removed 48 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+    ## Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_wad_pau_pac_1k-1.png)<!-- -->
 
 #### waddR vs. permApprox (B = 10,000)
+
+    ## Warning: Removed 72 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+    ## Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_ratios_vs_idx_wad_pau_pac_10k-1.png)<!-- -->
 
@@ -797,6 +881,8 @@ index 130 on, we plot only up to this test in the following.
 
 #### Quantile plots
 
+    ## Warning in scale_y_log10(): log-10 transformation introduced infinite values.
+
 ![](figures/01_sc_diff_distr/app_ddistr_sc_zero_pvals_quant_ts-1.png)<!-- -->
 
 #### Permutation histograms (B = 1000)
@@ -817,6 +903,8 @@ p-values.
 ![](figures/01_sc_diff_distr/app_ddistr_sc_sig_pvals_hist_ts-1.png)<!-- -->
 
 #### Quantile plots
+
+    ## Warning in scale_y_log10(): log-10 transformation introduced infinite values.
 
 ![](figures/01_sc_diff_distr/app_ddistr_sc_sig_pvals_quant_ts-1.png)<!-- -->
 
@@ -864,8 +952,8 @@ These files have been written to the target directory,
     ##  6 permapprox_results_ts_emp_50k.rds               file        3.96K 2025-12-01 08:56:41
     ##  7 permapprox_results_ts_unconstr_10k.rds          file       17.72M 2025-12-19 13:16:44
     ##  8 permapprox_results_ts_unconstr_1k.rds           file        1.81M 2025-12-19 13:07:54
-    ##  9 permApprox_waddr_TS_top_effects_BH_sc_table.tex file        3.73K 2025-12-19 14:31:57
-    ## 10 permApprox_waddr_TS_top_effects_sc_table.tex    file        3.68K 2025-12-19 14:31:57
+    ##  9 permApprox_waddr_TS_top_effects_BH_sc_table.tex file        3.73K 2026-02-02 16:37:38
+    ## 10 permApprox_waddr_TS_top_effects_sc_table.tex    file        3.68K 2026-02-02 16:37:38
     ## 11 waddr_results_os.rds                            file        7.32M 2025-07-22 13:20:56
     ## 12 waddr_results_os_same_n.rds                     file        7.32M 2025-07-22 14:29:32
     ## 13 waddr_results_ts.rds                            file        7.32M 2025-07-22 10:12:12

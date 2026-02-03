@@ -19,14 +19,15 @@ We compare **unconstrained** vs. **constrained (SLLS rule)** GPD fits against th
 
 ```{r global-options, include=FALSE}
 knitr::opts_chunk$set(
-  fig.width = 10,
-  fig.height = 6,
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
   dpi = 200,
-  fig.path = paste0('figures/', params$name, "/expl_nexceed_"),
-  echo = FALSE,
-  message = FALSE,
-  warning = FALSE
-)
+  fig.path = paste0('figures/', params, "/expl_nexceed_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 ```{r packages, message=FALSE, warning=FALSE}
@@ -455,7 +456,7 @@ plot_pvals_three <- function(df, title = NULL, log_scale = TRUE,
     ggplot2::labs(
       title = title %||% "P-values vs. |t_obs|",
       x = bquote("|" * t[obs] * "|"),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     ggplot2::theme_minimal(base_size = 14) +
     ggplot2::theme(

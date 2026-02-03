@@ -1,7 +1,11 @@
 Simulation study: Robustness of GPD estimation under varying evaluation
 points
 ================
-Compiled at 2025-12-19 15:14:01 UTC
+Compiled at 2026-02-02 19:21:55 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "39c54387-5000-48bc-a7db-a7ed41e6e144")
+```
 
 This simulation study examines how GPD parameter estimation behaves
 under a boundary constraint that requires the estimated support to

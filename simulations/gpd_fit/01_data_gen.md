@@ -1,6 +1,10 @@
 Generate GPD data for simulation studies
 ================
-Compiled at 2025-12-19 15:04:13 UTC
+Compiled at 2026-02-02 19:14:59 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "bd977ab5-754a-40a8-a775-cdac50375411")
+```
 
 This script generates random samples from the Generalized Pareto
 Distribution (GPD).

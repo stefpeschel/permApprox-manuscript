@@ -16,12 +16,15 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "33fc44d3-dfcd-4437-8007-bd720e59
 
 ```{r global-options, include=FALSE}
 knitr::opts_chunk$set(
-  fig.width = 10,
-  fig.height = 6,
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 10, 
+  fig.height = 6, 
   dpi = 200,
-  fig.path = paste0('figures/', params$name, "/expl_eps_rule_"),
-  echo = FALSE
-)
+  fig.path = paste0('figures/', params, "/expl_eps_rule_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 In **permApprox**, permutation $p$-values are obtained by fitting a GPD to the tail of permutation test statistics. When the fitted shape is negative ($\hat\xi<0$), the GPD has a finite upper support. To **avoid zero or overly small $p$-values**, we impose the constraint that the **evaluation point** lies inside the support by requiring
@@ -333,7 +336,7 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE,
       title = ifelse(!is.null(title), title,
                      paste0("n = ", sampsize, "; epsilon rule: ", eps_rule)),
       x = expression(t[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -649,7 +652,7 @@ for (n_val in n_per_group_vec) {
     labs(
       title = paste0("Unconstrained permApprox vs. t-test (n = ", n_val, ")"),
       x = expression(t[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     theme_minimal() +
     theme(
@@ -1863,7 +1866,7 @@ plot_pvals_three <- function(df, sampsize, log_scale = TRUE) {
     ggplot2::labs(
       title = paste0("n = ", sampsize),
       x = expression(t[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     ggplot2::theme_minimal() +
     ggplot2::theme(

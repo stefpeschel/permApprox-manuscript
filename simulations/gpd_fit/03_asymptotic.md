@@ -1,7 +1,11 @@
 Simulation study: Asymptotic behavior of constrained GPD estimation
 under boundary misspecification
 ================
-Compiled at 2025-12-19 15:09:08 UTC
+Compiled at 2026-02-02 19:19:00 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "cce9dcb1-e519-4e92-89e6-f629fd4cb7bc")
+```
 
 This simulation study investigates the behavior of constrained GPD
 parameter estimation with a fixed shape parameter and a fixed support

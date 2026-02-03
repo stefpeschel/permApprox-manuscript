@@ -16,10 +16,15 @@ here::i_am(paste0(params$name, ".Rmd"), uuid = "8c251fa3-8abd-4ca9-bec7-dd848ebb
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE, message = FALSE, warning = FALSE,
-  fig.width = 11, fig.height = 6, dpi = 200,
-  fig.path = paste0('figures/', params$name, "/expl_wilcox_methods_")
-)
+  dev = c("png", "cairo_pdf"),
+  fig.ext = c("png", "pdf"),
+  fig.width = 11, 
+  fig.height = 6, 
+  dpi = 200,
+  fig.path = paste0('figures/', params, "/expl_wilcox_methods_"),
+  message = FALSE, 
+  warning = FALSE,
+  echo = FALSE)
 ```
 
 ## Packages & paths
@@ -415,7 +420,7 @@ plot_methods <- function(df, n,
       #                paste0("p-value approximations vs. Wilcoxon U (n = ", 
       #                       n, ", B = ", B, ")")),
       x = expression(U[obs]),
-      y = expression(hat(p))
+      y = expression(p)
     ) +
     guides(
       shape = guide_legend(order = 1),
