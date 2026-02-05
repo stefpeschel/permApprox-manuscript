@@ -1191,7 +1191,7 @@ col_palette <- c(black       = "black",
 theme_params <- list(
   axis.text       = element_text(size = 16),
   axis.text.x     = element_text(angle = 0, hjust = 0.5),
-  axis.title      = element_text(size = 18),
+  axis.title      = element_text(size = 20),
   legend.text     = element_text(size = 17),
   legend.title    = element_text(size = 16, face = "bold"),
   plot.title      = element_text(size = 1)

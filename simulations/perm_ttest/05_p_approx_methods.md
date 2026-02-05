@@ -1,6 +1,6 @@
 Accuracy and error-rate study - Compare p-value approximation methods
 ================
-Compiled at 2026-02-04 18:11:26 UTC
+Compiled at 2026-02-05 14:33:31 UTC
 
 ## Load permApprox functions
 
