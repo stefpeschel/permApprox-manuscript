@@ -500,7 +500,7 @@ p_alpha_gini
 
 #### Alpha diversity combined
 
-```{r expl_alpha_diversity, fig.width=11, fig.height=6, dpi=200}
+```{r expl_alpha_diversity, fig.width=10, fig.height=4, dpi=200}
 p_alpha_richness + p_alpha_shannon + p_alpha_gini +
   plot_layout(guides = 'collect')
 ```

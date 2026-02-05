@@ -1,10 +1,6 @@
 Differential abundance analysis with `dacomp` - EBF vs non-EBF
 ================
-Compiled at 2026-02-03 08:38:06 UTC
-
-``` r
-here::i_am(paste0(params$name, ".Rmd"), uuid = "bb9f8d89-5eb6-408d-acfc-729e640abec2")
-```
+Compiled at 2026-02-04 15:31:33 UTC
 
 This notebook demonstrates how to perform **differential abundance
 analysis** of microbiome count data using the **`dacomp`** package.
@@ -28,8 +24,6 @@ breast feeding until age 2 months) vs. ‘non-EBF’.
 ## Global options and packages
 
 ## Load data & set parameters
-
-    ## Warning in path_source("PASTURE_data", paste0("bact_2m_genus.rds")): PASTURE_data is not previous to 02_micro_diff_abund
 
     ## phyloseq-class experiment-level object
     ## otu_table()   OTU Table:         [ 367 taxa and 740 samples ]
@@ -90,13 +84,6 @@ We keep only taxa with a non-zero count in at least 1% of the samples.
 
 ### Alpha diversity
 
-    ## Warning in estimate_richness(bact_alpha, measures = c("Observed", "Shannon", : The data you have provided does not have
-    ## any singletons. This is highly suspicious. Results of richness
-    ## estimates (for example) are probably unreliable, or wrong, if you have already
-    ## trimmed low-abundance taxa from the data.
-    ## 
-    ## We recommended that you find the un-trimmed data and retry.
-
     ##    sample Observed   Shannon InvSimpson GiniSimpson   group
     ## 1 s025647       38 1.7827696   4.011017   0.7506867 non-EBF
     ## 2 s023779       28 0.6113565   1.274869   0.2156056 non-EBF
@@ -107,33 +94,17 @@ We keep only taxa with a non-zero count in at least 1% of the samples.
 
 #### Richness (Observed genera)
 
-    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
-    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
-
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_richness-1.png)<!-- -->
 
 #### Shannon diversity
-
-    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
-    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
 
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_shannon-1.png)<!-- -->
 
 #### Gini–Simpson index
 
-    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
-    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
-
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_gini_simpson-1.png)<!-- -->
 
 #### Alpha diversity combined
-
-    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
-    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
-    ## All aesthetics have length 1, but the data has 697 rows.
-    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
-    ## All aesthetics have length 1, but the data has 697 rows.
-    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
 
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_diversity-1.png)<!-- -->
 
@@ -19195,41 +19166,25 @@ Lactococcus
 
 ##### permApprox unconstrained
 
-    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e3_unconstr-1.png)<!-- -->
-
-    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e3_unconstr-1.png)<!-- -->
 
 ##### permApprox with 1000 permutations
 
-    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e3-1.png)<!-- -->
-
-    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e3-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=250
 
-    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e4_250-1.png)<!-- -->
-
-    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e4_250-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=0.25B
 
-    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e4_0.25-1.png)<!-- -->
-
-    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e4_0.25-1.png)<!-- -->
 
@@ -19237,41 +19192,25 @@ Lactococcus
 
 ##### permApprox unconstrained
 
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e3_unconstr-1.png)<!-- -->
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e3_unconstr-1.png)<!-- -->
 
 ##### permApprox with 1000 permutations
 
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e3-1.png)<!-- -->
-
-    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e3-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=250
 
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e4_250-1.png)<!-- -->
-
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e4_250-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=0.25B
 
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e4_0.25-1.png)<!-- -->
-
-    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e4_0.25-1.png)<!-- -->
 
@@ -19279,21 +19218,13 @@ Lactococcus
 
 ##### permApprox with 1000 permutations
 
-    ## Warning: Removed 38 rows containing missing values or values outside the scale range (`geom_point()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_four_panel_1e3-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=250
 
-    ## Warning: Removed 37 rows containing missing values or values outside the scale range (`geom_point()`).
-
-    ## Warning: Removed 1 row containing missing values or values outside the scale range (`geom_text_repel()`).
-
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_four_panel_1e4_250-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=0.25B
-
-    ## Warning: Removed 36 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_four_panel_1e4_025B-1.png)<!-- -->
 
@@ -19305,11 +19236,6 @@ permutation distributions.
 #### 1000 permApprox permutations
 
 ##### Significant in ALL settings
-
-    ## Warning: Use of .data in tidyselect expressions was deprecated in tidyselect 1.2.0.
-    ## ℹ Please use `all_of(var)` (or `any_of(var)`) instead of `.data[[var]]`
-    ## This warning is displayed once every 8 hours.
-    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was generated.
 
 ![](figures/02_micro_diff_abund/app_dacomp_boxplots_1e3_sig_all-1.png)<!-- -->
 
