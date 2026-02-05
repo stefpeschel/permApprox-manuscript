@@ -1368,7 +1368,7 @@ acc_filt %>%
                   fixed = list(d = 1, B = 1000),
                   my_cols = my_cols, theme_params = theme_params,
                   y_min = 1e-135, y_max = 1e-1, y_step_size = 20, 
-                  breaks_incl = 1e-3,
+                  breaks_incl = 1e-3, point_size = 1.5,
                   zero_vshift_decades = 5, zero_gap_decades = 7,
                   legend_position = c(0.38, 0.35))
 ```
@@ -1380,7 +1380,7 @@ Ratios ($p_{method}$ / $p_{ttest}$) for non-zero p-values, with sample size on t
 ```{r ratios_by_n, fig.width = 14, fig.height = 6, dpi = 200, warning=FALSE}
 acc_filt %>%
   plot_permapprox(type = "ratio", x = "n",
-                  fixed = list(d = 1, B = 1000),
+                  fixed = list(d = 1, B = 1000), point_size = 1.5,
                   my_cols = my_cols, theme_params = theme_params,
                   y_min = 1e-138, y_max = 1e120, legend_rows = 5,
                   zero_vshift_decades = 10, zero_gap_decades = 14,
@@ -1513,7 +1513,7 @@ pvals_by_d <- acc_filt %>%
                   fixed = list(n = 100, B = 1000),
                   my_cols = my_cols, theme_params = theme_params,
                   y_min = 1e-60, y_max = 1e-1, y_step_size = 10,
-                  breaks_incl = 1e-3,
+                  breaks_incl = 1e-3, point_size = 1.5,
                   zero_vshift_decades = 3, zero_gap_decades = 4,
                   legend_rows = 2, legend_box = FALSE)
 
@@ -1522,7 +1522,7 @@ pvals_by_B <- acc_filt %>%
                   fixed = list(n = 100, d = 1),
                   my_cols = my_cols, theme_params = theme_params,
                   y_min = 1e-100, y_max = 1e-1, y_step_size = 10,
-                  breaks_incl = 1e-3,
+                  breaks_incl = 1e-3, point_size = 1.5,
                   zero_vshift_decades = 5, zero_gap_decades = 6,
                   legend_rows = 2, legend_box = FALSE)
 
@@ -1536,7 +1536,7 @@ pvals_by_d + pvals_by_B +
 ```{r ratios_by_d_and_B, fig.width = 14, fig.height = 6, dpi = 200}
 ratios_by_d <- acc_filt %>%
   plot_permapprox(type = "ratio", x = "d",
-                  fixed = list(n = 100, B = 1000),
+                  fixed = list(n = 100, B = 1000), point_size = 1.5,
                   my_cols = my_cols, theme_params = theme_params,
                   y_min = 1e-60, y_max = 1e40, y_step_size = 10, 
                   zero_vshift_decades = 4.5, zero_gap_decades = 6,
@@ -1544,7 +1544,7 @@ ratios_by_d <- acc_filt %>%
 
 ratios_by_B <- acc_filt %>%
   plot_permapprox(type = "ratio", x = "B",
-                  fixed = list(n = 100, d = 1),
+                  fixed = list(n = 100, d = 1), point_size = 1.5,
                   my_cols = my_cols, theme_params = theme_params,
                   y_min = 1e-100, y_max = 1e20, y_step_size = 10,
                   zero_vshift_decades = 5, zero_gap_decades = 7,

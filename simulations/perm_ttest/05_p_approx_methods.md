@@ -1,21 +1,6 @@
 Accuracy and error-rate study - Compare p-value approximation methods
 ================
-Compiled at 2026-02-02 19:33:35 UTC
-
-``` r
-here::i_am(paste0(params$name, ".Rmd"), uuid = "6da1c8ca-2c58-4e8e-a076-fdbdcd7f85ec")
-```
-
-``` r
-# create or *empty* the target directory, used to write this file's data: 
-#projthis::proj_create_dir_target(params$name, clean = TRUE)
-
-# function to get path to target directory: path_target("sample.csv")
-path_target <- projthis::proj_path_target(params$name)
-
-# function to get path to previous data: path_source("00-import", "sample.csv")
-path_source <- projthis::proj_path_source(params$name)
-```
+Compiled at 2026-02-04 18:11:26 UTC
 
 ## Load permApprox functions
 
