@@ -1,7 +1,7 @@
 Accuracy study (Exponential data, Mann-Whitney U) - Compare p-value
 approximation methods
 ================
-Compiled at 2026-02-04 18:27:38 UTC
+Compiled at 2026-02-05 14:31:36 UTC
 
 ## Load permApprox functions
 
@@ -316,8 +316,8 @@ method_labels <- c(method_labels[-i_wilcox], method_labels[i_wilcox])
     tobs_vec <- as.numeric(panel[, "uobs"])
     
     fit <- compute_p_values(
-      obs_stats     = tobs_vec,
-      perm_stats    = perm_mat,
+      obs_stats     = (tobs_vec/100),
+      perm_stats    = (perm_mat/100),# Gamma fit fails if test statistics are too large
       alternative   = "two_sided",
       null_center   = "mean", 
       method        = "gamma",
@@ -1407,22 +1407,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+1.38e-04
 </td>
 
 <td style="text-align:left;">
 
-3.16e-05
+2.92e-04
 </td>
 
 <td style="text-align:left;">
 
-1.00e-03
+3.23e-04
 </td>
 
 <td style="text-align:left;">
 
-0.053
+0.967
 </td>
 
 <td style="text-align:right;">
@@ -1627,22 +1627,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+1.68e-06
 </td>
 
 <td style="text-align:left;">
 
-5.92e-12
+3.42e-06
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+3.81e-06
 </td>
 
 <td style="text-align:left;">
 
-NA
+0.935
 </td>
 
 <td style="text-align:right;">
@@ -1847,22 +1847,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+6.75e-08
 </td>
 
 <td style="text-align:left;">
 
-9.92e-17
+3.11e-07
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+3.18e-07
 </td>
 
 <td style="text-align:left;">
 
-NA
+0.893
 </td>
 
 <td style="text-align:right;">
@@ -2067,22 +2067,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+3.68e-09
 </td>
 
 <td style="text-align:left;">
 
-0.00e+00
+9.42e-09
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+1.01e-08
 </td>
 
 <td style="text-align:left;">
 
-NA
+0.865
 </td>
 
 <td style="text-align:right;">
@@ -3998,7 +3998,7 @@ Gamma
 
 <td style="text-align:left;">
 
-6.59e-03
+6.58e-03
 </td>
 
 <td style="text-align:left;">
@@ -4808,7 +4808,7 @@ Gamma
 
 <td style="text-align:left;">
 
-5.82e-04
+5.81e-04
 </td>
 
 <td style="text-align:left;">
@@ -5068,22 +5068,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+1.38e-04
 </td>
 
 <td style="text-align:left;">
 
-3.16e-05
+2.92e-04
 </td>
 
 <td style="text-align:left;">
 
-1.00e-03
+3.23e-04
 </td>
 
 <td style="text-align:left;">
 
-0.053
+0.967
 </td>
 
 <td style="text-align:right;">
@@ -5338,22 +5338,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+1.68e-06
 </td>
 
 <td style="text-align:left;">
 
-5.92e-12
+3.42e-06
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+3.81e-06
 </td>
 
 <td style="text-align:left;">
 
-NA
+0.935
 </td>
 
 <td style="text-align:right;">
@@ -5608,22 +5608,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+6.75e-08
 </td>
 
 <td style="text-align:left;">
 
-9.92e-17
+3.11e-07
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+3.18e-07
 </td>
 
 <td style="text-align:left;">
 
-NA
+0.893
 </td>
 
 <td style="text-align:right;">
@@ -5878,22 +5878,22 @@ Gamma
 
 <td style="text-align:left;">
 
-9.99e-04
+3.68e-09
 </td>
 
 <td style="text-align:left;">
 
-0.00e+00
+9.42e-09
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+1.01e-08
 </td>
 
 <td style="text-align:left;">
 
-NA
+0.865
 </td>
 
 <td style="text-align:right;">
@@ -6128,7 +6128,8 @@ GPD (permApprox)
 These files have been written to the target directory,
 `data/02_p_approx_methods`:
 
-    ## # A tibble: 1 × 4
+    ## # A tibble: 2 × 4
     ##   path       type             size modification_time  
     ##   <fs::path> <fct>     <fs::bytes> <dttm>             
-    ## 1 accuracy   directory           0 2025-12-18 14:08:42
+    ## 1 accuracy   directory           0 2026-02-05 13:56:22
+    ## 2 gamma_old  directory           0 2026-02-05 12:41:04

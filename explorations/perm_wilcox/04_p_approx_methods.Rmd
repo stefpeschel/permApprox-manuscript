@@ -218,8 +218,8 @@ path_data <- path_source("01_test_eps_rule")
 
 .engine_gamma <- function(obs, perm, n, def) {
   compute_p_values(
-    obs_stats     = obs,
-    perm_stats    = perm,
+    obs_stats     = (obs/10), 
+    perm_stats    = (perm/10),# Gamma fit fails if test statistics are too large
     alternative   = "two_sided",
     null_center   = "mean",
     method        = "gamma",
@@ -311,18 +311,18 @@ df_n <- results_all %>%
   mutate(method = dplyr::recode(
     method,
     "Gamma"                = "Gamma",
-    "GPD (Knijnen)"        = "Knijnenburg",
-    "GPD (Knijnen, pow3)"  = "Knijnenburg (pow3)",
-    "GPD (Winkler, +obs)"  = "Winkler (+obs)",
-    "GPD (pApprox, s>obs)" = "permApprox"
+    "GPD (Knijnen)"        = "GPD (Knijnenburg)",
+    "GPD (Knijnen, pow3)"  = "GPD (Knijnenburg,pow3)",
+    "GPD (Winkler, +obs)"  = "GPD (Winkler,+obs)",
+    "GPD (pApprox, s>obs)" = "GPD (permApprox)"
   ))
 
 method_order <- c(
   "Gamma",
-  "Knijnenburg",
-  "Knijnenburg (pow3)",
-  "Winkler (+obs)",
-  "permApprox"
+  "GPD (Knijnenburg)",
+  "GPD (Knijnenburg,pow3)",
+  "GPD (Winkler,+obs)",
+  "GPD (permApprox)"
 )
 
 df_n <- df_n %>%
@@ -431,7 +431,7 @@ plot_methods <- function(df, n,
       axis.text  = element_text(size = 14),
       axis.title = element_text(size = 16),
       plot.title = element_text(size = 16),
-      strip.text = element_text(size = 16, face = "bold"),
+      strip.text = element_text(size = 14, face = "bold"),
       legend.title = element_text(size = 16, face = "bold"),
       legend.text  = element_text(size = 16),
       legend.position = legend_position
@@ -441,55 +441,67 @@ plot_methods <- function(df, n,
     fill = guide_legend(override.aes = list(size = 3)),
     shape = guide_legend(override.aes = list(size = 3)))
 }
-
-
 ```
 
 ## Plots
 
-```{r pvals_all_methods, fig.width = 12, fig.height = 5, dpi = 200}
-for (n_val in n_per_group_vec) {
-  p <- df_n %>% 
-    filter(n_per_group == n_val) %>%
-    plot_methods(n = n_val, legend_position = "bottom")
-  print(p)
-}
+### n = 50
+
+```{r pvals_n50, fig.width = 13, fig.height = 4.5, dpi = 200}
+n_val <- 50
+p <- df_n %>% 
+  filter(n_per_group == n_val) %>%
+  filter(method %in% c("Gamma", "GPD (Knijnenburg)", "GPD (Knijnenburg,pow3)", 
+                       "GPD (permApprox)", "GPD (Winkler,+obs)")) %>%
+  plot_methods(n = n_val, title = "", nrow = 1, legend_position = "bottom")
+print(p)
+```
+
+
+### n = 100
+
+```{r pvals_n100, fig.width = 13, fig.height = 4.5, dpi = 200}
+n_val <- 100
+p <- df_n %>% 
+  filter(n_per_group == n_val) %>%
+  filter(method %in% c("Gamma", "GPD (Knijnenburg)", "GPD (Knijnenburg,pow3)", 
+                       "GPD (permApprox)", "GPD (Winkler,+obs)")) %>%
+  plot_methods(n = n_val, title = "", nrow = 1, legend_position = "bottom")
+print(p)
 ```
 
 ### n = 250
 
-```{r pvals_n250, fig.width = 10, fig.height = 5, dpi = 200}
+```{r pvals_n250, fig.width = 13, fig.height = 4.5, dpi = 200}
 n_val <- 250
 p <- df_n %>% 
   filter(n_per_group == n_val) %>%
-  filter(method != "Gamma") %>%
-  plot_methods(n = n_val, title = "")
-print(p)
-```
-
-
-### n = 250, three methods
-
-```{r pvals_n250_three_methods, fig.width = 14, fig.height = 5, dpi = 200}
-n_val <- 250
-p <- df_n %>% 
-  filter(n_per_group == n_val) %>%
-  filter(method %in% c("Knijnenburg", "Knijnenburg (pow3)", "permApprox")) %>%
+  filter(method %in% c("Gamma", "GPD (Knijnenburg)", "GPD (Knijnenburg,pow3)", 
+                       "GPD (permApprox)", "GPD (Winkler,+obs)")) %>%
   plot_methods(n = n_val, title = "", nrow = 1, legend_position = "bottom")
 print(p)
 ```
 
+### n = 500
 
-### n = 250, four methods
-
-```{r pvals_n250_four_methods, fig.width = 14, fig.height = 5, dpi = 200}
-n_val <- 250
+```{r pvals_n500, fig.width = 13, fig.height = 4.5, dpi = 200}
+n_val <- 500
 p <- df_n %>% 
   filter(n_per_group == n_val) %>%
-  filter(method %in% c("Knijnenburg", "Knijnenburg (pow3)", "permApprox", 
-                       "Winkler (+obs)")) %>%
+  filter(method %in% c("Gamma", "GPD (Knijnenburg)", "GPD (Knijnenburg,pow3)", 
+                       "GPD (permApprox)", "GPD (Winkler,+obs)")) %>%
   plot_methods(n = n_val, title = "", nrow = 1, legend_position = "bottom")
 print(p)
 ```
 
+### n = 1000
 
+```{r pvals_n1000, fig.width = 13, fig.height = 4.5, dpi = 200}
+n_val <- 1000
+p <- df_n %>% 
+  filter(n_per_group == n_val) %>%
+  filter(method %in% c("Gamma", "GPD (Knijnenburg)", "GPD (Knijnenburg,pow3)", 
+                       "GPD (permApprox)", "GPD (Winkler,+obs)")) %>%
+  plot_methods(n = n_val, title = "", nrow = 1, legend_position = "bottom")
+print(p)
+```

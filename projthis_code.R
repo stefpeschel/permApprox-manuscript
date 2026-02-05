@@ -1,3 +1,4 @@
+library(projthis)
 
 # -------------------------------------------------------------------------
 # Helper for rendering Rmd files
@@ -42,6 +43,7 @@ render_file("explorations", "perm_ttest", "02_eps_trials")
 render_file("explorations", "perm_ttest", "03_find_eps_rule")
 render_file("explorations", "perm_ttest", "04_single_tests")
 render_file("explorations", "perm_ttest", "05_exceedances")
+render_file("explorations", "perm_ttest", "06_p_approx_methods")
 
 ## Wilcoxon / Mann–Whitney U test
 render_file("explorations", "perm_wilcox", "01_test_eps_rule")

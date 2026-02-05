@@ -484,8 +484,8 @@ method_labels <- c(method_labels[-i_wilcox], method_labels[i_wilcox])
     tobs_vec <- as.numeric(panel[, "uobs"])
     
     fit <- compute_p_values(
-      obs_stats     = tobs_vec,
-      perm_stats    = perm_mat,
+      obs_stats     = (tobs_vec/100),
+      perm_stats    = (perm_mat/100),# Gamma fit fails if test statistics are too large
       alternative   = "two_sided",
       null_center   = "mean", 
       method        = "gamma",
@@ -940,14 +940,14 @@ plot_permapprox <- function(acc_df,
     
     return(p)
   }
-
+  
   # ============================================================
   # RATIO PLOT (method / Wilcoxon), with constant zero marker
   # ============================================================
   df_base <- df %>%
-    dplyr::select(.data$n, .data$d, .data$B,
-                  !!rlang::sym(x), .data$rep, .data$test_idx,
-                  .data$method, .data$pval)
+    dplyr::select(n, d, B,
+                  !!rlang::sym(x), rep, test_idx,
+                  method, pval)
   
   zero_counts_r_orig <- .zero_counts(df_base, x, method_levels = method_levels, 
                                      baseline = "Ground truth (Wilcoxon)")
@@ -958,11 +958,11 @@ plot_permapprox <- function(acc_df,
   
   ratio_zero_value <- p_floor_all
   
-  df_wide_p <- tidyr::pivot_wider(df_base, names_from = .data$method, values_from = .data$pval)
+  df_wide_p <- tidyr::pivot_wider(df_base, names_from = method, values_from = pval)
   df_wide_z <- tidyr::pivot_wider(
     df_base,
-    names_from = .data$method,
-    values_from = .data$pval,
+    names_from = method,
+    values_from = pval,
     values_fn = list(pval = function(v) any(v == 0)),
     values_fill = FALSE
   )
@@ -1072,7 +1072,7 @@ plot_permapprox <- function(acc_df,
     scale_y_log10(breaks = brks_r, labels = lab_plain, limits = c(y_min, y_max)) +
     labs(title = "",
          x = ifelse(is.null(xlab), x, xlab),
-         y = expression(p[Method] / p[Wilcoxon])) +
+         y = expression(p[method] / p[Wilcoxon])) +
     theme_minimal(base_size = 13) +
     do.call(theme, c(theme_params, list(
       legend.position = legend_position,
@@ -1158,7 +1158,7 @@ col_palette <- c(black       = "black",
 theme_params <- list(
   axis.text       = element_text(size = 16),
   axis.text.x     = element_text(angle = 0, hjust = 0.5),
-  axis.title      = element_text(size = 18),
+  axis.title      = element_text(size = 20),
   legend.text     = element_text(size = 17),
   legend.title    = element_text(size = 16, face = "bold"),
   plot.title      = element_text(size = 1)
@@ -1220,7 +1220,6 @@ pvals_by_d + pvals_by_B +
 ```
 
 ### Ratios by d and B
-
 
 ```{r ratios_by_d_and_B, fig.width = 14, fig.height = 6, dpi = 200}
 ratios_by_d <- acc_filt %>%
