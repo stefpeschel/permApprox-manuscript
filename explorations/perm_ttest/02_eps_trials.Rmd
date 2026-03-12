@@ -336,7 +336,7 @@ p <- ggplot(df_plot, aes(x = obs_stats)) +
   ) +
   labs(
     title = "Unconstrained permApprox vs. t-test",
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(p)
   ) +
   theme_minimal() +
@@ -485,7 +485,7 @@ p <- ggplot(df_eps, aes(x = obs_stats)) +
       "t-test vs. permApprox constrained (",
       plot_constraint, " test, eps = 0)"
     ),
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(p)
   ) +
   theme_minimal() +
@@ -542,7 +542,7 @@ for (eps in eps_values[-1]) {
         "t-test vs. permApprox constrained (",
         plot_constraint, " test, eps_fact = ", eps, ")"
       ),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(p)
     ) +
     theme_minimal() +
@@ -690,7 +690,7 @@ for (eps in eps_values) {
         "t-test vs. permApprox constrained (",
         plot_constraint, " test, eps_fact = ", eps, ")"
       ),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(p)
     ) +
     theme_minimal() +
@@ -770,7 +770,7 @@ p <- ggplot(df_plot, aes(x = obs_stats)) +
       "permApprox unconstrained vs. constrained (",
       plot_constraint, " tests, eps = ", eps, ")"
     ),
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(p)
   ) +
   theme_minimal() +
@@ -827,7 +827,7 @@ p <- ggplot(df_eps, aes(x = obs_stats)) +
       "permApprox unconstrained (non-zero only) vs. constrained (",
       plot_constraint, " tests, eps = ", eps, ")"
     ),
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(p)
   ) +
   theme_minimal() +
@@ -916,7 +916,7 @@ p <- ggplot(df_plot, aes(x = obs_stats)) +
       "permApprox unconstrained vs. constrained (",
       plot_constraint, ", eps = ", eps, ")"
     ),
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(p)
   ) +
   theme_minimal() +
