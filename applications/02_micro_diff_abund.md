@@ -1,6 +1,10 @@
 Differential abundance analysis with `dacomp` - EBF vs non-EBF
 ================
-Compiled at 2026-02-04 15:31:33 UTC
+Compiled at 2026-02-06 18:00:05 UTC
+
+``` r
+here::i_am(paste0(params$name, ".Rmd"), uuid = "bb9f8d89-5eb6-408d-acfc-729e640abec2")
+```
 
 This notebook demonstrates how to perform **differential abundance
 analysis** of microbiome count data using the **`dacomp`** package.
@@ -24,6 +28,8 @@ breast feeding until age 2 months) vs. ‘non-EBF’.
 ## Global options and packages
 
 ## Load data & set parameters
+
+    ## Warning in path_source("PASTURE_data", paste0("bact_2m_genus.rds")): PASTURE_data is not previous to 02_micro_diff_abund
 
     ## phyloseq-class experiment-level object
     ## otu_table()   OTU Table:         [ 367 taxa and 740 samples ]
@@ -84,6 +90,13 @@ We keep only taxa with a non-zero count in at least 1% of the samples.
 
 ### Alpha diversity
 
+    ## Warning in estimate_richness(bact_alpha, measures = c("Observed", "Shannon", : The data you have provided does not have
+    ## any singletons. This is highly suspicious. Results of richness
+    ## estimates (for example) are probably unreliable, or wrong, if you have already
+    ## trimmed low-abundance taxa from the data.
+    ## 
+    ## We recommended that you find the un-trimmed data and retry.
+
     ##    sample Observed   Shannon InvSimpson GiniSimpson   group
     ## 1 s025647       38 1.7827696   4.011017   0.7506867 non-EBF
     ## 2 s023779       28 0.6113565   1.274869   0.2156056 non-EBF
@@ -94,17 +107,33 @@ We keep only taxa with a non-zero count in at least 1% of the samples.
 
 #### Richness (Observed genera)
 
+    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
+    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
+
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_richness-1.png)<!-- -->
 
 #### Shannon diversity
+
+    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
+    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
 
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_shannon-1.png)<!-- -->
 
 #### Gini–Simpson index
 
+    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
+    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
+
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_gini_simpson-1.png)<!-- -->
 
 #### Alpha diversity combined
+
+    ## Warning in geom_segment(aes(x = 1, xend = 2, y = y_line, yend = y_line), : All aesthetics have length 1, but the data has 697 rows.
+    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
+    ## All aesthetics have length 1, but the data has 697 rows.
+    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
+    ## All aesthetics have length 1, but the data has 697 rows.
+    ## ℹ Please consider using `annotate()` or provide this layer with data containing a single row.
 
 ![](figures/02_micro_diff_abund/app_dacomp_expl_alpha_diversity-1.png)<!-- -->
 
@@ -273,13 +302,17 @@ exceed0 = 0.25.
 
 ## Significant taxa
 
+Below we take a look at the p-values of genera that are significant in
+at least any of the methods considered.
+
 ### Adjusted
 
 <table class="table table-striped table-hover" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
 
 <caption>
 
-Adjusted p-values across methods and permutation settings
+Unadjusted p-values (only selected methods; rows kept if any p \< 0.01;
+\* indicates p \< 0.01)
 </caption>
 
 <thead>
@@ -293,17 +326,12 @@ taxon
 
 <th style="text-align:left;">
 
+stat
+</th>
+
+<th style="text-align:left;">
+
 dacomp (1e+03)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+04)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+05)
 </th>
 
 <th style="text-align:left;">
@@ -326,21 +354,6 @@ permApprox (1e+03, unconstrained, exceed0=250)
 permApprox (1e+03, SLLS, exceed0=250)
 </th>
 
-<th style="text-align:left;">
-
-permApprox (1e+04, unconstrained, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=0.25)
-</th>
-
 </tr>
 
 </thead>
@@ -351,57 +364,37 @@ permApprox (1e+04, SLLS, exceed0=0.25)
 
 <td style="text-align:left;">
 
-Intestinibacter
+Enterococcus
 </td>
 
 <td style="text-align:left;">
 
-5.30e-03
+67.42
 </td>
 
 <td style="text-align:left;">
 
-8.43e-04
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-8.50e-05
+9.60e-06\*
 </td>
 
 <td style="text-align:left;">
 
-9.60e-06
+1.47e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.47e-06
+1.51e-11\*
 </td>
 
 <td style="text-align:left;">
 
-1.05e-16
-</td>
-
-<td style="text-align:left;">
-
-2.10e-16
-</td>
-
-<td style="text-align:left;">
-
-2.28e-06
-</td>
-
-<td style="text-align:left;">
-
-2.28e-06
-</td>
-
-<td style="text-align:left;">
-
-5.25e-07
+2.27e-11\*
 </td>
 
 </tr>
@@ -410,57 +403,37 @@ Intestinibacter
 
 <td style="text-align:left;">
 
-Enterococcus
+Intestinibacter
 </td>
 
 <td style="text-align:left;">
 
-5.30e-03
+45.20
 </td>
 
 <td style="text-align:left;">
 
-8.43e-04
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-8.50e-05
+9.60e-06\*
 </td>
 
 <td style="text-align:left;">
 
-9.60e-06
+1.47e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.47e-06
+1.05e-16\*
 </td>
 
 <td style="text-align:left;">
 
-1.51e-11
-</td>
-
-<td style="text-align:left;">
-
-2.27e-11
-</td>
-
-<td style="text-align:left;">
-
-5.14e-16
-</td>
-
-<td style="text-align:left;">
-
-5.14e-16
-</td>
-
-<td style="text-align:left;">
-
-2.53e-07
+2.10e-16\*
 </td>
 
 </tr>
@@ -474,111 +447,32 @@ Bifidobacterium
 
 <td style="text-align:left;">
 
-5.30e-03
+45.12
 </td>
 
 <td style="text-align:left;">
 
-8.43e-04
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-8.50e-05
+9.60e-06\*
 </td>
 
 <td style="text-align:left;">
 
-9.60e-06
+1.47e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.47e-06
+5.83e-10\*
 </td>
 
 <td style="text-align:left;">
 
-5.83e-10
-</td>
-
-<td style="text-align:left;">
-
-7.77e-10
-</td>
-
-<td style="text-align:left;">
-
-9.03e-10
-</td>
-
-<td style="text-align:left;">
-
-9.03e-10
-</td>
-
-<td style="text-align:left;">
-
-1.49e-06
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Terrisporobacter
-</td>
-
-<td style="text-align:left;">
-
-5.30e-03
-</td>
-
-<td style="text-align:left;">
-
-8.43e-04
-</td>
-
-<td style="text-align:left;">
-
-8.50e-05
-</td>
-
-<td style="text-align:left;">
-
-7.26e-04
-</td>
-
-<td style="text-align:left;">
-
-7.32e-05
-</td>
-
-<td style="text-align:left;">
-
-0.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.74e-08
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
+7.77e-10\*
 </td>
 
 </tr>
@@ -592,52 +486,32 @@ Terrisporobacter
 
 <td style="text-align:left;">
 
-5.30e-03
+24.16
 </td>
 
 <td style="text-align:left;">
 
-8.43e-04
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-8.50e-05
+9.60e-06\*
 </td>
 
 <td style="text-align:left;">
 
-9.60e-06
+4.62e-06\*
 </td>
 
 <td style="text-align:left;">
 
-4.62e-06
+2.27e-06\*
 </td>
 
 <td style="text-align:left;">
 
-2.27e-06
-</td>
-
-<td style="text-align:left;">
-
-2.27e-06
-</td>
-
-<td style="text-align:left;">
-
-4.74e-05
-</td>
-
-<td style="text-align:left;">
-
-4.74e-05
-</td>
-
-<td style="text-align:left;">
-
-6.77e-05
+2.27e-06\*
 </td>
 
 </tr>
@@ -646,57 +520,37 @@ Terrisporobacter
 
 <td style="text-align:left;">
 
-\[Ruminococcus\]\_torquegroup
+\[Clostridium\]\_innocuum_group
 </td>
 
 <td style="text-align:left;">
 
-5.30e-03
+26.41
 </td>
 
 <td style="text-align:left;">
 
-1.43e-01
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-1.99e-02
+9.60e-06\*
 </td>
 
 <td style="text-align:left;">
 
-2.64e-02
+7.56e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.36e-03
+8.77e-03\*
 </td>
 
 <td style="text-align:left;">
 
-5.97e-05
-</td>
-
-<td style="text-align:left;">
-
-5.97e-05
-</td>
-
-<td style="text-align:left;">
-
-1.95e-01
-</td>
-
-<td style="text-align:left;">
-
-1.95e-01
-</td>
-
-<td style="text-align:left;">
-
-1.89e-01
+8.77e-03\*
 </td>
 
 </tr>
@@ -710,52 +564,71 @@ Bacteroides
 
 <td style="text-align:left;">
 
-5.30e-03
+20.71
 </td>
 
 <td style="text-align:left;">
 
-1.31e-03
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-4.93e-03
+8.44e-04\*
 </td>
 
 <td style="text-align:left;">
 
-8.44e-04
+3.69e-05\*
 </td>
 
 <td style="text-align:left;">
 
-3.69e-05
+4.48e-04\*
 </td>
 
 <td style="text-align:left;">
 
-4.48e-04
+4.48e-04\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Terrisporobacter
 </td>
 
 <td style="text-align:left;">
 
-4.48e-04
+22.09
 </td>
 
 <td style="text-align:left;">
 
-1.67e-03
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-1.67e-03
+7.26e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.35e-03
+7.32e-05\*
+</td>
+
+<td style="text-align:left;">
+
+0.00e+00\*
+</td>
+
+<td style="text-align:left;">
+
+6.74e-08\*
 </td>
 
 </tr>
@@ -769,52 +642,149 @@ Lactococcus
 
 <td style="text-align:left;">
 
-5.30e-03
+17.77
 </td>
 
 <td style="text-align:left;">
 
-8.43e-04
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-2.37e-04
+3.32e-05\*
 </td>
 
 <td style="text-align:left;">
 
-3.32e-05
+9.58e-05\*
 </td>
 
 <td style="text-align:left;">
 
-9.58e-05
+5.46e-04\*
 </td>
 
 <td style="text-align:left;">
 
-5.46e-04
+5.46e-04\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Streptococcus
 </td>
 
 <td style="text-align:left;">
 
-5.46e-04
+13.75
 </td>
 
 <td style="text-align:left;">
 
-0.00e+00
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-5.26e-19
+1.93e-03\*
 </td>
 
 <td style="text-align:left;">
 
-1.35e-03
+1.23e-03\*
+</td>
+
+<td style="text-align:left;">
+
+2.01e-03\*
+</td>
+
+<td style="text-align:left;">
+
+2.01e-03\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+\[Ruminococcus\]\_torquegroup
+</td>
+
+<td style="text-align:left;">
+
+13.39
+</td>
+
+<td style="text-align:left;">
+
+5.30e-03\*
+</td>
+
+<td style="text-align:left;">
+
+2.64e-02
+</td>
+
+<td style="text-align:left;">
+
+1.36e-03\*
+</td>
+
+<td style="text-align:left;">
+
+5.97e-05\*
+</td>
+
+<td style="text-align:left;">
+
+5.97e-05\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Granulicatella
+</td>
+
+<td style="text-align:left;">
+
+10.24
+</td>
+
+<td style="text-align:left;">
+
+3.96e-02
+</td>
+
+<td style="text-align:left;">
+
+3.16e-04\*
+</td>
+
+<td style="text-align:left;">
+
+7.29e-03\*
+</td>
+
+<td style="text-align:left;">
+
+5.03e-02
+</td>
+
+<td style="text-align:left;">
+
+5.03e-02
 </td>
 
 </tr>
@@ -828,17 +798,12 @@ Clostridium_sensu_strict1
 
 <td style="text-align:left;">
 
-5.30e-03
+9.55
 </td>
 
 <td style="text-align:left;">
 
-7.48e-03
-</td>
-
-<td style="text-align:left;">
-
-2.83e-02
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -853,27 +818,51 @@ Clostridium_sensu_strict1
 
 <td style="text-align:left;">
 
-5.91e-04
+5.91e-04\*
 </td>
 
 <td style="text-align:left;">
 
-5.91e-04
+5.91e-04\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Haemophilus
 </td>
 
 <td style="text-align:left;">
 
-1.36e-02
+8.47
 </td>
 
 <td style="text-align:left;">
 
-1.36e-02
+8.41e-02
 </td>
 
 <td style="text-align:left;">
 
-1.68e-02
+3.72e-03\*
+</td>
+
+<td style="text-align:left;">
+
+1.43e-02
+</td>
+
+<td style="text-align:left;">
+
+1.07e-01
+</td>
+
+<td style="text-align:left;">
+
+1.07e-01
 </td>
 
 </tr>
@@ -887,22 +876,17 @@ Blautia
 
 <td style="text-align:left;">
 
-5.30e-03
+8.89
 </td>
 
 <td style="text-align:left;">
 
-1.87e-03
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-3.06e-03
-</td>
-
-<td style="text-align:left;">
-
-1.55e-03
+1.55e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -912,204 +896,12 @@ Blautia
 
 <td style="text-align:left;">
 
-6.36e-04
+6.36e-04\*
 </td>
 
 <td style="text-align:left;">
 
-6.36e-04
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-4.81e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Streptococcus
-</td>
-
-<td style="text-align:left;">
-
-5.30e-03
-</td>
-
-<td style="text-align:left;">
-
-1.31e-03
-</td>
-
-<td style="text-align:left;">
-
-1.46e-04
-</td>
-
-<td style="text-align:left;">
-
-1.93e-03
-</td>
-
-<td style="text-align:left;">
-
-1.23e-03
-</td>
-
-<td style="text-align:left;">
-
-2.01e-03
-</td>
-
-<td style="text-align:left;">
-
-2.01e-03
-</td>
-
-<td style="text-align:left;">
-
-1.67e-03
-</td>
-
-<td style="text-align:left;">
-
-1.67e-03
-</td>
-
-<td style="text-align:left;">
-
-1.46e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Collinsella
-</td>
-
-<td style="text-align:left;">
-
-5.30e-03
-</td>
-
-<td style="text-align:left;">
-
-7.74e-02
-</td>
-
-<td style="text-align:left;">
-
-2.19e-02
-</td>
-
-<td style="text-align:left;">
-
-1.82e-03
-</td>
-
-<td style="text-align:left;">
-
-6.18e-02
-</td>
-
-<td style="text-align:left;">
-
-2.94e-03
-</td>
-
-<td style="text-align:left;">
-
-2.94e-03
-</td>
-
-<td style="text-align:left;">
-
-1.12e-01
-</td>
-
-<td style="text-align:left;">
-
-1.12e-01
-</td>
-
-<td style="text-align:left;">
-
-1.12e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Clostridium\]\_innocuum_group
-</td>
-
-<td style="text-align:left;">
-
-5.30e-03
-</td>
-
-<td style="text-align:left;">
-
-8.43e-04
-</td>
-
-<td style="text-align:left;">
-
-8.50e-05
-</td>
-
-<td style="text-align:left;">
-
-9.60e-06
-</td>
-
-<td style="text-align:left;">
-
-7.56e-06
-</td>
-
-<td style="text-align:left;">
-
-8.77e-03
-</td>
-
-<td style="text-align:left;">
-
-8.77e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
+6.36e-04\*
 </td>
 
 </tr>
@@ -1123,22 +915,17 @@ Tyzzerella
 
 <td style="text-align:left;">
 
+8.22
+</td>
+
+<td style="text-align:left;">
+
 1.97e-02
 </td>
 
 <td style="text-align:left;">
 
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.72e-02
-</td>
-
-<td style="text-align:left;">
-
-8.85e-03
+8.85e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -1156,7057 +943,6 @@ Tyzzerella
 1.54e-02
 </td>
 
-<td style="text-align:left;">
-
-1.95e-01
-</td>
-
-<td style="text-align:left;">
-
-1.95e-01
-</td>
-
-<td style="text-align:left;">
-
-1.89e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridioides
-</td>
-
-<td style="text-align:left;">
-
-4.57e-02
-</td>
-
-<td style="text-align:left;">
-
-1.06e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.85e-03
-</td>
-
-<td style="text-align:left;">
-
-1.12e-01
-</td>
-
-<td style="text-align:left;">
-
-3.98e-02
-</td>
-
-<td style="text-align:left;">
-
-3.98e-02
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Epulopiscium
-</td>
-
-<td style="text-align:left;">
-
-8.41e-02
-</td>
-
-<td style="text-align:left;">
-
-1.34e-01
-</td>
-
-<td style="text-align:left;">
-
-3.76e-02
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.43e-02
-</td>
-
-<td style="text-align:left;">
-
-4.43e-02
-</td>
-
-<td style="text-align:left;">
-
-1.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.78e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Granulicatella
-</td>
-
-<td style="text-align:left;">
-
-3.96e-02
-</td>
-
-<td style="text-align:left;">
-
-4.80e-02
-</td>
-
-<td style="text-align:left;">
-
-1.97e-04
-</td>
-
-<td style="text-align:left;">
-
-3.16e-04
-</td>
-
-<td style="text-align:left;">
-
-7.29e-03
-</td>
-
-<td style="text-align:left;">
-
-5.03e-02
-</td>
-
-<td style="text-align:left;">
-
-5.03e-02
-</td>
-
-<td style="text-align:left;">
-
-7.05e-02
-</td>
-
-<td style="text-align:left;">
-
-7.05e-02
-</td>
-
-<td style="text-align:left;">
-
-6.95e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Paeniclostridium
-</td>
-
-<td style="text-align:left;">
-
-4.25e-02
-</td>
-
-<td style="text-align:left;">
-
-1.01e-01
-</td>
-
-<td style="text-align:left;">
-
-2.45e-01
-</td>
-
-<td style="text-align:left;">
-
-2.81e-02
-</td>
-
-<td style="text-align:left;">
-
-1.85e-01
-</td>
-
-<td style="text-align:left;">
-
-5.34e-02
-</td>
-
-<td style="text-align:left;">
-
-5.34e-02
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Parabacteroides
-</td>
-
-<td style="text-align:left;">
-
-5.17e-02
-</td>
-
-<td style="text-align:left;">
-
-1.06e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-8.03e-02
-</td>
-
-<td style="text-align:left;">
-
-6.95e-02
-</td>
-
-<td style="text-align:left;">
-
-6.95e-02
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Fusobacterium
-</td>
-
-<td style="text-align:left;">
-
-6.87e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-9.09e-02
-</td>
-
-<td style="text-align:left;">
-
-9.09e-02
-</td>
-
-<td style="text-align:left;">
-
-8.04e-01
-</td>
-
-<td style="text-align:left;">
-
-8.04e-01
-</td>
-
-<td style="text-align:left;">
-
-8.04e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lactobacillus
-</td>
-
-<td style="text-align:left;">
-
-8.41e-02
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-4.59e-03
-</td>
-
-<td style="text-align:left;">
-
-1.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.70e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.96e-01
-</td>
-
-<td style="text-align:left;">
-
-1.96e-01
-</td>
-
-<td style="text-align:left;">
-
-1.89e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Leuconostoc
-</td>
-
-<td style="text-align:left;">
-
-8.41e-02
-</td>
-
-<td style="text-align:left;">
-
-2.24e-01
-</td>
-
-<td style="text-align:left;">
-
-2.45e-01
-</td>
-
-<td style="text-align:left;">
-
-1.97e-01
-</td>
-
-<td style="text-align:left;">
-
-3.12e-02
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-2.80e-01
-</td>
-
-<td style="text-align:left;">
-
-2.80e-01
-</td>
-
-<td style="text-align:left;">
-
-2.80e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Faecalitalea
-</td>
-
-<td style="text-align:left;">
-
-8.41e-02
-</td>
-
-<td style="text-align:left;">
-
-1.06e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.66e-02
-</td>
-
-<td style="text-align:left;">
-
-9.07e-02
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Coprobacillus
-</td>
-
-<td style="text-align:left;">
-
-8.41e-02
-</td>
-
-<td style="text-align:left;">
-
-3.78e-02
-</td>
-
-<td style="text-align:left;">
-
-3.24e-02
-</td>
-
-<td style="text-align:left;">
-
-2.81e-02
-</td>
-
-<td style="text-align:left;">
-
-3.12e-02
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-5.69e-02
-</td>
-
-<td style="text-align:left;">
-
-5.69e-02
-</td>
-
-<td style="text-align:left;">
-
-5.69e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Erysipelatoclostridium
-</td>
-
-<td style="text-align:left;">
-
-8.65e-02
-</td>
-
-<td style="text-align:left;">
-
-4.13e-02
-</td>
-
-<td style="text-align:left;">
-
-6.35e-02
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.16e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-6.05e-02
-</td>
-
-<td style="text-align:left;">
-
-6.05e-02
-</td>
-
-<td style="text-align:left;">
-
-5.94e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Haemophilus
-</td>
-
-<td style="text-align:left;">
-
-8.41e-02
-</td>
-
-<td style="text-align:left;">
-
-2.99e-02
-</td>
-
-<td style="text-align:left;">
-
-1.22e-01
-</td>
-
-<td style="text-align:left;">
-
-3.72e-03
-</td>
-
-<td style="text-align:left;">
-
-1.43e-02
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-4.36e-02
-</td>
-
-<td style="text-align:left;">
-
-4.36e-02
-</td>
-
-<td style="text-align:left;">
-
-4.54e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Peptoniphilus
-</td>
-
-<td style="text-align:left;">
-
-1.60e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.48e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.24e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-3.56e-01
-</td>
-
-<td style="text-align:left;">
-
-3.56e-01
-</td>
-
-<td style="text-align:left;">
-
-3.56e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Sellimonas
-</td>
-
-<td style="text-align:left;">
-
-6.87e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.06e-02
-</td>
-
-<td style="text-align:left;">
-
-2.22e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-02
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-3.32e-01
-</td>
-
-<td style="text-align:left;">
-
-3.32e-01
-</td>
-
-<td style="text-align:left;">
-
-3.32e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-uncultured18
-</td>
-
-<td style="text-align:left;">
-
-7.53e-02
-</td>
-
-<td style="text-align:left;">
-
-2.29e-02
-</td>
-
-<td style="text-align:left;">
-
-4.16e-02
-</td>
-
-<td style="text-align:left;">
-
-1.35e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-02
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-3.49e-02
-</td>
-
-<td style="text-align:left;">
-
-3.49e-02
-</td>
-
-<td style="text-align:left;">
-
-3.49e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Anaerococcus
-</td>
-
-<td style="text-align:left;">
-
-8.41e-02
-</td>
-
-<td style="text-align:left;">
-
-1.10e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.09e-01
-</td>
-
-<td style="text-align:left;">
-
-1.09e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Phascolarctobacterium
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.29e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.32e-01
-</td>
-
-<td style="text-align:left;">
-
-1.32e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Veillonella
-</td>
-
-<td style="text-align:left;">
-
-1.02e-01
-</td>
-
-<td style="text-align:left;">
-
-4.80e-02
-</td>
-
-<td style="text-align:left;">
-
-1.51e-01
-</td>
-
-<td style="text-align:left;">
-
-1.33e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.32e-01
-</td>
-
-<td style="text-align:left;">
-
-1.32e-01
-</td>
-
-<td style="text-align:left;">
-
-7.18e-02
-</td>
-
-<td style="text-align:left;">
-
-7.18e-02
-</td>
-
-<td style="text-align:left;">
-
-6.95e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Faecalicoccus
-</td>
-
-<td style="text-align:left;">
-
-1.30e-01
-</td>
-
-<td style="text-align:left;">
-
-2.20e-01
-</td>
-
-<td style="text-align:left;">
-
-9.01e-02
-</td>
-
-<td style="text-align:left;">
-
-8.52e-02
-</td>
-
-<td style="text-align:left;">
-
-9.07e-02
-</td>
-
-<td style="text-align:left;">
-
-1.62e-01
-</td>
-
-<td style="text-align:left;">
-
-1.62e-01
-</td>
-
-<td style="text-align:left;">
-
-2.80e-01
-</td>
-
-<td style="text-align:left;">
-
-2.80e-01
-</td>
-
-<td style="text-align:left;">
-
-2.80e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Staphylococcus
-</td>
-
-<td style="text-align:left;">
-
-1.67e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.70e-01
-</td>
-
-<td style="text-align:left;">
-
-1.92e-01
-</td>
-
-<td style="text-align:left;">
-
-1.92e-01
-</td>
-
-<td style="text-align:left;">
-
-5.28e-01
-</td>
-
-<td style="text-align:left;">
-
-5.28e-01
-</td>
-
-<td style="text-align:left;">
-
-5.28e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Delftia
-</td>
-
-<td style="text-align:left;">
-
-1.62e-01
-</td>
-
-<td style="text-align:left;">
-
-4.30e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.15e-01
-</td>
-
-<td style="text-align:left;">
-
-1.99e-01
-</td>
-
-<td style="text-align:left;">
-
-1.99e-01
-</td>
-
-<td style="text-align:left;">
-
-6.23e-02
-</td>
-
-<td style="text-align:left;">
-
-6.23e-02
-</td>
-
-<td style="text-align:left;">
-
-6.23e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Bilophila
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-2.91e-01
-</td>
-
-<td style="text-align:left;">
-
-2.91e-01
-</td>
-
-<td style="text-align:left;">
-
-3.48e-01
-</td>
-
-<td style="text-align:left;">
-
-3.48e-01
-</td>
-
-<td style="text-align:left;">
-
-3.48e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Anaerostipes
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-3.29e-01
-</td>
-
-<td style="text-align:left;">
-
-3.29e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Scardovia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-3.29e-01
-</td>
-
-<td style="text-align:left;">
-
-3.29e-01
-</td>
-
-<td style="text-align:left;">
-
-4.25e-01
-</td>
-
-<td style="text-align:left;">
-
-4.25e-01
-</td>
-
-<td style="text-align:left;">
-
-4.25e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Enterobacteriaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.25e-01
-</td>
-
-<td style="text-align:left;">
-
-4.25e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Rothia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.04e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.54e-01
-</td>
-
-<td style="text-align:left;">
-
-4.54e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Actinomyces
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.89e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.93e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.56e-01
-</td>
-
-<td style="text-align:left;">
-
-4.56e-01
-</td>
-
-<td style="text-align:left;">
-
-2.63e-01
-</td>
-
-<td style="text-align:left;">
-
-2.63e-01
-</td>
-
-<td style="text-align:left;">
-
-2.59e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Atopobium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.61e-01
-</td>
-
-<td style="text-align:left;">
-
-4.61e-01
-</td>
-
-<td style="text-align:left;">
-
-3.41e-01
-</td>
-
-<td style="text-align:left;">
-
-3.41e-01
-</td>
-
-<td style="text-align:left;">
-
-3.41e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Incertae_Sedis
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.00e-01
-</td>
-
-<td style="text-align:left;">
-
-5.00e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Olsenella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.15e-01
-</td>
-
-<td style="text-align:left;">
-
-5.15e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridium_sensu_strict18
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.97e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.25e-01
-</td>
-
-<td style="text-align:left;">
-
-5.25e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dorea
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.52e-01
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.02e-01
-</td>
-
-<td style="text-align:left;">
-
-5.53e-01
-</td>
-
-<td style="text-align:left;">
-
-5.53e-01
-</td>
-
-<td style="text-align:left;">
-
-3.32e-01
-</td>
-
-<td style="text-align:left;">
-
-3.32e-01
-</td>
-
-<td style="text-align:left;">
-
-3.32e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Hungatella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.99e-01
-</td>
-
-<td style="text-align:left;">
-
-5.99e-01
-</td>
-
-<td style="text-align:left;">
-
-7.10e-01
-</td>
-
-<td style="text-align:left;">
-
-7.10e-01
-</td>
-
-<td style="text-align:left;">
-
-7.10e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Proteus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.99e-01
-</td>
-
-<td style="text-align:left;">
-
-5.99e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Megasphaera
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.15e-01
-</td>
-
-<td style="text-align:left;">
-
-6.15e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Coprococcus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-2.25e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.35e-01
-</td>
-
-<td style="text-align:left;">
-
-6.35e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Family_XIII_AD3011_group
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Peptostreptococcus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-3.92e-01
-</td>
-
-<td style="text-align:left;">
-
-3.92e-01
-</td>
-
-<td style="text-align:left;">
-
-3.92e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Blastococcus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.94e-01
-</td>
-
-<td style="text-align:left;">
-
-1.88e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Flavonifractor
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.74e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.65e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.12e-01
-</td>
-
-<td style="text-align:left;">
-
-1.12e-01
-</td>
-
-<td style="text-align:left;">
-
-1.12e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-22_Lachnospiraceae(F)
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.44e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-2.55e-02
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-6.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.99e-01
-</td>
-
-<td style="text-align:left;">
-
-1.99e-01
-</td>
-
-<td style="text-align:left;">
-
-1.99e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Erysipelotrichaceae_UCG-003
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Subdoligranulum
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-8.05e-01
-</td>
-
-<td style="text-align:left;">
-
-8.05e-01
-</td>
-
-<td style="text-align:left;">
-
-8.05e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Roseburia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-3.56e-01
-</td>
-
-<td style="text-align:left;">
-
-3.56e-01
-</td>
-
-<td style="text-align:left;">
-
-3.56e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Escherichia-Shigella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Fusicatenibacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-7.14e-01
-</td>
-
-<td style="text-align:left;">
-
-8.22e-01
-</td>
-
-<td style="text-align:left;">
-
-8.22e-01
-</td>
-
-<td style="text-align:left;">
-
-8.22e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Akkermansia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.41e-01
-</td>
-
-<td style="text-align:left;">
-
-7.41e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Gordonibacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.33e-01
-</td>
-
-<td style="text-align:left;">
-
-3.24e-02
-</td>
-
-<td style="text-align:left;">
-
-1.08e-02
-</td>
-
-<td style="text-align:left;">
-
-9.07e-02
-</td>
-
-<td style="text-align:left;">
-
-7.41e-01
-</td>
-
-<td style="text-align:left;">
-
-7.41e-01
-</td>
-
-<td style="text-align:left;">
-
-1.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.78e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-UBA1819
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.41e-01
-</td>
-
-<td style="text-align:left;">
-
-7.41e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Libanicoccus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.78e-01
-</td>
-
-<td style="text-align:left;">
-
-7.78e-01
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dialister
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dolosigranulum
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Holdemanella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.94e-02
-</td>
-
-<td style="text-align:left;">
-
-1.74e-01
-</td>
-
-<td style="text-align:left;">
-
-1.29e-02
-</td>
-
-<td style="text-align:left;">
-
-1.51e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-3.06e-02
-</td>
-
-<td style="text-align:left;">
-
-3.06e-02
-</td>
-
-<td style="text-align:left;">
-
-3.06e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Eubacterium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.80e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.27e-01
-</td>
-
-<td style="text-align:left;">
-
-9.07e-02
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-7.02e-02
-</td>
-
-<td style="text-align:left;">
-
-7.02e-02
-</td>
-
-<td style="text-align:left;">
-
-6.95e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Pseudomonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-8_Comamonadaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Corynebacterium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Varibaculum
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-<td style="text-align:left;">
-
-4.74e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Coprobacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Slackia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-9.26e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-<td style="text-align:left;">
-
-5.64e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Butyricicoccus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Faecalibacterium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-4.69e-01
-</td>
-
-<td style="text-align:left;">
-
-4.69e-01
-</td>
-
-<td style="text-align:left;">
-
-4.69e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Eubacterium\]\_eligengroup
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-21_Bifidobacteriaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Agathobacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Morganella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.18e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Prevotella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.41e-01
-</td>
-
-<td style="text-align:left;">
-
-8.41e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnoclostridium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.62e-01
-</td>
-
-<td style="text-align:left;">
-
-8.62e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-CAG-352
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.77e-01
-</td>
-
-<td style="text-align:left;">
-
-8.77e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Negativicoccus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.21e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Anaeroglobus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Gemella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.28e-01
-</td>
-
-<td style="text-align:left;">
-
-5.28e-01
-</td>
-
-<td style="text-align:left;">
-
-5.28e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Turicibacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Romboutsia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-<td style="text-align:left;">
-
-5.32e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Halomonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Sutterella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Acinetobacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Brevundimonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lawsonella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Cutibacterium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Alistipes
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Senegalimassilia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Eggerthella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-2.48e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.70e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-9.22e-01
-</td>
-
-<td style="text-align:left;">
-
-9.22e-01
-</td>
-
-<td style="text-align:left;">
-
-9.22e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Finegoldia
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Sarcina
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Ruminococcus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Eubacterium\]\_coprostanoligenegroup
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridia_UCG-014
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.74e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Eubacterium\]\_hallii_group
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-<td style="text-align:left;">
-
-9.41e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnospira
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Ruminococcus\]\_gauvreauii_group
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnoanaerobaculum
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnospiraceae_NK4A136_group
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-9.45e-01
-</td>
-
-<td style="text-align:left;">
-
-9.45e-01
-</td>
-
-<td style="text-align:left;">
-
-9.45e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Megamonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Solobacterium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Christensenellaceae_R-7_group
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Stenotrophomonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-9_Pasteurellaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dermabacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Actinotignum
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-<td style="text-align:left;">
-
-8.38e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Porphyromonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Fenollaria
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Monoglobus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnospiraceae_ND3007_group
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-</tbody>
-
-</table>
-
-<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
-
-<thead>
-
-<tr>
-
-<th style="text-align:left;">
-
-taxon
-</th>
-
-<th style="text-align:right;">
-
-n_sig
-</th>
-
-<th style="text-align:left;">
-
-sig_any
-</th>
-
-<th style="text-align:left;">
-
-sig_all
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+03)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+04)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+05)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+06)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+07)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+03, unconstrained, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+03, SLLS, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, unconstrained, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=0.25)
-</th>
-
-</tr>
-
-</thead>
-
-<tbody>
-
-<tr>
-
-<td style="text-align:left;">
-
-Bacteroides
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Bifidobacterium
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Enterococcus
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Intestinibacter
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lactococcus
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Streptococcus
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Terrisporobacter
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Clostridium\]\_innocuum_group
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Ruminococcus\]\_gnavugroup
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Blautia
-</td>
-
-<td style="text-align:right;">
-
-9
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridium_sensu_strict1
-</td>
-
-<td style="text-align:right;">
-
-4
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
 </tr>
 
 <tr>
@@ -8216,217 +952,34 @@ FALSE
 Collinsella
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-4
+5.69
 </td>
 
 <td style="text-align:left;">
 
-TRUE
+5.30e-03\*
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+1.82e-03\*
 </td>
 
 <td style="text-align:left;">
 
-TRUE
+6.18e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+2.94e-03\*
 </td>
 
 <td style="text-align:left;">
 
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Ruminococcus\]\_torquegroup
-</td>
-
-<td style="text-align:right;">
-
-4
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Granulicatella
-</td>
-
-<td style="text-align:right;">
-
-3
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
+2.94e-03\*
 </td>
 
 </tr>
@@ -8438,1179 +991,34 @@ FALSE
 Clostridioides
 </td>
 
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Haemophilus
-</td>
-
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lactobacillus
-</td>
-
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Tyzzerella
-</td>
-
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-21_Bifidobacteriaceae(F)
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-22_Lachnospiraceae(F)
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-8_Comamonadaceae(F)
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-9_Pasteurellaceae(F)
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Acinetobacter
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Actinomyces
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Actinotignum
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Agathobacter
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Akkermansia
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Alistipes
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Anaerococcus
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Anaeroglobus
-</td>
-
-<td style="text-align:right;">
-
-0
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
 <td style="text-align:left;">
 
-FALSE
+3.49
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+4.57e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+8.85e-03\*
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+1.12e-01
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+3.98e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+3.98e-02
 </td>
 
 </tr>
@@ -9619,13 +1027,65 @@ FALSE
 
 </table>
 
+    ## \begin{table}[!h]
+    ## \centering
+    ## \caption{\label{tab:tab:pvals_adj_selected}Unadjusted p-values across selected methods. Asterisks indicate p-values below $\alpha = 0.01$.}
+    ## \centering
+    ## \fontsize{8}{10}\selectfont
+    ## \begin{tabular}[t]{lrlllll}
+    ## \toprule
+    ## Taxon & stat & dacomp (1e+03) & dacomp (1e+06) & dacomp (1e+07) & permApprox (1e+03, unconstrained, exceed0=250) & permApprox (1e+03, SLLS, exceed0=250)\\
+    ## \midrule
+    ## \cellcolor{gray!10}{Enterococcus} & \cellcolor{gray!10}{67.42} & \cellcolor{gray!10}{5.30e-03*} & \cellcolor{gray!10}{9.60e-06*} & \cellcolor{gray!10}{1.47e-06*} & \cellcolor{gray!10}{1.51e-11*} & \cellcolor{gray!10}{2.27e-11*}\\
+    ## Intestinibacter & 45.20 & 5.30e-03* & 9.60e-06* & 1.47e-06* & 1.05e-16* & 2.10e-16*\\
+    ## \cellcolor{gray!10}{Bifidobacterium} & \cellcolor{gray!10}{45.12} & \cellcolor{gray!10}{5.30e-03*} & \cellcolor{gray!10}{9.60e-06*} & \cellcolor{gray!10}{1.47e-06*} & \cellcolor{gray!10}{5.83e-10*} & \cellcolor{gray!10}{7.77e-10*}\\
+    ## {}[Ruminococcus]_gnavugroup & 24.16 & 5.30e-03* & 9.60e-06* & 4.62e-06* & 2.27e-06* & 2.27e-06*\\
+    ## \cellcolor{gray!10}{{}[Clostridium]_innocuum_group} & \cellcolor{gray!10}{26.41} & \cellcolor{gray!10}{5.30e-03*} & \cellcolor{gray!10}{9.60e-06*} & \cellcolor{gray!10}{7.56e-06*} & \cellcolor{gray!10}{8.77e-03*} & \cellcolor{gray!10}{8.77e-03*}\\
+    ## \addlinespace
+    ## Bacteroides & 20.71 & 5.30e-03* & 8.44e-04* & 3.69e-05* & 4.48e-04* & 4.48e-04*\\
+    ## \cellcolor{gray!10}{Terrisporobacter} & \cellcolor{gray!10}{22.09} & \cellcolor{gray!10}{5.30e-03*} & \cellcolor{gray!10}{7.26e-04*} & \cellcolor{gray!10}{7.32e-05*} & \cellcolor{gray!10}{0.00e+00*} & \cellcolor{gray!10}{6.74e-08*}\\
+    ## Lactococcus & 17.77 & 5.30e-03* & 3.32e-05* & 9.58e-05* & 5.46e-04* & 5.46e-04*\\
+    ## \cellcolor{gray!10}{Streptococcus} & \cellcolor{gray!10}{13.75} & \cellcolor{gray!10}{5.30e-03*} & \cellcolor{gray!10}{1.93e-03*} & \cellcolor{gray!10}{1.23e-03*} & \cellcolor{gray!10}{2.01e-03*} & \cellcolor{gray!10}{2.01e-03*}\\
+    ## {}[Ruminococcus]_torquegroup & 13.39 & 5.30e-03* & 2.64e-02 & 1.36e-03* & 5.97e-05* & 5.97e-05*\\
+    ## \addlinespace
+    ## \cellcolor{gray!10}{Granulicatella} & \cellcolor{gray!10}{10.24} & \cellcolor{gray!10}{3.96e-02} & \cellcolor{gray!10}{3.16e-04*} & \cellcolor{gray!10}{7.29e-03*} & \cellcolor{gray!10}{5.03e-02} & \cellcolor{gray!10}{5.03e-02}\\
+    ## Clostridium_sensu_strict1 & 9.55 & 5.30e-03* & 1.08e-02 & 1.01e-02 & 5.91e-04* & 5.91e-04*\\
+    ## \cellcolor{gray!10}{Haemophilus} & \cellcolor{gray!10}{8.47} & \cellcolor{gray!10}{8.41e-02} & \cellcolor{gray!10}{3.72e-03*} & \cellcolor{gray!10}{1.43e-02} & \cellcolor{gray!10}{1.07e-01} & \cellcolor{gray!10}{1.07e-01}\\
+    ## Blautia & 8.89 & 5.30e-03* & 1.55e-03* & 1.43e-02 & 6.36e-04* & 6.36e-04*\\
+    ## \cellcolor{gray!10}{Tyzzerella} & \cellcolor{gray!10}{8.22} & \cellcolor{gray!10}{1.97e-02} & \cellcolor{gray!10}{8.85e-03*} & \cellcolor{gray!10}{1.55e-02} & \cellcolor{gray!10}{1.54e-02} & \cellcolor{gray!10}{1.54e-02}\\
+    ## \addlinespace
+    ## Collinsella & 5.69 & 5.30e-03* & 1.82e-03* & 6.18e-02 & 2.94e-03* & 2.94e-03*\\
+    ## \cellcolor{gray!10}{Clostridioides} & \cellcolor{gray!10}{3.49} & \cellcolor{gray!10}{4.57e-02} & \cellcolor{gray!10}{8.85e-03*} & \cellcolor{gray!10}{1.12e-01} & \cellcolor{gray!10}{3.98e-02} & \cellcolor{gray!10}{3.98e-02}\\
+    ## \bottomrule
+    ## \end{tabular}
+    ## \end{table}
+
+    ## Number of tests:  118
+
+    ##               permApprox (1e+03, SLLS)
+    ## dacomp (1e+07) FALSE TRUE
+    ##          FALSE   104    3
+    ##          TRUE      1   10
+
+    ## # A tibble: 7 × 2
+    ##   Metric                             Value
+    ##   <chr>                              <chr>
+    ## 1 Total tests                        118  
+    ## 2 Significant by dacomp (B = 1e7)    11   
+    ## 3 Significant by permApprox(C)       13   
+    ## 4 Shared significant taxa            10   
+    ## 5 Sensitivity (permApprox vs dacomp) 90.9%
+    ## 6 Precision (permApprox vs dacomp)   76.9%
+    ## 7 Overall agreement rate             96.6%
+
 ### Unadjusted
 
 <table class="table table-striped table-hover" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
 
 <caption>
 
-Unadjusted p-values across methods and permutation settings
+Unadjusted p-values (only selected methods; rows kept if any p \< 0.01;
+\* indicates p \< 0.01)
 </caption>
 
 <thead>
@@ -9639,17 +1099,12 @@ taxon
 
 <th style="text-align:left;">
 
+stat
+</th>
+
+<th style="text-align:left;">
+
 dacomp (1e+03)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+04)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+05)
 </th>
 
 <th style="text-align:left;">
@@ -9672,21 +1127,6 @@ permApprox (1e+03, unconstrained, exceed0=250)
 permApprox (1e+03, SLLS, exceed0=250)
 </th>
 
-<th style="text-align:left;">
-
-permApprox (1e+04, unconstrained, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=0.25)
-</th>
-
 </tr>
 
 </thead>
@@ -9697,57 +1137,37 @@ permApprox (1e+04, SLLS, exceed0=0.25)
 
 <td style="text-align:left;">
 
-Intestinibacter
+Enterococcus
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+67.42
 </td>
 
 <td style="text-align:left;">
 
-1.00e-04
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-05
+1.00e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-06
+1.00e-07\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-07
+4.25e-13\*
 </td>
 
 <td style="text-align:left;">
 
-1.97e-18
-</td>
-
-<td style="text-align:left;">
-
-1.97e-18
-</td>
-
-<td style="text-align:left;">
-
-8.45e-08
-</td>
-
-<td style="text-align:left;">
-
-8.45e-08
-</td>
-
-<td style="text-align:left;">
-
-9.71e-09
+4.25e-13\*
 </td>
 
 </tr>
@@ -9756,57 +1176,37 @@ Intestinibacter
 
 <td style="text-align:left;">
 
-Enterococcus
+Intestinibacter
 </td>
 
 <td style="text-align:left;">
 
-9.99e-04
+45.20
 </td>
 
 <td style="text-align:left;">
 
-1.00e-04
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-05
+1.00e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-06
+1.00e-07\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-07
+1.97e-18\*
 </td>
 
 <td style="text-align:left;">
 
-4.25e-13
-</td>
-
-<td style="text-align:left;">
-
-4.25e-13
-</td>
-
-<td style="text-align:left;">
-
-9.53e-18
-</td>
-
-<td style="text-align:left;">
-
-9.53e-18
-</td>
-
-<td style="text-align:left;">
-
-2.34e-09
+1.97e-18\*
 </td>
 
 </tr>
@@ -9820,111 +1220,32 @@ Bifidobacterium
 
 <td style="text-align:left;">
 
-9.99e-04
+45.12
 </td>
 
 <td style="text-align:left;">
 
-1.00e-04
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-05
+1.00e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-06
+1.00e-07\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-07
+2.18e-11\*
 </td>
 
 <td style="text-align:left;">
 
-2.18e-11
-</td>
-
-<td style="text-align:left;">
-
-2.18e-11
-</td>
-
-<td style="text-align:left;">
-
-2.51e-11
-</td>
-
-<td style="text-align:left;">
-
-2.51e-11
-</td>
-
-<td style="text-align:left;">
-
-4.15e-08
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Terrisporobacter
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-1.00e-04
-</td>
-
-<td style="text-align:left;">
-
-1.00e-05
-</td>
-
-<td style="text-align:left;">
-
-1.04e-04
-</td>
-
-<td style="text-align:left;">
-
-1.02e-05
-</td>
-
-<td style="text-align:left;">
-
-0.00e+00
-</td>
-
-<td style="text-align:left;">
-
-2.52e-09
-</td>
-
-<td style="text-align:left;">
-
-1.00e-04
-</td>
-
-<td style="text-align:left;">
-
-1.00e-04
-</td>
-
-<td style="text-align:left;">
-
-1.00e-04
+2.18e-11\*
 </td>
 
 </tr>
@@ -9938,465 +1259,32 @@ Terrisporobacter
 
 <td style="text-align:left;">
 
-9.99e-04
+24.16
 </td>
 
 <td style="text-align:left;">
 
-1.00e-04
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-05
+1.00e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-06
+4.00e-07\*
 </td>
 
 <td style="text-align:left;">
 
-4.00e-07
+1.06e-07\*
 </td>
 
 <td style="text-align:left;">
 
-1.06e-07
-</td>
-
-<td style="text-align:left;">
-
-1.06e-07
-</td>
-
-<td style="text-align:left;">
-
-2.19e-06
-</td>
-
-<td style="text-align:left;">
-
-2.19e-06
-</td>
-
-<td style="text-align:left;">
-
-2.51e-06
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Ruminococcus\]\_torquegroup
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-5.52e-02
-</td>
-
-<td style="text-align:left;">
-
-4.18e-03
-</td>
-
-<td style="text-align:left;">
-
-7.78e-03
-</td>
-
-<td style="text-align:left;">
-
-2.31e-04
-</td>
-
-<td style="text-align:left;">
-
-3.35e-06
-</td>
-
-<td style="text-align:left;">
-
-3.35e-06
-</td>
-
-<td style="text-align:left;">
-
-5.52e-02
-</td>
-
-<td style="text-align:left;">
-
-5.52e-02
-</td>
-
-<td style="text-align:left;">
-
-5.52e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Bacteroides
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-2.00e-04
-</td>
-
-<td style="text-align:left;">
-
-9.30e-04
-</td>
-
-<td style="text-align:left;">
-
-1.37e-04
-</td>
-
-<td style="text-align:left;">
-
-4.50e-06
-</td>
-
-<td style="text-align:left;">
-
-2.93e-05
-</td>
-
-<td style="text-align:left;">
-
-2.93e-05
-</td>
-
-<td style="text-align:left;">
-
-1.39e-04
-</td>
-
-<td style="text-align:left;">
-
-1.39e-04
-</td>
-
-<td style="text-align:left;">
-
-9.72e-05
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lactococcus
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-1.00e-04
-</td>
-
-<td style="text-align:left;">
-
-4.00e-05
-</td>
-
-<td style="text-align:left;">
-
-4.00e-06
-</td>
-
-<td style="text-align:left;">
-
-1.55e-05
-</td>
-
-<td style="text-align:left;">
-
-4.08e-05
-</td>
-
-<td style="text-align:left;">
-
-4.08e-05
-</td>
-
-<td style="text-align:left;">
-
-0.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.87e-21
-</td>
-
-<td style="text-align:left;">
-
-1.00e-04
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridium_sensu_strict1
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-1.30e-03
-</td>
-
-<td style="text-align:left;">
-
-6.90e-03
-</td>
-
-<td style="text-align:left;">
-
-2.54e-03
-</td>
-
-<td style="text-align:left;">
-
-1.97e-03
-</td>
-
-<td style="text-align:left;">
-
-4.97e-05
-</td>
-
-<td style="text-align:left;">
-
-4.97e-05
-</td>
-
-<td style="text-align:left;">
-
-1.39e-03
-</td>
-
-<td style="text-align:left;">
-
-1.39e-03
-</td>
-
-<td style="text-align:left;">
-
-1.71e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Blautia
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-3.00e-04
-</td>
-
-<td style="text-align:left;">
-
-5.20e-04
-</td>
-
-<td style="text-align:left;">
-
-2.60e-04
-</td>
-
-<td style="text-align:left;">
-
-2.84e-03
-</td>
-
-<td style="text-align:left;">
-
-5.94e-05
-</td>
-
-<td style="text-align:left;">
-
-5.94e-05
-</td>
-
-<td style="text-align:left;">
-
-8.28e-05
-</td>
-
-<td style="text-align:left;">
-
-8.28e-05
-</td>
-
-<td style="text-align:left;">
-
-4.45e-04
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Streptococcus
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-2.00e-04
-</td>
-
-<td style="text-align:left;">
-
-2.00e-05
-</td>
-
-<td style="text-align:left;">
-
-3.99e-04
-</td>
-
-<td style="text-align:left;">
-
-2.02e-04
-</td>
-
-<td style="text-align:left;">
-
-2.07e-04
-</td>
-
-<td style="text-align:left;">
-
-2.07e-04
-</td>
-
-<td style="text-align:left;">
-
-1.54e-04
-</td>
-
-<td style="text-align:left;">
-
-1.54e-04
-</td>
-
-<td style="text-align:left;">
-
-1.22e-04
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Collinsella
-</td>
-
-<td style="text-align:left;">
-
-9.99e-04
-</td>
-
-<td style="text-align:left;">
-
-2.32e-02
-</td>
-
-<td style="text-align:left;">
-
-4.95e-03
-</td>
-
-<td style="text-align:left;">
-
-3.39e-04
-</td>
-
-<td style="text-align:left;">
-
-1.70e-02
-</td>
-
-<td style="text-align:left;">
-
-3.30e-04
-</td>
-
-<td style="text-align:left;">
-
-3.30e-04
-</td>
-
-<td style="text-align:left;">
-
-2.27e-02
-</td>
-
-<td style="text-align:left;">
-
-2.27e-02
-</td>
-
-<td style="text-align:left;">
-
-2.28e-02
+1.06e-07\*
 </td>
 
 </tr>
@@ -10410,52 +1298,32 @@ Collinsella
 
 <td style="text-align:left;">
 
-9.99e-04
+26.41
 </td>
 
 <td style="text-align:left;">
 
-1.00e-04
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-05
+1.00e-06\*
 </td>
 
 <td style="text-align:left;">
 
-1.00e-06
+8.00e-07\*
 </td>
 
 <td style="text-align:left;">
 
-8.00e-07
+1.07e-03\*
 </td>
 
 <td style="text-align:left;">
 
-1.07e-03
-</td>
-
-<td style="text-align:left;">
-
-1.07e-03
-</td>
-
-<td style="text-align:left;">
-
-9.33e-05
-</td>
-
-<td style="text-align:left;">
-
-9.33e-05
-</td>
-
-<td style="text-align:left;">
-
-1.00e-04
+1.07e-03\*
 </td>
 
 </tr>
@@ -10464,57 +1332,37 @@ Collinsella
 
 <td style="text-align:left;">
 
-Tyzzerella
+Bacteroides
 </td>
 
 <td style="text-align:left;">
 
-4.00e-03
+20.71
 </td>
 
 <td style="text-align:left;">
 
-5.60e-02
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-3.29e-03
+1.37e-04\*
 </td>
 
 <td style="text-align:left;">
 
-2.11e-03
+4.50e-06\*
 </td>
 
 <td style="text-align:left;">
 
-3.72e-03
+2.93e-05\*
 </td>
 
 <td style="text-align:left;">
 
-2.02e-03
-</td>
-
-<td style="text-align:left;">
-
-2.02e-03
-</td>
-
-<td style="text-align:left;">
-
-5.60e-02
-</td>
-
-<td style="text-align:left;">
-
-5.60e-02
-</td>
-
-<td style="text-align:left;">
-
-5.60e-02
+2.93e-05\*
 </td>
 
 </tr>
@@ -10523,57 +1371,37 @@ Tyzzerella
 
 <td style="text-align:left;">
 
-Clostridioides
+Terrisporobacter
 </td>
 
 <td style="text-align:left;">
 
-9.99e-03
+22.09
 </td>
 
 <td style="text-align:left;">
 
-3.23e-02
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.67e-01
+1.04e-04\*
 </td>
 
 <td style="text-align:left;">
 
-1.98e-03
+1.02e-05\*
 </td>
 
 <td style="text-align:left;">
 
-3.90e-02
+0.00e+00\*
 </td>
 
 <td style="text-align:left;">
 
-5.59e-03
-</td>
-
-<td style="text-align:left;">
-
-5.59e-03
-</td>
-
-<td style="text-align:left;">
-
-3.23e-02
-</td>
-
-<td style="text-align:left;">
-
-3.23e-02
-</td>
-
-<td style="text-align:left;">
-
-3.23e-02
+2.52e-09\*
 </td>
 
 </tr>
@@ -10582,57 +1410,115 @@ Clostridioides
 
 <td style="text-align:left;">
 
-Epulopiscium
+Lactococcus
 </td>
 
 <td style="text-align:left;">
 
-2.60e-02
+17.77
 </td>
 
 <td style="text-align:left;">
 
-4.78e-02
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-9.46e-03
+4.00e-06\*
 </td>
 
 <td style="text-align:left;">
 
-3.97e-02
+1.55e-05\*
 </td>
 
 <td style="text-align:left;">
 
-2.62e-01
+4.08e-05\*
 </td>
 
 <td style="text-align:left;">
 
-6.62e-03
+4.08e-05\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Streptococcus
 </td>
 
 <td style="text-align:left;">
 
-6.62e-03
+13.75
 </td>
 
 <td style="text-align:left;">
 
-4.78e-02
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-4.78e-02
+3.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-4.78e-02
+2.02e-04\*
+</td>
+
+<td style="text-align:left;">
+
+2.07e-04\*
+</td>
+
+<td style="text-align:left;">
+
+2.07e-04\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+\[Ruminococcus\]\_torquegroup
+</td>
+
+<td style="text-align:left;">
+
+13.39
+</td>
+
+<td style="text-align:left;">
+
+9.99e-04\*
+</td>
+
+<td style="text-align:left;">
+
+7.78e-03\*
+</td>
+
+<td style="text-align:left;">
+
+2.31e-04\*
+</td>
+
+<td style="text-align:left;">
+
+3.35e-06\*
+</td>
+
+<td style="text-align:left;">
+
+3.35e-06\*
 </td>
 
 </tr>
@@ -10646,52 +1532,32 @@ Granulicatella
 
 <td style="text-align:left;">
 
-7.99e-03
+10.24
 </td>
 
 <td style="text-align:left;">
 
-1.24e-02
+7.99e-03\*
 </td>
 
 <td style="text-align:left;">
 
-3.00e-05
+4.10e-05\*
 </td>
 
 <td style="text-align:left;">
 
-4.10e-05
+1.28e-03\*
 </td>
 
 <td style="text-align:left;">
 
-1.28e-03
+7.99e-03\*
 </td>
 
 <td style="text-align:left;">
 
-7.99e-03
-</td>
-
-<td style="text-align:left;">
-
-7.99e-03
-</td>
-
-<td style="text-align:left;">
-
-1.24e-02
-</td>
-
-<td style="text-align:left;">
-
-1.24e-02
-</td>
-
-<td style="text-align:left;">
-
-1.24e-02
+7.99e-03\*
 </td>
 
 </tr>
@@ -10700,175 +1566,37 @@ Granulicatella
 
 <td style="text-align:left;">
 
-Paeniclostridium
+Clostridium_sensu_strict1
 </td>
 
 <td style="text-align:left;">
 
-8.99e-03
+9.55
 </td>
 
 <td style="text-align:left;">
 
-2.95e-02
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-9.38e-02
+2.54e-03\*
 </td>
 
 <td style="text-align:left;">
 
-8.38e-03
+1.97e-03\*
 </td>
 
 <td style="text-align:left;">
 
-9.21e-02
+4.97e-05\*
 </td>
 
 <td style="text-align:left;">
 
-8.99e-03
-</td>
-
-<td style="text-align:left;">
-
-8.99e-03
-</td>
-
-<td style="text-align:left;">
-
-2.95e-02
-</td>
-
-<td style="text-align:left;">
-
-2.95e-02
-</td>
-
-<td style="text-align:left;">
-
-2.95e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Parabacteroides
-</td>
-
-<td style="text-align:left;">
-
-1.20e-02
-</td>
-
-<td style="text-align:left;">
-
-3.32e-02
-</td>
-
-<td style="text-align:left;">
-
-1.95e-01
-</td>
-
-<td style="text-align:left;">
-
-6.29e-02
-</td>
-
-<td style="text-align:left;">
-
-2.29e-02
-</td>
-
-<td style="text-align:left;">
-
-1.23e-02
-</td>
-
-<td style="text-align:left;">
-
-1.23e-02
-</td>
-
-<td style="text-align:left;">
-
-3.32e-02
-</td>
-
-<td style="text-align:left;">
-
-3.32e-02
-</td>
-
-<td style="text-align:left;">
-
-3.32e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Fusobacterium
-</td>
-
-<td style="text-align:left;">
-
-1.70e-02
-</td>
-
-<td style="text-align:left;">
-
-4.62e-01
-</td>
-
-<td style="text-align:left;">
-
-3.08e-01
-</td>
-
-<td style="text-align:left;">
-
-3.37e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-1.70e-02
-</td>
-
-<td style="text-align:left;">
-
-1.70e-02
-</td>
-
-<td style="text-align:left;">
-
-4.62e-01
-</td>
-
-<td style="text-align:left;">
-
-4.62e-01
-</td>
-
-<td style="text-align:left;">
-
-4.62e-01
+4.97e-05\*
 </td>
 
 </tr>
@@ -10882,17 +1610,12 @@ Sellimonas
 
 <td style="text-align:left;">
 
+7.64
+</td>
+
+<td style="text-align:left;">
+
 1.80e-02
-</td>
-
-<td style="text-align:left;">
-
-1.20e-01
-</td>
-
-<td style="text-align:left;">
-
-1.46e-02
 </td>
 
 <td style="text-align:left;">
@@ -10902,7 +1625,7 @@ Sellimonas
 
 <td style="text-align:left;">
 
-2.63e-03
+2.63e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -10915,196 +1638,43 @@ Sellimonas
 2.25e-02
 </td>
 
-<td style="text-align:left;">
-
-1.20e-01
-</td>
-
-<td style="text-align:left;">
-
-1.20e-01
-</td>
-
-<td style="text-align:left;">
-
-1.20e-01
-</td>
-
 </tr>
 
 <tr>
 
 <td style="text-align:left;">
 
-Erysipelatoclostridium
+Blautia
 </td>
 
 <td style="text-align:left;">
 
-3.10e-02
+8.89
 </td>
 
 <td style="text-align:left;">
 
-9.10e-03
+9.99e-04\*
 </td>
 
 <td style="text-align:left;">
 
-2.00e-02
+2.60e-04\*
 </td>
 
 <td style="text-align:left;">
 
-3.66e-02
+2.84e-03\*
 </td>
 
 <td style="text-align:left;">
 
-4.35e-02
+5.94e-05\*
 </td>
 
 <td style="text-align:left;">
 
-2.49e-02
-</td>
-
-<td style="text-align:left;">
-
-2.49e-02
-</td>
-
-<td style="text-align:left;">
-
-8.96e-03
-</td>
-
-<td style="text-align:left;">
-
-8.96e-03
-</td>
-
-<td style="text-align:left;">
-
-8.79e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Leuconostoc
-</td>
-
-<td style="text-align:left;">
-
-2.70e-02
-</td>
-
-<td style="text-align:left;">
-
-9.35e-02
-</td>
-
-<td style="text-align:left;">
-
-9.31e-02
-</td>
-
-<td style="text-align:left;">
-
-9.21e-02
-</td>
-
-<td style="text-align:left;">
-
-8.33e-03
-</td>
-
-<td style="text-align:left;">
-
-2.70e-02
-</td>
-
-<td style="text-align:left;">
-
-2.70e-02
-</td>
-
-<td style="text-align:left;">
-
-9.35e-02
-</td>
-
-<td style="text-align:left;">
-
-9.35e-02
-</td>
-
-<td style="text-align:left;">
-
-9.35e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Peptoniphilus
-</td>
-
-<td style="text-align:left;">
-
-6.29e-02
-</td>
-
-<td style="text-align:left;">
-
-1.45e-01
-</td>
-
-<td style="text-align:left;">
-
-5.08e-02
-</td>
-
-<td style="text-align:left;">
-
-1.28e-01
-</td>
-
-<td style="text-align:left;">
-
-4.96e-02
-</td>
-
-<td style="text-align:left;">
-
-2.73e-02
-</td>
-
-<td style="text-align:left;">
-
-2.73e-02
-</td>
-
-<td style="text-align:left;">
-
-1.45e-01
-</td>
-
-<td style="text-align:left;">
-
-1.45e-01
-</td>
-
-<td style="text-align:left;">
-
-1.45e-01
+5.94e-05\*
 </td>
 
 </tr>
@@ -11118,27 +1688,22 @@ Haemophilus
 
 <td style="text-align:left;">
 
+8.47
+</td>
+
+<td style="text-align:left;">
+
 2.90e-02
 </td>
 
 <td style="text-align:left;">
 
-6.20e-03
+7.70e-04\*
 </td>
 
 <td style="text-align:left;">
 
-4.03e-02
-</td>
-
-<td style="text-align:left;">
-
-7.70e-04
-</td>
-
-<td style="text-align:left;">
-
-3.17e-03
+3.17e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -11149,80 +1714,6 @@ Haemophilus
 <td style="text-align:left;">
 
 2.80e-02
-</td>
-
-<td style="text-align:left;">
-
-5.65e-03
-</td>
-
-<td style="text-align:left;">
-
-5.65e-03
-</td>
-
-<td style="text-align:left;">
-
-5.88e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lactobacillus
-</td>
-
-<td style="text-align:left;">
-
-2.80e-02
-</td>
-
-<td style="text-align:left;">
-
-5.81e-02
-</td>
-
-<td style="text-align:left;">
-
-8.10e-04
-</td>
-
-<td style="text-align:left;">
-
-7.79e-02
-</td>
-
-<td style="text-align:left;">
-
-8.35e-02
-</td>
-
-<td style="text-align:left;">
-
-2.85e-02
-</td>
-
-<td style="text-align:left;">
-
-2.85e-02
-</td>
-
-<td style="text-align:left;">
-
-5.81e-02
-</td>
-
-<td style="text-align:left;">
-
-5.81e-02
-</td>
-
-<td style="text-align:left;">
-
-5.50e-02
 </td>
 
 </tr>
@@ -11236,17 +1727,12 @@ uncultured18
 
 <td style="text-align:left;">
 
+9.64
+</td>
+
+<td style="text-align:left;">
+
 2.10e-02
-</td>
-
-<td style="text-align:left;">
-
-4.20e-03
-</td>
-
-<td style="text-align:left;">
-
-1.11e-02
 </td>
 
 <td style="text-align:left;">
@@ -11256,7 +1742,7 @@ uncultured18
 
 <td style="text-align:left;">
 
-3.22e-03
+3.22e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -11267,21 +1753,6 @@ uncultured18
 <td style="text-align:left;">
 
 2.86e-02
-</td>
-
-<td style="text-align:left;">
-
-4.20e-03
-</td>
-
-<td style="text-align:left;">
-
-4.20e-03
-</td>
-
-<td style="text-align:left;">
-
-4.20e-03
 </td>
 
 </tr>
@@ -11290,57 +1761,76 @@ uncultured18
 
 <td style="text-align:left;">
 
-Faecalitalea
+Tyzzerella
 </td>
 
 <td style="text-align:left;">
 
-2.90e-02
+8.22
 </td>
 
 <td style="text-align:left;">
 
-3.14e-02
+4.00e-03\*
 </td>
 
 <td style="text-align:left;">
 
-2.09e-01
+2.11e-03\*
 </td>
 
 <td style="text-align:left;">
 
-2.79e-02
+3.72e-03\*
 </td>
 
 <td style="text-align:left;">
 
-2.78e-02
+2.02e-03\*
 </td>
 
 <td style="text-align:left;">
 
-2.90e-02
+2.02e-03\*
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Leuconostoc
 </td>
 
 <td style="text-align:left;">
 
-2.90e-02
+9.19
 </td>
 
 <td style="text-align:left;">
 
-3.14e-02
+2.70e-02
 </td>
 
 <td style="text-align:left;">
 
-3.14e-02
+9.21e-02
 </td>
 
 <td style="text-align:left;">
 
-3.14e-02
+8.33e-03\*
+</td>
+
+<td style="text-align:left;">
+
+2.70e-02
+</td>
+
+<td style="text-align:left;">
+
+2.70e-02
 </td>
 
 </tr>
@@ -11354,27 +1844,22 @@ Coprobacillus
 
 <td style="text-align:left;">
 
+9.19
+</td>
+
+<td style="text-align:left;">
+
 2.90e-02
 </td>
 
 <td style="text-align:left;">
 
-7.90e-03
+8.42e-03\*
 </td>
 
 <td style="text-align:left;">
 
-8.10e-03
-</td>
-
-<td style="text-align:left;">
-
-8.42e-03
-</td>
-
-<td style="text-align:left;">
-
-8.38e-03
+8.38e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -11387,19 +1872,43 @@ Coprobacillus
 2.90e-02
 </td>
 
+</tr>
+
+<tr>
+
 <td style="text-align:left;">
 
-7.90e-03
+Collinsella
 </td>
 
 <td style="text-align:left;">
 
-7.90e-03
+5.69
 </td>
 
 <td style="text-align:left;">
 
-7.90e-03
+9.99e-04\*
+</td>
+
+<td style="text-align:left;">
+
+3.39e-04\*
+</td>
+
+<td style="text-align:left;">
+
+1.70e-02
+</td>
+
+<td style="text-align:left;">
+
+3.30e-04\*
+</td>
+
+<td style="text-align:left;">
+
+3.30e-04\*
 </td>
 
 </tr>
@@ -11408,617 +1917,12 @@ Coprobacillus
 
 <td style="text-align:left;">
 
-Anaerococcus
+Gordonibacter
 </td>
 
 <td style="text-align:left;">
 
-2.60e-02
-</td>
-
-<td style="text-align:left;">
-
-3.57e-02
-</td>
-
-<td style="text-align:left;">
-
-7.19e-01
-</td>
-
-<td style="text-align:left;">
-
-3.59e-02
-</td>
-
-<td style="text-align:left;">
-
-8.12e-01
-</td>
-
-<td style="text-align:left;">
-
-3.04e-02
-</td>
-
-<td style="text-align:left;">
-
-3.04e-02
-</td>
-
-<td style="text-align:left;">
-
-3.57e-02
-</td>
-
-<td style="text-align:left;">
-
-3.57e-02
-</td>
-
-<td style="text-align:left;">
-
-3.57e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Phascolarctobacterium
-</td>
-
-<td style="text-align:left;">
-
-3.90e-02
-</td>
-
-<td style="text-align:left;">
-
-7.87e-01
-</td>
-
-<td style="text-align:left;">
-
-7.88e-01
-</td>
-
-<td style="text-align:left;">
-
-2.63e-02
-</td>
-
-<td style="text-align:left;">
-
-7.88e-01
-</td>
-
-<td style="text-align:left;">
-
-3.90e-02
-</td>
-
-<td style="text-align:left;">
-
-3.90e-02
-</td>
-
-<td style="text-align:left;">
-
-7.87e-01
-</td>
-
-<td style="text-align:left;">
-
-7.87e-01
-</td>
-
-<td style="text-align:left;">
-
-7.87e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Veillonella
-</td>
-
-<td style="text-align:left;">
-
-3.70e-02
-</td>
-
-<td style="text-align:left;">
-
-1.27e-02
-</td>
-
-<td style="text-align:left;">
-
-5.38e-02
-</td>
-
-<td style="text-align:left;">
-
-3.73e-03
-</td>
-
-<td style="text-align:left;">
-
-2.78e-01
-</td>
-
-<td style="text-align:left;">
-
-3.94e-02
-</td>
-
-<td style="text-align:left;">
-
-3.94e-02
-</td>
-
-<td style="text-align:left;">
-
-1.33e-02
-</td>
-
-<td style="text-align:left;">
-
-1.33e-02
-</td>
-
-<td style="text-align:left;">
-
-1.29e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Faecalicoccus
-</td>
-
-<td style="text-align:left;">
-
-5.00e-02
-</td>
-
-<td style="text-align:left;">
-
-9.20e-02
-</td>
-
-<td style="text-align:left;">
-
-2.80e-02
-</td>
-
-<td style="text-align:left;">
-
-2.77e-02
-</td>
-
-<td style="text-align:left;">
-
-2.79e-02
-</td>
-
-<td style="text-align:left;">
-
-5.00e-02
-</td>
-
-<td style="text-align:left;">
-
-5.00e-02
-</td>
-
-<td style="text-align:left;">
-
-9.20e-02
-</td>
-
-<td style="text-align:left;">
-
-9.20e-02
-</td>
-
-<td style="text-align:left;">
-
-9.20e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Staphylococcus
-</td>
-
-<td style="text-align:left;">
-
-6.89e-02
-</td>
-
-<td style="text-align:left;">
-
-2.59e-01
-</td>
-
-<td style="text-align:left;">
-
-1.45e-01
-</td>
-
-<td style="text-align:left;">
-
-4.33e-01
-</td>
-
-<td style="text-align:left;">
-
-8.32e-02
-</td>
-
-<td style="text-align:left;">
-
-6.11e-02
-</td>
-
-<td style="text-align:left;">
-
-6.11e-02
-</td>
-
-<td style="text-align:left;">
-
-2.59e-01
-</td>
-
-<td style="text-align:left;">
-
-2.59e-01
-</td>
-
-<td style="text-align:left;">
-
-2.59e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Delftia
-</td>
-
-<td style="text-align:left;">
-
-6.49e-02
-</td>
-
-<td style="text-align:left;">
-
-9.80e-03
-</td>
-
-<td style="text-align:left;">
-
-1.65e-01
-</td>
-
-<td style="text-align:left;">
-
-2.76e-01
-</td>
-
-<td style="text-align:left;">
-
-4.13e-02
-</td>
-
-<td style="text-align:left;">
-
-6.49e-02
-</td>
-
-<td style="text-align:left;">
-
-6.49e-02
-</td>
-
-<td style="text-align:left;">
-
-9.80e-03
-</td>
-
-<td style="text-align:left;">
-
-9.80e-03
-</td>
-
-<td style="text-align:left;">
-
-9.80e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Bilophila
-</td>
-
-<td style="text-align:left;">
-
-9.99e-02
-</td>
-
-<td style="text-align:left;">
-
-1.35e-01
-</td>
-
-<td style="text-align:left;">
-
-6.18e-01
-</td>
-
-<td style="text-align:left;">
-
-4.04e-01
-</td>
-
-<td style="text-align:left;">
-
-2.40e-01
-</td>
-
-<td style="text-align:left;">
-
-9.79e-02
-</td>
-
-<td style="text-align:left;">
-
-9.79e-02
-</td>
-
-<td style="text-align:left;">
-
-1.35e-01
-</td>
-
-<td style="text-align:left;">
-
-1.35e-01
-</td>
-
-<td style="text-align:left;">
-
-1.35e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Anaerostipes
-</td>
-
-<td style="text-align:left;">
-
-1.14e-01
-</td>
-
-<td style="text-align:left;">
-
-8.01e-01
-</td>
-
-<td style="text-align:left;">
-
-4.89e-01
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-1.17e-01
-</td>
-
-<td style="text-align:left;">
-
-1.14e-01
-</td>
-
-<td style="text-align:left;">
-
-1.14e-01
-</td>
-
-<td style="text-align:left;">
-
-8.01e-01
-</td>
-
-<td style="text-align:left;">
-
-8.01e-01
-</td>
-
-<td style="text-align:left;">
-
-8.01e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Scardovia
-</td>
-
-<td style="text-align:left;">
-
-1.17e-01
-</td>
-
-<td style="text-align:left;">
-
-1.81e-01
-</td>
-
-<td style="text-align:left;">
-
-1.96e-01
-</td>
-
-<td style="text-align:left;">
-
-3.20e-01
-</td>
-
-<td style="text-align:left;">
-
-1.85e-01
-</td>
-
-<td style="text-align:left;">
-
-1.17e-01
-</td>
-
-<td style="text-align:left;">
-
-1.17e-01
-</td>
-
-<td style="text-align:left;">
-
-1.81e-01
-</td>
-
-<td style="text-align:left;">
-
-1.81e-01
-</td>
-
-<td style="text-align:left;">
-
-1.81e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Enterobacteriaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-1.55e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-<td style="text-align:left;">
-
-1.53e-01
-</td>
-
-<td style="text-align:left;">
-
-2.05e-01
-</td>
-
-<td style="text-align:left;">
-
-3.52e-01
-</td>
-
-<td style="text-align:left;">
-
-1.55e-01
-</td>
-
-<td style="text-align:left;">
-
-1.55e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Rothia
-</td>
-
-<td style="text-align:left;">
-
-1.70e-01
-</td>
-
-<td style="text-align:left;">
-
-2.13e-01
-</td>
-
-<td style="text-align:left;">
-
-1.85e-02
-</td>
-
-<td style="text-align:left;">
-
-4.49e-01
+6.88
 </td>
 
 <td style="text-align:left;">
@@ -12028,27 +1932,22 @@ Rothia
 
 <td style="text-align:left;">
 
-1.70e-01
+2.60e-03\*
 </td>
 
 <td style="text-align:left;">
 
-1.70e-01
+2.79e-02
 </td>
 
 <td style="text-align:left;">
 
-2.13e-01
+4.37e-01
 </td>
 
 <td style="text-align:left;">
 
-2.13e-01
-</td>
-
-<td style="text-align:left;">
-
-2.13e-01
+4.37e-01
 </td>
 
 </tr>
@@ -12057,647 +1956,37 @@ Rothia
 
 <td style="text-align:left;">
 
-Actinomyces
+Clostridioides
 </td>
 
 <td style="text-align:left;">
 
-1.75e-01
+3.49
 </td>
 
 <td style="text-align:left;">
 
-8.27e-02
+9.99e-03\*
 </td>
 
 <td style="text-align:left;">
 
-3.46e-01
+1.98e-03\*
 </td>
 
 <td style="text-align:left;">
 
-8.88e-02
+3.90e-02
 </td>
 
 <td style="text-align:left;">
 
-1.91e-01
+5.59e-03\*
 </td>
 
 <td style="text-align:left;">
 
-1.75e-01
-</td>
-
-<td style="text-align:left;">
-
-1.75e-01
-</td>
-
-<td style="text-align:left;">
-
-8.27e-02
-</td>
-
-<td style="text-align:left;">
-
-8.27e-02
-</td>
-
-<td style="text-align:left;">
-
-8.15e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Atopobium
-</td>
-
-<td style="text-align:left;">
-
-1.81e-01
-</td>
-
-<td style="text-align:left;">
-
-1.29e-01
-</td>
-
-<td style="text-align:left;">
-
-7.42e-01
-</td>
-
-<td style="text-align:left;">
-
-5.87e-01
-</td>
-
-<td style="text-align:left;">
-
-2.23e-01
-</td>
-
-<td style="text-align:left;">
-
-1.81e-01
-</td>
-
-<td style="text-align:left;">
-
-1.81e-01
-</td>
-
-<td style="text-align:left;">
-
-1.29e-01
-</td>
-
-<td style="text-align:left;">
-
-1.29e-01
-</td>
-
-<td style="text-align:left;">
-
-1.29e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Incertae_Sedis
-</td>
-
-<td style="text-align:left;">
-
-2.01e-01
-</td>
-
-<td style="text-align:left;">
-
-8.60e-01
-</td>
-
-<td style="text-align:left;">
-
-3.74e-01
-</td>
-
-<td style="text-align:left;">
-
-7.71e-01
-</td>
-
-<td style="text-align:left;">
-
-2.73e-01
-</td>
-
-<td style="text-align:left;">
-
-2.01e-01
-</td>
-
-<td style="text-align:left;">
-
-2.01e-01
-</td>
-
-<td style="text-align:left;">
-
-8.60e-01
-</td>
-
-<td style="text-align:left;">
-
-8.60e-01
-</td>
-
-<td style="text-align:left;">
-
-8.60e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Olsenella
-</td>
-
-<td style="text-align:left;">
-
-2.12e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-2.91e-01
-</td>
-
-<td style="text-align:left;">
-
-4.98e-01
-</td>
-
-<td style="text-align:left;">
-
-3.17e-01
-</td>
-
-<td style="text-align:left;">
-
-2.12e-01
-</td>
-
-<td style="text-align:left;">
-
-2.12e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridium_sensu_strict18
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-9.20e-02
-</td>
-
-<td style="text-align:left;">
-
-5.89e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dorea
-</td>
-
-<td style="text-align:left;">
-
-2.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.23e-01
-</td>
-
-<td style="text-align:left;">
-
-5.65e-02
-</td>
-
-<td style="text-align:left;">
-
-3.84e-02
-</td>
-
-<td style="text-align:left;">
-
-3.27e-02
-</td>
-
-<td style="text-align:left;">
-
-2.38e-01
-</td>
-
-<td style="text-align:left;">
-
-2.38e-01
-</td>
-
-<td style="text-align:left;">
-
-1.23e-01
-</td>
-
-<td style="text-align:left;">
-
-1.23e-01
-</td>
-
-<td style="text-align:left;">
-
-1.23e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Proteus
-</td>
-
-<td style="text-align:left;">
-
-2.66e-01
-</td>
-
-<td style="text-align:left;">
-
-6.89e-01
-</td>
-
-<td style="text-align:left;">
-
-9.36e-01
-</td>
-
-<td style="text-align:left;">
-
-9.78e-01
-</td>
-
-<td style="text-align:left;">
-
-6.72e-01
-</td>
-
-<td style="text-align:left;">
-
-2.66e-01
-</td>
-
-<td style="text-align:left;">
-
-2.66e-01
-</td>
-
-<td style="text-align:left;">
-
-6.89e-01
-</td>
-
-<td style="text-align:left;">
-
-6.89e-01
-</td>
-
-<td style="text-align:left;">
-
-6.89e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Hungatella
-</td>
-
-<td style="text-align:left;">
-
-2.69e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-2.23e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-02
-</td>
-
-<td style="text-align:left;">
-
-3.59e-01
-</td>
-
-<td style="text-align:left;">
-
-2.69e-01
-</td>
-
-<td style="text-align:left;">
-
-2.69e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Megasphaera
-</td>
-
-<td style="text-align:left;">
-
-2.82e-01
-</td>
-
-<td style="text-align:left;">
-
-7.77e-01
-</td>
-
-<td style="text-align:left;">
-
-5.46e-01
-</td>
-
-<td style="text-align:left;">
-
-1.82e-01
-</td>
-
-<td style="text-align:left;">
-
-7.05e-01
-</td>
-
-<td style="text-align:left;">
-
-2.82e-01
-</td>
-
-<td style="text-align:left;">
-
-2.82e-01
-</td>
-
-<td style="text-align:left;">
-
-7.77e-01
-</td>
-
-<td style="text-align:left;">
-
-7.77e-01
-</td>
-
-<td style="text-align:left;">
-
-7.77e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Coprococcus
-</td>
-
-<td style="text-align:left;">
-
-2.97e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-9.14e-02
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-2.97e-01
-</td>
-
-<td style="text-align:left;">
-
-2.97e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Flavonifractor
-</td>
-
-<td style="text-align:left;">
-
-3.19e-01
-</td>
-
-<td style="text-align:left;">
-
-2.26e-02
-</td>
-
-<td style="text-align:left;">
-
-8.83e-01
-</td>
-
-<td style="text-align:left;">
-
-2.30e-01
-</td>
-
-<td style="text-align:left;">
-
-7.25e-02
-</td>
-
-<td style="text-align:left;">
-
-3.19e-01
-</td>
-
-<td style="text-align:left;">
-
-3.19e-01
-</td>
-
-<td style="text-align:left;">
-
-2.26e-02
-</td>
-
-<td style="text-align:left;">
-
-2.26e-02
-</td>
-
-<td style="text-align:left;">
-
-2.26e-02
+5.59e-03\*
 </td>
 
 </tr>
@@ -12711,22 +2000,17 @@ Flavonifractor
 
 <td style="text-align:left;">
 
+3.81
+</td>
+
+<td style="text-align:left;">
+
 3.19e-01
 </td>
 
 <td style="text-align:left;">
 
-6.07e-02
-</td>
-
-<td style="text-align:left;">
-
-1.57e-01
-</td>
-
-<td style="text-align:left;">
-
-7.43e-03
+7.43e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -12744,729 +2028,6 @@ Flavonifractor
 3.19e-01
 </td>
 
-<td style="text-align:left;">
-
-6.07e-02
-</td>
-
-<td style="text-align:left;">
-
-6.07e-02
-</td>
-
-<td style="text-align:left;">
-
-6.07e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Peptostreptococcus
-</td>
-
-<td style="text-align:left;">
-
-3.22e-01
-</td>
-
-<td style="text-align:left;">
-
-1.63e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-7.88e-01
-</td>
-
-<td style="text-align:left;">
-
-3.22e-01
-</td>
-
-<td style="text-align:left;">
-
-3.22e-01
-</td>
-
-<td style="text-align:left;">
-
-1.63e-01
-</td>
-
-<td style="text-align:left;">
-
-1.63e-01
-</td>
-
-<td style="text-align:left;">
-
-1.63e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Blastococcus
-</td>
-
-<td style="text-align:left;">
-
-3.25e-01
-</td>
-
-<td style="text-align:left;">
-
-3.12e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-9.17e-02
-</td>
-
-<td style="text-align:left;">
-
-9.22e-02
-</td>
-
-<td style="text-align:left;">
-
-3.25e-01
-</td>
-
-<td style="text-align:left;">
-
-3.25e-01
-</td>
-
-<td style="text-align:left;">
-
-3.12e-01
-</td>
-
-<td style="text-align:left;">
-
-3.12e-01
-</td>
-
-<td style="text-align:left;">
-
-3.12e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Family_XIII_AD3011_group
-</td>
-
-<td style="text-align:left;">
-
-3.31e-01
-</td>
-
-<td style="text-align:left;">
-
-3.13e-01
-</td>
-
-<td style="text-align:left;">
-
-3.03e-01
-</td>
-
-<td style="text-align:left;">
-
-3.05e-01
-</td>
-
-<td style="text-align:left;">
-
-3.04e-01
-</td>
-
-<td style="text-align:left;">
-
-3.31e-01
-</td>
-
-<td style="text-align:left;">
-
-3.31e-01
-</td>
-
-<td style="text-align:left;">
-
-3.13e-01
-</td>
-
-<td style="text-align:left;">
-
-3.13e-01
-</td>
-
-<td style="text-align:left;">
-
-3.13e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Roseburia
-</td>
-
-<td style="text-align:left;">
-
-3.91e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.82e-01
-</td>
-
-<td style="text-align:left;">
-
-1.71e-01
-</td>
-
-<td style="text-align:left;">
-
-1.84e-01
-</td>
-
-<td style="text-align:left;">
-
-3.91e-01
-</td>
-
-<td style="text-align:left;">
-
-3.91e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-<td style="text-align:left;">
-
-1.43e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Escherichia-Shigella
-</td>
-
-<td style="text-align:left;">
-
-3.98e-01
-</td>
-
-<td style="text-align:left;">
-
-6.80e-01
-</td>
-
-<td style="text-align:left;">
-
-8.51e-01
-</td>
-
-<td style="text-align:left;">
-
-4.47e-01
-</td>
-
-<td style="text-align:left;">
-
-5.97e-01
-</td>
-
-<td style="text-align:left;">
-
-3.98e-01
-</td>
-
-<td style="text-align:left;">
-
-3.98e-01
-</td>
-
-<td style="text-align:left;">
-
-6.80e-01
-</td>
-
-<td style="text-align:left;">
-
-6.80e-01
-</td>
-
-<td style="text-align:left;">
-
-6.80e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Subdoligranulum
-</td>
-
-<td style="text-align:left;">
-
-3.99e-01
-</td>
-
-<td style="text-align:left;">
-
-4.70e-01
-</td>
-
-<td style="text-align:left;">
-
-2.03e-01
-</td>
-
-<td style="text-align:left;">
-
-1.83e-01
-</td>
-
-<td style="text-align:left;">
-
-5.18e-01
-</td>
-
-<td style="text-align:left;">
-
-3.99e-01
-</td>
-
-<td style="text-align:left;">
-
-3.99e-01
-</td>
-
-<td style="text-align:left;">
-
-4.70e-01
-</td>
-
-<td style="text-align:left;">
-
-4.70e-01
-</td>
-
-<td style="text-align:left;">
-
-4.70e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Erysipelotrichaceae_UCG-003
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-8.45e-01
-</td>
-
-<td style="text-align:left;">
-
-7.75e-01
-</td>
-
-<td style="text-align:left;">
-
-9.23e-01
-</td>
-
-<td style="text-align:left;">
-
-1.84e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-8.45e-01
-</td>
-
-<td style="text-align:left;">
-
-8.45e-01
-</td>
-
-<td style="text-align:left;">
-
-8.45e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Fusicatenibacter
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-4.87e-01
-</td>
-
-<td style="text-align:left;">
-
-9.11e-01
-</td>
-
-<td style="text-align:left;">
-
-8.85e-01
-</td>
-
-<td style="text-align:left;">
-
-3.36e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-4.01e-01
-</td>
-
-<td style="text-align:left;">
-
-4.87e-01
-</td>
-
-<td style="text-align:left;">
-
-4.87e-01
-</td>
-
-<td style="text-align:left;">
-
-4.87e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-UBA1819
-</td>
-
-<td style="text-align:left;">
-
-4.27e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.03e-01
-</td>
-
-<td style="text-align:left;">
-
-2.54e-01
-</td>
-
-<td style="text-align:left;">
-
-2.08e-01
-</td>
-
-<td style="text-align:left;">
-
-4.27e-01
-</td>
-
-<td style="text-align:left;">
-
-4.27e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Akkermansia
-</td>
-
-<td style="text-align:left;">
-
-4.33e-01
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-5.93e-01
-</td>
-
-<td style="text-align:left;">
-
-9.99e-01
-</td>
-
-<td style="text-align:left;">
-
-4.47e-01
-</td>
-
-<td style="text-align:left;">
-
-4.33e-01
-</td>
-
-<td style="text-align:left;">
-
-4.33e-01
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-<td style="text-align:left;">
-
-1.05e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Gordonibacter
-</td>
-
-<td style="text-align:left;">
-
-4.37e-01
-</td>
-
-<td style="text-align:left;">
-
-4.63e-02
-</td>
-
-<td style="text-align:left;">
-
-8.17e-03
-</td>
-
-<td style="text-align:left;">
-
-2.60e-03
-</td>
-
-<td style="text-align:left;">
-
-2.79e-02
-</td>
-
-<td style="text-align:left;">
-
-4.37e-01
-</td>
-
-<td style="text-align:left;">
-
-4.37e-01
-</td>
-
-<td style="text-align:left;">
-
-4.63e-02
-</td>
-
-<td style="text-align:left;">
-
-4.63e-02
-</td>
-
-<td style="text-align:left;">
-
-4.63e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Libanicoccus
-</td>
-
-<td style="text-align:left;">
-
-4.66e-01
-</td>
-
-<td style="text-align:left;">
-
-2.72e-01
-</td>
-
-<td style="text-align:left;">
-
-3.25e-01
-</td>
-
-<td style="text-align:left;">
-
-4.75e-01
-</td>
-
-<td style="text-align:left;">
-
-7.73e-01
-</td>
-
-<td style="text-align:left;">
-
-4.66e-01
-</td>
-
-<td style="text-align:left;">
-
-4.66e-01
-</td>
-
-<td style="text-align:left;">
-
-2.72e-01
-</td>
-
-<td style="text-align:left;">
-
-2.72e-01
-</td>
-
-<td style="text-align:left;">
-
-2.72e-01
-</td>
-
 </tr>
 
 <tr>
@@ -13478,22 +2039,17 @@ Holdemanella
 
 <td style="text-align:left;">
 
+2.78
+</td>
+
+<td style="text-align:left;">
+
 5.30e-01
 </td>
 
 <td style="text-align:left;">
 
-3.40e-03
-</td>
-
-<td style="text-align:left;">
-
-6.76e-02
-</td>
-
-<td style="text-align:left;">
-
-3.34e-03
+3.34e-03\*
 </td>
 
 <td style="text-align:left;">
@@ -13511,4862 +2067,6 @@ Holdemanella
 5.30e-01
 </td>
 
-<td style="text-align:left;">
-
-3.40e-03
-</td>
-
-<td style="text-align:left;">
-
-3.40e-03
-</td>
-
-<td style="text-align:left;">
-
-3.40e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Faecalibacterium
-</td>
-
-<td style="text-align:left;">
-
-5.43e-01
-</td>
-
-<td style="text-align:left;">
-
-2.04e-01
-</td>
-
-<td style="text-align:left;">
-
-8.42e-01
-</td>
-
-<td style="text-align:left;">
-
-4.98e-01
-</td>
-
-<td style="text-align:left;">
-
-2.06e-01
-</td>
-
-<td style="text-align:left;">
-
-5.43e-01
-</td>
-
-<td style="text-align:left;">
-
-5.43e-01
-</td>
-
-<td style="text-align:left;">
-
-2.04e-01
-</td>
-
-<td style="text-align:left;">
-
-2.04e-01
-</td>
-
-<td style="text-align:left;">
-
-2.04e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-8_Comamonadaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-5.49e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-3.19e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-5.49e-01
-</td>
-
-<td style="text-align:left;">
-
-5.49e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Slackia
-</td>
-
-<td style="text-align:left;">
-
-5.61e-01
-</td>
-
-<td style="text-align:left;">
-
-3.03e-01
-</td>
-
-<td style="text-align:left;">
-
-2.87e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-5.61e-01
-</td>
-
-<td style="text-align:left;">
-
-5.61e-01
-</td>
-
-<td style="text-align:left;">
-
-3.03e-01
-</td>
-
-<td style="text-align:left;">
-
-3.03e-01
-</td>
-
-<td style="text-align:left;">
-
-3.03e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-21_Bifidobacteriaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-5.61e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.80e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-5.61e-01
-</td>
-
-<td style="text-align:left;">
-
-5.61e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Varibaculum
-</td>
-
-<td style="text-align:left;">
-
-5.63e-01
-</td>
-
-<td style="text-align:left;">
-
-2.20e-01
-</td>
-
-<td style="text-align:left;">
-
-7.39e-01
-</td>
-
-<td style="text-align:left;">
-
-9.25e-01
-</td>
-
-<td style="text-align:left;">
-
-9.12e-01
-</td>
-
-<td style="text-align:left;">
-
-5.63e-01
-</td>
-
-<td style="text-align:left;">
-
-5.63e-01
-</td>
-
-<td style="text-align:left;">
-
-2.20e-01
-</td>
-
-<td style="text-align:left;">
-
-2.20e-01
-</td>
-
-<td style="text-align:left;">
-
-2.20e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Eubacterium
-</td>
-
-<td style="text-align:left;">
-
-5.66e-01
-</td>
-
-<td style="text-align:left;">
-
-1.17e-02
-</td>
-
-<td style="text-align:left;">
-
-1.08e-01
-</td>
-
-<td style="text-align:left;">
-
-5.18e-02
-</td>
-
-<td style="text-align:left;">
-
-2.79e-02
-</td>
-
-<td style="text-align:left;">
-
-5.66e-01
-</td>
-
-<td style="text-align:left;">
-
-5.66e-01
-</td>
-
-<td style="text-align:left;">
-
-1.17e-02
-</td>
-
-<td style="text-align:left;">
-
-1.17e-02
-</td>
-
-<td style="text-align:left;">
-
-1.17e-02
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Eubacterium\]\_eligengroup
-</td>
-
-<td style="text-align:left;">
-
-5.72e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.88e-01
-</td>
-
-<td style="text-align:left;">
-
-3.19e-01
-</td>
-
-<td style="text-align:left;">
-
-3.20e-01
-</td>
-
-<td style="text-align:left;">
-
-5.72e-01
-</td>
-
-<td style="text-align:left;">
-
-5.72e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Agathobacter
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.40e-01
-</td>
-
-<td style="text-align:left;">
-
-6.47e-01
-</td>
-
-<td style="text-align:left;">
-
-3.16e-01
-</td>
-
-<td style="text-align:left;">
-
-8.37e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.40e-01
-</td>
-
-<td style="text-align:left;">
-
-5.40e-01
-</td>
-
-<td style="text-align:left;">
-
-5.40e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Pseudomonas
-</td>
-
-<td style="text-align:left;">
-
-5.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.78e-01
-</td>
-
-<td style="text-align:left;">
-
-5.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Morganella
-</td>
-
-<td style="text-align:left;">
-
-5.87e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.74e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.95e-01
-</td>
-
-<td style="text-align:left;">
-
-5.87e-01
-</td>
-
-<td style="text-align:left;">
-
-5.87e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Coprobacter
-</td>
-
-<td style="text-align:left;">
-
-5.90e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-7.95e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.95e-01
-</td>
-
-<td style="text-align:left;">
-
-5.90e-01
-</td>
-
-<td style="text-align:left;">
-
-5.90e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Butyricicoccus
-</td>
-
-<td style="text-align:left;">
-
-5.92e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.57e-01
-</td>
-
-<td style="text-align:left;">
-
-5.58e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-5.92e-01
-</td>
-
-<td style="text-align:left;">
-
-5.92e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dolosigranulum
-</td>
-
-<td style="text-align:left;">
-
-6.06e-01
-</td>
-
-<td style="text-align:left;">
-
-3.14e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.87e-01
-</td>
-
-<td style="text-align:left;">
-
-6.06e-01
-</td>
-
-<td style="text-align:left;">
-
-6.06e-01
-</td>
-
-<td style="text-align:left;">
-
-3.14e-01
-</td>
-
-<td style="text-align:left;">
-
-3.14e-01
-</td>
-
-<td style="text-align:left;">
-
-3.14e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Corynebacterium
-</td>
-
-<td style="text-align:left;">
-
-6.08e-01
-</td>
-
-<td style="text-align:left;">
-
-2.24e-01
-</td>
-
-<td style="text-align:left;">
-
-5.62e-01
-</td>
-
-<td style="text-align:left;">
-
-4.75e-01
-</td>
-
-<td style="text-align:left;">
-
-3.17e-01
-</td>
-
-<td style="text-align:left;">
-
-6.08e-01
-</td>
-
-<td style="text-align:left;">
-
-6.08e-01
-</td>
-
-<td style="text-align:left;">
-
-2.24e-01
-</td>
-
-<td style="text-align:left;">
-
-2.24e-01
-</td>
-
-<td style="text-align:left;">
-
-2.24e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dialister
-</td>
-
-<td style="text-align:left;">
-
-6.11e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-3.74e-01
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.11e-01
-</td>
-
-<td style="text-align:left;">
-
-6.11e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-<td style="text-align:left;">
-
-1.07e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Prevotella
-</td>
-
-<td style="text-align:left;">
-
-6.36e-01
-</td>
-
-<td style="text-align:left;">
-
-9.70e-01
-</td>
-
-<td style="text-align:left;">
-
-5.46e-01
-</td>
-
-<td style="text-align:left;">
-
-3.16e-01
-</td>
-
-<td style="text-align:left;">
-
-9.09e-01
-</td>
-
-<td style="text-align:left;">
-
-6.36e-01
-</td>
-
-<td style="text-align:left;">
-
-6.36e-01
-</td>
-
-<td style="text-align:left;">
-
-9.70e-01
-</td>
-
-<td style="text-align:left;">
-
-9.70e-01
-</td>
-
-<td style="text-align:left;">
-
-9.70e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnoclostridium
-</td>
-
-<td style="text-align:left;">
-
-6.60e-01
-</td>
-
-<td style="text-align:left;">
-
-7.51e-01
-</td>
-
-<td style="text-align:left;">
-
-1.79e-01
-</td>
-
-<td style="text-align:left;">
-
-7.83e-01
-</td>
-
-<td style="text-align:left;">
-
-4.09e-01
-</td>
-
-<td style="text-align:left;">
-
-6.60e-01
-</td>
-
-<td style="text-align:left;">
-
-6.60e-01
-</td>
-
-<td style="text-align:left;">
-
-7.51e-01
-</td>
-
-<td style="text-align:left;">
-
-7.51e-01
-</td>
-
-<td style="text-align:left;">
-
-7.51e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-CAG-352
-</td>
-
-<td style="text-align:left;">
-
-6.80e-01
-</td>
-
-<td style="text-align:left;">
-
-8.54e-01
-</td>
-
-<td style="text-align:left;">
-
-8.92e-01
-</td>
-
-<td style="text-align:left;">
-
-1.79e-01
-</td>
-
-<td style="text-align:left;">
-
-6.12e-01
-</td>
-
-<td style="text-align:left;">
-
-6.80e-01
-</td>
-
-<td style="text-align:left;">
-
-6.80e-01
-</td>
-
-<td style="text-align:left;">
-
-8.54e-01
-</td>
-
-<td style="text-align:left;">
-
-8.54e-01
-</td>
-
-<td style="text-align:left;">
-
-8.54e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridia_UCG-014
-</td>
-
-<td style="text-align:left;">
-
-7.86e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.67e-02
-</td>
-
-<td style="text-align:left;">
-
-2.21e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.86e-01
-</td>
-
-<td style="text-align:left;">
-
-7.86e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Gemella
-</td>
-
-<td style="text-align:left;">
-
-8.15e-01
-</td>
-
-<td style="text-align:left;">
-
-2.57e-01
-</td>
-
-<td style="text-align:left;">
-
-9.27e-01
-</td>
-
-<td style="text-align:left;">
-
-3.62e-01
-</td>
-
-<td style="text-align:left;">
-
-4.46e-01
-</td>
-
-<td style="text-align:left;">
-
-8.15e-01
-</td>
-
-<td style="text-align:left;">
-
-8.15e-01
-</td>
-
-<td style="text-align:left;">
-
-2.57e-01
-</td>
-
-<td style="text-align:left;">
-
-2.57e-01
-</td>
-
-<td style="text-align:left;">
-
-2.57e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Senegalimassilia
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-8.35e-01
-</td>
-
-<td style="text-align:left;">
-
-6.55e-01
-</td>
-
-<td style="text-align:left;">
-
-3.17e-01
-</td>
-
-<td style="text-align:left;">
-
-5.37e-01
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-8.35e-01
-</td>
-
-<td style="text-align:left;">
-
-8.35e-01
-</td>
-
-<td style="text-align:left;">
-
-8.35e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Eubacterium\]\_hallii_group
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-6.79e-01
-</td>
-
-<td style="text-align:left;">
-
-8.12e-01
-</td>
-
-<td style="text-align:left;">
-
-7.05e-01
-</td>
-
-<td style="text-align:left;">
-
-6.87e-01
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-8.36e-01
-</td>
-
-<td style="text-align:left;">
-
-6.79e-01
-</td>
-
-<td style="text-align:left;">
-
-6.79e-01
-</td>
-
-<td style="text-align:left;">
-
-6.79e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Acinetobacter
-</td>
-
-<td style="text-align:left;">
-
-8.62e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-3.79e-01
-</td>
-
-<td style="text-align:left;">
-
-8.12e-01
-</td>
-
-<td style="text-align:left;">
-
-6.73e-01
-</td>
-
-<td style="text-align:left;">
-
-8.62e-01
-</td>
-
-<td style="text-align:left;">
-
-8.62e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Eggerthella
-</td>
-
-<td style="text-align:left;">
-
-8.99e-01
-</td>
-
-<td style="text-align:left;">
-
-6.49e-01
-</td>
-
-<td style="text-align:left;">
-
-9.80e-02
-</td>
-
-<td style="text-align:left;">
-
-1.04e-01
-</td>
-
-<td style="text-align:left;">
-
-7.96e-02
-</td>
-
-<td style="text-align:left;">
-
-8.99e-01
-</td>
-
-<td style="text-align:left;">
-
-8.99e-01
-</td>
-
-<td style="text-align:left;">
-
-6.49e-01
-</td>
-
-<td style="text-align:left;">
-
-6.49e-01
-</td>
-
-<td style="text-align:left;">
-
-6.49e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Finegoldia
-</td>
-
-<td style="text-align:left;">
-
-9.14e-01
-</td>
-
-<td style="text-align:left;">
-
-5.03e-01
-</td>
-
-<td style="text-align:left;">
-
-7.83e-01
-</td>
-
-<td style="text-align:left;">
-
-1.88e-01
-</td>
-
-<td style="text-align:left;">
-
-4.15e-01
-</td>
-
-<td style="text-align:left;">
-
-9.14e-01
-</td>
-
-<td style="text-align:left;">
-
-9.14e-01
-</td>
-
-<td style="text-align:left;">
-
-5.03e-01
-</td>
-
-<td style="text-align:left;">
-
-5.03e-01
-</td>
-
-<td style="text-align:left;">
-
-5.03e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Ruminococcus\]\_gauvreauii_group
-</td>
-
-<td style="text-align:left;">
-
-9.84e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-<td style="text-align:left;">
-
-8.42e-01
-</td>
-
-<td style="text-align:left;">
-
-9.39e-01
-</td>
-
-<td style="text-align:left;">
-
-5.44e-01
-</td>
-
-<td style="text-align:left;">
-
-9.84e-01
-</td>
-
-<td style="text-align:left;">
-
-9.84e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-<td style="text-align:left;">
-
-5.27e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Romboutsia
-</td>
-
-<td style="text-align:left;">
-
-9.97e-01
-</td>
-
-<td style="text-align:left;">
-
-2.66e-01
-</td>
-
-<td style="text-align:left;">
-
-1.27e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-4.77e-01
-</td>
-
-<td style="text-align:left;">
-
-9.97e-01
-</td>
-
-<td style="text-align:left;">
-
-9.97e-01
-</td>
-
-<td style="text-align:left;">
-
-2.66e-01
-</td>
-
-<td style="text-align:left;">
-
-2.66e-01
-</td>
-
-<td style="text-align:left;">
-
-2.66e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Negativicoccus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-2.76e-01
-</td>
-
-<td style="text-align:left;">
-
-8.14e-01
-</td>
-
-<td style="text-align:left;">
-
-6.13e-01
-</td>
-
-<td style="text-align:left;">
-
-4.73e-02
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-2.76e-01
-</td>
-
-<td style="text-align:left;">
-
-2.76e-01
-</td>
-
-<td style="text-align:left;">
-
-2.76e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Anaeroglobus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-3.03e-01
-</td>
-
-<td style="text-align:left;">
-
-3.04e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Turicibacter
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.60e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Halomonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.58e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.77e-01
-</td>
-
-<td style="text-align:left;">
-
-5.57e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.58e-01
-</td>
-
-<td style="text-align:left;">
-
-5.58e-01
-</td>
-
-<td style="text-align:left;">
-
-5.58e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Sutterella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.54e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-8.12e-01
-</td>
-
-<td style="text-align:left;">
-
-3.04e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.54e-01
-</td>
-
-<td style="text-align:left;">
-
-5.54e-01
-</td>
-
-<td style="text-align:left;">
-
-5.54e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Brevundimonas
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lawsonella
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Cutibacterium
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.94e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Alistipes
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.82e-01
-</td>
-
-<td style="text-align:left;">
-
-2.73e-01
-</td>
-
-<td style="text-align:left;">
-
-3.98e-01
-</td>
-
-<td style="text-align:left;">
-
-6.75e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.82e-01
-</td>
-
-<td style="text-align:left;">
-
-5.82e-01
-</td>
-
-<td style="text-align:left;">
-
-5.82e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Sarcina
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.78e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Ruminococcus
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Eubacterium\]\_coprostanoligenegroup
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnospira
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnoanaerobaculum
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.75e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnospiraceae_NK4A136_group
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.00e-01
-</td>
-
-<td style="text-align:left;">
-
-7.87e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.88e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-7.00e-01
-</td>
-
-<td style="text-align:left;">
-
-7.00e-01
-</td>
-
-<td style="text-align:left;">
-
-7.00e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Megamonas
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-3.04e-01
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Solobacterium
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Christensenellaceae_R-7_group
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-5.77e-01
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Stenotrophomonas
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-3.04e-01
-</td>
-
-<td style="text-align:left;">
-
-3.04e-01
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-9_Pasteurellaceae(F)
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Dermabacter
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Actinotignum
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-5.72e-01
-</td>
-
-<td style="text-align:left;">
-
-5.74e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-5.76e-01
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-5.72e-01
-</td>
-
-<td style="text-align:left;">
-
-5.72e-01
-</td>
-
-<td style="text-align:left;">
-
-5.72e-01
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Porphyromonas
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-3.04e-01
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Fenollaria
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Monoglobus
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lachnospiraceae_ND3007_group
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-1.00e+00
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-<td style="text-align:left;">
-
-NA
-</td>
-
-</tr>
-
-</tbody>
-
-</table>
-
-<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
-
-<thead>
-
-<tr>
-
-<th style="text-align:left;">
-
-taxon
-</th>
-
-<th style="text-align:right;">
-
-n_sig
-</th>
-
-<th style="text-align:left;">
-
-sig_any
-</th>
-
-<th style="text-align:left;">
-
-sig_all
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+03)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+04)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+05)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+06)
-</th>
-
-<th style="text-align:left;">
-
-dacomp (1e+07)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+03, unconstrained, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+03, SLLS, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, unconstrained, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=250)
-</th>
-
-<th style="text-align:left;">
-
-permApprox (1e+04, SLLS, exceed0=0.25)
-</th>
-
-</tr>
-
-</thead>
-
-<tbody>
-
-<tr>
-
-<td style="text-align:left;">
-
-Bacteroides
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Bifidobacterium
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Blautia
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridium_sensu_strict1
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Enterococcus
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Intestinibacter
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lactococcus
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Streptococcus
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Terrisporobacter
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Clostridium\]\_innocuum_group
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Ruminococcus\]\_gnavugroup
-</td>
-
-<td style="text-align:right;">
-
-10
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Coprobacillus
-</td>
-
-<td style="text-align:right;">
-
-7
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Granulicatella
-</td>
-
-<td style="text-align:right;">
-
-6
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Haemophilus
-</td>
-
-<td style="text-align:right;">
-
-6
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Tyzzerella
-</td>
-
-<td style="text-align:right;">
-
-6
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-\[Ruminococcus\]\_torquegroup
-</td>
-
-<td style="text-align:right;">
-
-6
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Collinsella
-</td>
-
-<td style="text-align:right;">
-
-5
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Holdemanella
-</td>
-
-<td style="text-align:right;">
-
-5
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-uncultured18
-</td>
-
-<td style="text-align:right;">
-
-5
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Clostridioides
-</td>
-
-<td style="text-align:right;">
-
-4
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Delftia
-</td>
-
-<td style="text-align:right;">
-
-4
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Erysipelatoclostridium
-</td>
-
-<td style="text-align:right;">
-
-4
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
 </tr>
 
 <tr>
@@ -18376,69 +2076,34 @@ TRUE
 Paeniclostridium
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-4
+4.58
 </td>
 
 <td style="text-align:left;">
 
-TRUE
+8.99e-03\*
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+8.38e-03\*
 </td>
 
 <td style="text-align:left;">
 
-TRUE
+9.21e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+8.99e-03\*
 </td>
 
 <td style="text-align:left;">
 
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
+8.99e-03\*
 </td>
 
 </tr>
@@ -18450,439 +2115,34 @@ FALSE
 Epulopiscium
 </td>
 
-<td style="text-align:right;">
-
-3
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Gordonibacter
-</td>
-
-<td style="text-align:right;">
-
-2
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-22_Lachnospiraceae(F)
-</td>
-
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Lactobacillus
-</td>
-
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Leuconostoc
-</td>
-
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
-Sellimonas
-</td>
-
-<td style="text-align:right;">
-
-1
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
 <td style="text-align:left;">
 
-TRUE
+2.08
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+2.60e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+3.97e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+2.62e-01
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+6.62e-03\*
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+6.62e-03\*
 </td>
 
 </tr>
@@ -18894,69 +2154,34 @@ FALSE
 Veillonella
 </td>
 
-<td style="text-align:right;">
+<td style="text-align:left;">
 
-1
+1.18
 </td>
 
 <td style="text-align:left;">
 
-TRUE
+3.70e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+3.73e-03\*
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+2.78e-01
 </td>
 
 <td style="text-align:left;">
 
-FALSE
+3.94e-02
 </td>
 
 <td style="text-align:left;">
 
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-TRUE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
-</td>
-
-<td style="text-align:left;">
-
-FALSE
+3.94e-02
 </td>
 
 </tr>
@@ -18964,6 +2189,69 @@ FALSE
 </tbody>
 
 </table>
+
+    ## \begin{table}[!h]
+    ## \centering
+    ## \caption{\label{tab:tab:pvals_raw_selected}Unadjusted p-values across selected methods. Asterisks indicate p-values below $\alpha = 0.01$.}
+    ## \centering
+    ## \fontsize{8}{10}\selectfont
+    ## \begin{tabular}[t]{lrlllll}
+    ## \toprule
+    ## Taxon & stat & dacomp (1e+03) & dacomp (1e+06) & dacomp (1e+07) & permApprox (1e+03, unconstrained, exceed0=250) & permApprox (1e+03, SLLS, exceed0=250)\\
+    ## \midrule
+    ## \cellcolor{gray!10}{Enterococcus} & \cellcolor{gray!10}{67.42} & \cellcolor{gray!10}{9.99e-04*} & \cellcolor{gray!10}{1.00e-06*} & \cellcolor{gray!10}{1.00e-07*} & \cellcolor{gray!10}{4.25e-13*} & \cellcolor{gray!10}{4.25e-13*}\\
+    ## Intestinibacter & 45.20 & 9.99e-04* & 1.00e-06* & 1.00e-07* & 1.97e-18* & 1.97e-18*\\
+    ## \cellcolor{gray!10}{Bifidobacterium} & \cellcolor{gray!10}{45.12} & \cellcolor{gray!10}{9.99e-04*} & \cellcolor{gray!10}{1.00e-06*} & \cellcolor{gray!10}{1.00e-07*} & \cellcolor{gray!10}{2.18e-11*} & \cellcolor{gray!10}{2.18e-11*}\\
+    ## {}[Ruminococcus]_gnavugroup & 24.16 & 9.99e-04* & 1.00e-06* & 4.00e-07* & 1.06e-07* & 1.06e-07*\\
+    ## \cellcolor{gray!10}{{}[Clostridium]_innocuum_group} & \cellcolor{gray!10}{26.41} & \cellcolor{gray!10}{9.99e-04*} & \cellcolor{gray!10}{1.00e-06*} & \cellcolor{gray!10}{8.00e-07*} & \cellcolor{gray!10}{1.07e-03*} & \cellcolor{gray!10}{1.07e-03*}\\
+    ## \addlinespace
+    ## Bacteroides & 20.71 & 9.99e-04* & 1.37e-04* & 4.50e-06* & 2.93e-05* & 2.93e-05*\\
+    ## \cellcolor{gray!10}{Terrisporobacter} & \cellcolor{gray!10}{22.09} & \cellcolor{gray!10}{9.99e-04*} & \cellcolor{gray!10}{1.04e-04*} & \cellcolor{gray!10}{1.02e-05*} & \cellcolor{gray!10}{0.00e+00*} & \cellcolor{gray!10}{2.52e-09*}\\
+    ## Lactococcus & 17.77 & 9.99e-04* & 4.00e-06* & 1.55e-05* & 4.08e-05* & 4.08e-05*\\
+    ## \cellcolor{gray!10}{Streptococcus} & \cellcolor{gray!10}{13.75} & \cellcolor{gray!10}{9.99e-04*} & \cellcolor{gray!10}{3.99e-04*} & \cellcolor{gray!10}{2.02e-04*} & \cellcolor{gray!10}{2.07e-04*} & \cellcolor{gray!10}{2.07e-04*}\\
+    ## {}[Ruminococcus]_torquegroup & 13.39 & 9.99e-04* & 7.78e-03* & 2.31e-04* & 3.35e-06* & 3.35e-06*\\
+    ## \addlinespace
+    ## \cellcolor{gray!10}{Granulicatella} & \cellcolor{gray!10}{10.24} & \cellcolor{gray!10}{7.99e-03*} & \cellcolor{gray!10}{4.10e-05*} & \cellcolor{gray!10}{1.28e-03*} & \cellcolor{gray!10}{7.99e-03*} & \cellcolor{gray!10}{7.99e-03*}\\
+    ## Clostridium_sensu_strict1 & 9.55 & 9.99e-04* & 2.54e-03* & 1.97e-03* & 4.97e-05* & 4.97e-05*\\
+    ## \cellcolor{gray!10}{Sellimonas} & \cellcolor{gray!10}{7.64} & \cellcolor{gray!10}{1.80e-02} & \cellcolor{gray!10}{9.89e-02} & \cellcolor{gray!10}{2.63e-03*} & \cellcolor{gray!10}{2.25e-02} & \cellcolor{gray!10}{2.25e-02}\\
+    ## Blautia & 8.89 & 9.99e-04* & 2.60e-04* & 2.84e-03* & 5.94e-05* & 5.94e-05*\\
+    ## \cellcolor{gray!10}{Haemophilus} & \cellcolor{gray!10}{8.47} & \cellcolor{gray!10}{2.90e-02} & \cellcolor{gray!10}{7.70e-04*} & \cellcolor{gray!10}{3.17e-03*} & \cellcolor{gray!10}{2.80e-02} & \cellcolor{gray!10}{2.80e-02}\\
+    ## \addlinespace
+    ## uncultured18 & 9.64 & 2.10e-02 & 5.69e-02 & 3.22e-03* & 2.86e-02 & 2.86e-02\\
+    ## \cellcolor{gray!10}{Tyzzerella} & \cellcolor{gray!10}{8.22} & \cellcolor{gray!10}{4.00e-03*} & \cellcolor{gray!10}{2.11e-03*} & \cellcolor{gray!10}{3.72e-03*} & \cellcolor{gray!10}{2.02e-03*} & \cellcolor{gray!10}{2.02e-03*}\\
+    ## Leuconostoc & 9.19 & 2.70e-02 & 9.21e-02 & 8.33e-03* & 2.70e-02 & 2.70e-02\\
+    ## \cellcolor{gray!10}{Coprobacillus} & \cellcolor{gray!10}{9.19} & \cellcolor{gray!10}{2.90e-02} & \cellcolor{gray!10}{8.42e-03*} & \cellcolor{gray!10}{8.38e-03*} & \cellcolor{gray!10}{2.90e-02} & \cellcolor{gray!10}{2.90e-02}\\
+    ## Collinsella & 5.69 & 9.99e-04* & 3.39e-04* & 1.70e-02 & 3.30e-04* & 3.30e-04*\\
+    ## \addlinespace
+    ## \cellcolor{gray!10}{Gordonibacter} & \cellcolor{gray!10}{6.88} & \cellcolor{gray!10}{4.37e-01} & \cellcolor{gray!10}{2.60e-03*} & \cellcolor{gray!10}{2.79e-02} & \cellcolor{gray!10}{4.37e-01} & \cellcolor{gray!10}{4.37e-01}\\
+    ## Clostridioides & 3.49 & 9.99e-03* & 1.98e-03* & 3.90e-02 & 5.59e-03* & 5.59e-03*\\
+    ## \cellcolor{gray!10}{22_Lachnospiraceae(F)} & \cellcolor{gray!10}{3.81} & \cellcolor{gray!10}{3.19e-01} & \cellcolor{gray!10}{7.43e-03*} & \cellcolor{gray!10}{6.17e-02} & \cellcolor{gray!10}{3.19e-01} & \cellcolor{gray!10}{3.19e-01}\\
+    ## Holdemanella & 2.78 & 5.30e-01 & 3.34e-03* & 6.55e-02 & 5.30e-01 & 5.30e-01\\
+    ## \cellcolor{gray!10}{Paeniclostridium} & \cellcolor{gray!10}{4.58} & \cellcolor{gray!10}{8.99e-03*} & \cellcolor{gray!10}{8.38e-03*} & \cellcolor{gray!10}{9.21e-02} & \cellcolor{gray!10}{8.99e-03*} & \cellcolor{gray!10}{8.99e-03*}\\
+    ## \addlinespace
+    ## Epulopiscium & 2.08 & 2.60e-02 & 3.97e-02 & 2.62e-01 & 6.62e-03* & 6.62e-03*\\
+    ## \cellcolor{gray!10}{Veillonella} & \cellcolor{gray!10}{1.18} & \cellcolor{gray!10}{3.70e-02} & \cellcolor{gray!10}{3.73e-03*} & \cellcolor{gray!10}{2.78e-01} & \cellcolor{gray!10}{3.94e-02} & \cellcolor{gray!10}{3.94e-02}\\
+    ## \bottomrule
+    ## \end{tabular}
+    ## \end{table}
+
+    ## Number of tests:  118
+
+    ##               permApprox (1e+03, SLLS)
+    ## dacomp (1e+07) FALSE TRUE
+    ##          FALSE    95    4
+    ##          TRUE      5   14
+
+    ## # A tibble: 7 × 2
+    ##   Metric                             Value
+    ##   <chr>                              <chr>
+    ## 1 Total tests                        118  
+    ## 2 Significant by dacomp (B = 1e7)    19   
+    ## 3 Significant by permApprox(C)       18   
+    ## 4 Shared significant taxa            14   
+    ## 5 Sensitivity (permApprox vs dacomp) 73.7%
+    ## 6 Precision (permApprox vs dacomp)   77.8%
+    ## 7 Overall agreement rate             92.4%
 
 ## Taxa with zero p-values
 
@@ -19038,65 +2326,6 @@ permApprox (1e+04, SLLS, exceed0=0.25)
 
 <td style="text-align:left;">
 
-Terrisporobacter
-</td>
-
-<td style="text-align:left;">
-
-5.30e-03
-</td>
-
-<td style="text-align:left;">
-
-8.43e-04
-</td>
-
-<td style="text-align:left;">
-
-8.50e-05
-</td>
-
-<td style="text-align:left;">
-
-7.26e-04
-</td>
-
-<td style="text-align:left;">
-
-7.32e-05
-</td>
-
-<td style="text-align:left;">
-
-0.00e+00
-</td>
-
-<td style="text-align:left;">
-
-6.74e-08
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-<td style="text-align:left;">
-
-1.35e-03
-</td>
-
-</tr>
-
-<tr>
-
-<td style="text-align:left;">
-
 Lactococcus
 </td>
 
@@ -19152,6 +2381,65 @@ Lactococcus
 
 </tr>
 
+<tr>
+
+<td style="text-align:left;">
+
+Terrisporobacter
+</td>
+
+<td style="text-align:left;">
+
+5.30e-03
+</td>
+
+<td style="text-align:left;">
+
+8.43e-04
+</td>
+
+<td style="text-align:left;">
+
+8.50e-05
+</td>
+
+<td style="text-align:left;">
+
+7.26e-04
+</td>
+
+<td style="text-align:left;">
+
+7.32e-05
+</td>
+
+<td style="text-align:left;">
+
+0.00e+00
+</td>
+
+<td style="text-align:left;">
+
+6.74e-08
+</td>
+
+<td style="text-align:left;">
+
+1.35e-03
+</td>
+
+<td style="text-align:left;">
+
+1.35e-03
+</td>
+
+<td style="text-align:left;">
+
+1.35e-03
+</td>
+
+</tr>
+
 </tbody>
 
 </table>
@@ -19166,25 +2454,41 @@ Lactococcus
 
 ##### permApprox unconstrained
 
+    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e3_unconstr-1.png)<!-- -->
+
+    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e3_unconstr-1.png)<!-- -->
 
 ##### permApprox with 1000 permutations
 
+    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e3-1.png)<!-- -->
+
+    ## Warning: Removed 27 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e3-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=250
 
+    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e4_250-1.png)<!-- -->
+
+    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e4_250-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=0.25B
 
+    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_all_sig_1e4_0.25-1.png)<!-- -->
+
+    ## Warning: Removed 26 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_selected_1e4_0.25-1.png)<!-- -->
 
@@ -19192,25 +2496,41 @@ Lactococcus
 
 ##### permApprox unconstrained
 
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e3_unconstr-1.png)<!-- -->
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e3_unconstr-1.png)<!-- -->
 
 ##### permApprox with 1000 permutations
 
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e3-1.png)<!-- -->
+
+    ## Warning: Removed 11 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e3-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=250
 
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e4_250-1.png)<!-- -->
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e4_250-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=0.25B
 
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_all_sig_1e4_0.25-1.png)<!-- -->
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_adj_selected_1e4_0.25-1.png)<!-- -->
 
@@ -19218,13 +2538,21 @@ Lactococcus
 
 ##### permApprox with 1000 permutations
 
+    ## Warning: Removed 38 rows containing missing values or values outside the scale range (`geom_point()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_four_panel_1e3-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=250
 
+    ## Warning: Removed 37 rows containing missing values or values outside the scale range (`geom_point()`).
+
+    ## Warning: Removed 1 row containing missing values or values outside the scale range (`geom_text_repel()`).
+
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_four_panel_1e4_250-1.png)<!-- -->
 
 ##### permApprox with 10,000 permutations and k0=0.25B
+
+    ## Warning: Removed 36 rows containing missing values or values outside the scale range (`geom_point()`).
 
 ![](figures/02_micro_diff_abund/app_dacomp_volcano_raw_four_panel_1e4_025B-1.png)<!-- -->
 
@@ -19236,6 +2564,11 @@ permutation distributions.
 #### 1000 permApprox permutations
 
 ##### Significant in ALL settings
+
+    ## Warning: Use of .data in tidyselect expressions was deprecated in tidyselect 1.2.0.
+    ## ℹ Please use `all_of(var)` (or `any_of(var)`) instead of `.data[[var]]`
+    ## This warning is displayed once every 8 hours.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was generated.
 
 ![](figures/02_micro_diff_abund/app_dacomp_boxplots_1e3_sig_all-1.png)<!-- -->
 

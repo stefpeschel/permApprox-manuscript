@@ -1479,6 +1479,8 @@ res_all_long %>%
 
 ## Significant taxa
 
+Below we take a look at the p-values of genera that are significant in at least any of the methods considered.
+
 ```{r}
 ## Load the unified long table
 res_all_long <- readRDS(path_target("results_all_long.rds"))
@@ -1488,27 +1490,59 @@ alpha_sig <- 0.01
 ### Adjusted
 
 ```{r}
+keep_methods <- c(
+  "dacomp (1e+03)",
+  "dacomp (1e+06)",
+  "dacomp (1e+07)",
+  "permApprox (1e+03, unconstrained, exceed0=250)",
+  "permApprox (1e+03, SLLS, exceed0=250)"
+)
+
 fmt_p <- function(x, digits = 2) {
   ifelse(is.na(x), NA_character_, formatC(x, format = "e", digits = digits))
+
 }
 
+fmt_p_star <- function(x, alpha = 0.05, digits = 2) {
+  out <- ifelse(is.na(x), NA_character_, formatC(x, format = "e", digits = digits))
+  ifelse(!is.na(x) & x < alpha, paste0(out, "*"), out)
+}
+
+dacomp_stat_panel <- "dacomp (1e+07)"
+
+dacomp_stat <- res_all_long %>%
+  dplyr::filter(panel == dacomp_stat_panel) %>%
+  dplyr::select(taxon, stat)
+
 p_wide_adj <- res_all_long %>%
-  dplyr::select(taxon, panel, p_adj) %>%
-  tidyr::pivot_wider(names_from = panel, values_from = p_adj) %>%
-  dplyr::arrange(`permApprox (1e+03, SLLS, exceed0=250)`)
+  select(taxon, panel, p_adj) %>%
+  pivot_wider(names_from = panel, values_from = p_adj)
 
 p_wide_adj_print <- p_wide_adj %>%
+  # add dacomp test statistic
+  dplyr::left_join(dacomp_stat, by = "taxon") %>%
+  # reorder columns: taxon | stat | p-values
+  dplyr::select(taxon, stat, any_of(keep_methods)) %>%
+  # keep taxa with at least one significant p-value
+  dplyr::filter(if_any(all_of(keep_methods), ~ !is.na(.) & . < alpha_sig)) %>%
+  # order by your preferred column (e.g. strongest dacomp)
+  dplyr::arrange(.data[[keep_methods[3]]]) %>%
+  dplyr::mutate(stat = round(stat, 2)) %>%
+  # format p-values + stars (but NOT stat)
   dplyr::mutate(
     dplyr::across(
-      -taxon,
-      ~ fmt_p(.x, digits = 2)
+      all_of(keep_methods),
+      ~ fmt_p_star(.x, alpha = alpha_sig, digits = 2)
     )
   )
 
 p_wide_adj_print %>%
   knitr::kable(
-    align = "l",
-    caption = "Adjusted p-values across methods and permutation settings"
+    align   = "l",
+    caption = sprintf(
+      "Unadjusted p-values (only selected methods; rows kept if any p < %.3g; * indicates p < %.3g)",
+      alpha_sig, alpha_sig
+    )
   ) %>%
   kableExtra::kable_styling(
     full_width = FALSE,
@@ -1517,91 +1551,253 @@ p_wide_adj_print %>%
 ```
 
 ```{r}
-sig_wide_adj <- res_all_long %>%
-  dplyr::mutate(sig = !is.na(p_adj) & (p_adj <= alpha_sig)) %>%
-  dplyr::select(taxon, panel, sig) %>%
-  tidyr::pivot_wider(
-    names_from  = panel,
-    values_from = sig,
-    values_fill = FALSE
-  ) %>%
-  dplyr::arrange(taxon)
+# LaTeX export
 
-sig_overview <- sig_wide_adj %>%
-  dplyr::mutate(
-    n_sig   = rowSums(dplyr::across(-taxon)),
-    sig_any = n_sig > 0,
-    sig_all = n_sig == (ncol(.) - 1)
-  ) %>%
-  dplyr::arrange(dplyr::desc(n_sig), taxon) %>%
-  select(taxon, n_sig, sig_any, sig_all, everything())
+p_adj_latex <- p_wide_adj_print %>%
+  dplyr::select(Taxon = taxon, dplyr::everything())
 
-sig_overview %>%
-  dplyr::slice_head(n = 30) %>%
-  kableExtra::kable() %>%
-  kableExtra::kable_styling(full_width = FALSE)
+p_adj_latex <- p_adj_latex
+names(p_adj_latex) <- gsub("_", "\\\\_", names(p_adj_latex))
+
+p_adj_latex_out <- knitr::kable(
+  p_adj_latex,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,  # set TRUE if you are sure there is no LaTeX in cells/caption
+  caption  = sprintf(
+    "Unadjusted p-values across selected methods. Asterisks indicate p-values below $\\alpha = %.3g$.",
+    alpha_sig
+  ),
+  label    = "tab:pvals_adj_selected"
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("hold_position", "striped"),
+    font_size     = 8
+  )
+
+print(p_adj_latex_out)
+kableExtra::save_kable(p_adj_latex_out, path_target("pvals_adj_selected.tex"))
 ```
+
+```{r}
+# Crosstable
+
+m1 <- "dacomp (1e+07)"
+m2 <- "permApprox (1e+03, SLLS, exceed0=250)"
+
+sig_tab <- p_wide_adj %>%
+  dplyr::select(taxon, all_of(c(m1, m2))) %>%
+  dplyr::mutate(
+    sig_dacomp = !is.na(.data[[m1]]) & .data[[m1]] < alpha_sig,
+    sig_permAp = !is.na(.data[[m2]]) & .data[[m2]] < alpha_sig
+  )
+
+ct <- table(
+  `dacomp (1e+07)` = sig_tab$sig_dacomp,
+  `permApprox (1e+03, SLLS)` = sig_tab$sig_permAp
+)
+
+cat("Number of tests: ", sum(ct), "\n")
+
+ct
+```
+
+```{r}
+TN <- ct[1, 1]
+FP <- ct[1, 2]
+FN <- ct[2, 1]
+TP <- ct[2, 2]
+N  <- sum(ct)
+
+sensitivity <- TP / (TP + FN)
+precision <- TP / (TP + FP)
+accuracy <- (TP + TN) / N
+
+n_dacomp_sig     <- TP + FN
+n_permApprox_sig <- TP + FP
+
+ratio_table <- tibble::tibble(
+  Metric = c(
+    "Total tests",
+    "Significant by dacomp (B = 1e7)",
+    "Significant by permApprox(C)",
+    "Shared significant taxa",
+    "Sensitivity (permApprox vs dacomp)",
+    "Precision (permApprox vs dacomp)",
+    "Overall agreement rate"
+  ),
+  Value = c(
+    N,
+    n_dacomp_sig,
+    n_permApprox_sig,
+    TP,
+    sensitivity,
+    precision,
+    accuracy
+  )
+)
+
+ratio_table %>%
+  dplyr::mutate(
+    Value = ifelse(Value <= 1, scales::percent(Value, accuracy = 0.1), Value)
+  )
+
+```
+
 
 ### Unadjusted
 
-```{r}
-p_wide_raw <- res_all_long %>%
-  dplyr::select(taxon, panel, p_raw) %>%
-  tidyr::pivot_wider(
-    names_from  = panel,
-    values_from = p_raw
-  ) %>%
-  dplyr::arrange(`permApprox (1e+03, SLLS, exceed0=250)`)
 
-fmt_p <- function(x, digits = 2) {
-  ifelse(is.na(x), NA_character_, formatC(x, format = "e", digits = digits))
+```{r}
+keep_methods <- c(
+  "dacomp (1e+03)",
+  "dacomp (1e+06)",
+  "dacomp (1e+07)",
+  "permApprox (1e+03, unconstrained, exceed0=250)",
+  "permApprox (1e+03, SLLS, exceed0=250)"
+)
+
+fmt_p_star <- function(x, alpha = 0.05, digits = 2) {
+  out <- ifelse(is.na(x), NA_character_, formatC(x, format = "e", digits = digits))
+  ifelse(!is.na(x) & x < alpha, paste0(out, "*"), out)
 }
 
+dacomp_stat_panel <- "dacomp (1e+07)"
+
+dacomp_stat <- res_all_long %>%
+  dplyr::filter(panel == dacomp_stat_panel) %>%
+  dplyr::select(taxon, stat)
+
+p_wide_raw <- res_all_long %>%
+  select(taxon, panel, p_raw) %>%
+  pivot_wider(names_from = panel, values_from = p_raw)
+
 p_wide_raw_print <- p_wide_raw %>%
+  # add dacomp test statistic
+  dplyr::left_join(dacomp_stat, by = "taxon") %>%
+  # reorder columns: taxon | stat | p-values
+  dplyr::select(taxon, stat, any_of(keep_methods)) %>%
+  # keep taxa with at least one significant p-value
+  dplyr::filter(if_any(all_of(keep_methods), ~ !is.na(.) & . < alpha_sig)) %>%
+  # order by your preferred column (e.g. strongest dacomp)
+  dplyr::arrange(.data[[keep_methods[3]]]) %>%
+  dplyr::mutate(stat = round(stat, 2)) %>%
+  # format p-values + stars (but NOT stat)
   dplyr::mutate(
     dplyr::across(
-      -taxon,
-      ~ fmt_p(.x, digits = 2)
+      all_of(keep_methods),
+      ~ fmt_p_star(.x, alpha = alpha_sig, digits = 2)
     )
   )
 
 p_wide_raw_print %>%
   knitr::kable(
     align   = "l",
-    caption = "Unadjusted p-values across methods and permutation settings"
+    caption = sprintf(
+      "Unadjusted p-values (only selected methods; rows kept if any p < %.3g; * indicates p < %.3g)",
+      alpha_sig, alpha_sig
+    )
   ) %>%
   kableExtra::kable_styling(
     full_width = FALSE,
     bootstrap_options = c("striped", "hover")
   )
+```
 
+
+```{r}
+# LaTeX export
+
+p_raw_latex <- p_wide_raw_print %>%
+  dplyr::select(Taxon = taxon, dplyr::everything())
+
+p_raw_latex <- p_raw_latex
+names(p_raw_latex) <- gsub("_", "\\\\_", names(p_raw_latex))
+
+p_raw_latex_out <- knitr::kable(
+  p_raw_latex,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,  # set TRUE if you are sure there is no LaTeX in cells/caption
+  caption  = sprintf(
+    "Unadjusted p-values across selected methods. Asterisks indicate p-values below $\\alpha = %.3g$.",
+    alpha_sig
+  ),
+  label    = "tab:pvals_raw_selected"
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("hold_position", "striped"),
+    font_size     = 8
+  )
+
+print(p_raw_latex_out)
+kableExtra::save_kable(p_raw_latex_out, path_target("pvals_raw_selected.tex"))
+```
+
+
+```{r}
+# Cross table
+
+m1 <- "dacomp (1e+07)"
+m2 <- "permApprox (1e+03, SLLS, exceed0=250)"
+
+sig_tab <- p_wide_raw %>%
+  dplyr::select(taxon, all_of(c(m1, m2))) %>%
+  dplyr::mutate(
+    sig_dacomp = !is.na(.data[[m1]]) & .data[[m1]] < alpha_sig,
+    sig_permAp = !is.na(.data[[m2]]) & .data[[m2]] < alpha_sig
+  )
+
+ct <- table(
+  `dacomp (1e+07)` = sig_tab$sig_dacomp,
+  `permApprox (1e+03, SLLS)` = sig_tab$sig_permAp
+)
+
+cat("Number of tests: ", sum(ct), "\n")
+
+ct
 ```
 
 ```{r}
-sig_wide_raw <- res_all_long %>%
-  dplyr::mutate(sig = !is.na(p_raw) & (p_raw <= alpha_sig)) %>%
-  dplyr::select(taxon, panel, sig) %>%
-  tidyr::pivot_wider(
-    names_from  = panel,
-    values_from = sig,
-    values_fill = FALSE
+TN <- ct[1, 1]
+FP <- ct[1, 2]
+FN <- ct[2, 1]
+TP <- ct[2, 2]
+N  <- sum(ct)
+
+sensitivity <- TP / (TP + FN)
+precision <- TP / (TP + FP)
+accuracy <- (TP + TN) / N
+
+n_dacomp_sig     <- TP + FN
+n_permApprox_sig <- TP + FP
+
+ratio_table <- tibble::tibble(
+  Metric = c(
+    "Total tests",
+    "Significant by dacomp (B = 1e7)",
+    "Significant by permApprox(C)",
+    "Shared significant taxa",
+    "Sensitivity (permApprox vs dacomp)",
+    "Precision (permApprox vs dacomp)",
+    "Overall agreement rate"
+  ),
+  Value = c(
+    N,
+    n_dacomp_sig,
+    n_permApprox_sig,
+    TP,
+    sensitivity,
+    precision,
+    accuracy
   )
+)
 
-sig_overview <- sig_wide_raw %>%
+ratio_table %>%
   dplyr::mutate(
-    n_sig   = rowSums(dplyr::across(-taxon)),
-    sig_any = n_sig > 0,
-    sig_all = n_sig == (ncol(.) - 1)
-  ) %>%
-  dplyr::arrange(dplyr::desc(n_sig), taxon) %>%
-  select(taxon, n_sig, sig_any, sig_all, everything())
-
-sig_overview %>%
-  dplyr::slice_head(n = 30) %>%
-  kableExtra::kable() %>%
-  kableExtra::kable_styling(full_width = FALSE)
+    Value = ifelse(Value <= 1, scales::percent(Value, accuracy = 0.1), Value)
+  )
 ```
-
 
 ## Taxa with zero p-values
 
