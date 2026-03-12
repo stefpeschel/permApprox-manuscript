@@ -1,10 +1,6 @@
 Two-sample t-test - Find a proper epsilon rule
 ================
-Compiled at 2026-02-02 19:02:09 UTC
-
-``` r
-here::i_am(paste0(params$name, ".Rmd"), uuid = "33fc44d3-dfcd-4437-8007-bd720e59a7e7")
-```
+Compiled at 2026-03-08 13:21:12 UTC
 
 In **permApprox**, permutation $p$-values are obtained by fitting a GPD
 to the tail of permutation test statistics. When the fitted shape is
@@ -55,12 +51,20 @@ where
 
 ![](figures/03_find_eps_rule/expl_eps_rule_histograms-1.png)<!-- -->
 
-## Plot function
+## Plot function p vs t
 
 ## Function to run permApprox
 
 This function will be used for all p-values approximations with
 constrained GPD fit.
+
+## Helper functions to evaluate the results
+
+## Plot function p-vs-p
+
+## Plot heatmap function
+
+## Plot epsilon rules
 
 ## Unconstrained GPD fit
 
@@ -68,13 +72,13 @@ For comparison, we again start with the unconstrained fit.
 
     ## Rows: 6,000
     ## Columns: 7
-    ## $ idx         <int> 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,…
-    ## $ n_per_group <dbl> 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50…
-    ## $ effect_size <fct> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,…
-    ## $ obs_stats   <dbl> 0.129255525, 1.418815748, 2.541184859, 0.469398919, 1.329776159, 0.286718830, 0.389742604, 0.401101697, 0.728142692, 0.592…
-    ## $ p_ttest     <dbl> 0.89742037, 0.15912533, 0.01261645, 0.63982721, 0.18667889, 0.77493292, 0.69757261, 0.68921847, 0.46826251, 0.55508943, 0.…
-    ## $ gpd_fit     <lgl> FALSE, TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, F…
-    ## $ p_unconstr  <dbl> 0.894105894, 0.147344092, 0.009766589, 0.636363636, 0.180129932, 0.773226773, 0.697302697, 0.680319680, 0.433566434, 0.533…
+    ## $ idx         <int> 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, …
+    ## $ n_per_group <dbl> 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50,…
+    ## $ effect_size <fct> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,…
+    ## $ obs_stats   <dbl> 0.129255525, 1.418815748, 2.541184859, 0.469398919, 1.329776159, 0.286718830, 0.389742604, 0.401101697, 0.728142692, 0.592186661, 1…
+    ## $ p_ttest     <dbl> 0.89742037, 0.15912533, 0.01261645, 0.63982721, 0.18667889, 0.77493292, 0.69757261, 0.68921847, 0.46826251, 0.55508943, 0.26047741,…
+    ## $ gpd_fit     <lgl> FALSE, TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, TRU…
+    ## $ p_unconstr  <dbl> 0.894105894, 0.147344092, 0.009766589, 0.636363636, 0.180129932, 0.773226773, 0.697302697, 0.680319680, 0.433566434, 0.533466533, 0…
 
     ## Number of zeros for n = 50: 488
 
@@ -118,7 +122,11 @@ across-test context, so it mainly serves as a baseline.
 
 ![](figures/03_find_eps_rule/expl_eps_rule_rule_factor_0.1-1.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_pp-1.png)<!-- -->
 
 ## $\varepsilon$ rule: Factor = 0.05
 
@@ -126,7 +134,11 @@ Same epsilon rule as before but with $\varepsilon_{fact}=0.05$
 
 ![](figures/03_find_eps_rule/expl_eps_rule_rule_factor_0.05-1.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor005_pp-1.png)<!-- -->
 
 While $\varepsilon_{fact}=0.1$ was the best choice for $n=100$, the
 epsilon rule $\varepsilon_{fact}=0.05$ would be the best choice for
@@ -139,7 +151,9 @@ dependent on the sample size $n$.
 
 We also take a brief look at eps = 0.
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor0_3n-1.png)<!-- -->
 
 While $\varepsilon_{fact}=0.1$ was the best choice for $n=100$, the
 epsilon rule $\varepsilon_{fact}=0.05$ would be the best choice for
@@ -148,13 +162,17 @@ $n=250$.
 The simulations show that the optimal epsilon factor is clearly
 dependent on the sample size $n$.
 
-## $\varepsilon$ rule: Factor = 0.1 (constraint on max test statistic)
+## $\varepsilon$ rule: Factor = 0.1 (max test statistic)
 
 To see how well the approach of applying the constraint only on the
 maximum observed test statistic, we will test this now with
 $\varepsilon_{fact}=0.1$.
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_factor01_max_pp-1.png)<!-- -->
 
 Applying the contraint to the maximum test statistic only is far too
 conservative for larger sample sizes.
@@ -175,11 +193,15 @@ increased precision of the permutation distribution.
 
 $C = 1000$ and $p = 2$ turned out to be good choices in former trials.
 
-    ## eps range for n = 1000 : 4.68062e-07 0.01726686
+    ## eps range for n = 100 : 4.68062e-05 1.726686
 
 ![](figures/03_find_eps_rule/expl_eps_rule_rule_n_power-1.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_n_squared_pp-1.png)<!-- -->
 
 An epsilon rule dependent on $n$ leads to much better p-values
 approximations than the factor rule. However, while the approximated
@@ -189,6 +211,298 @@ words: the trend seems to be too linear.
 
 A logarithmic dependence on $t_{obs}$ might be more sufficient than a
 rule that is linear in $t_{obs}$.
+
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+
+<caption>
+
+Mean absolute log10 error for epsilon rule: log_sat
+</caption>
+
+<thead>
+
+<tr>
+
+<th style="text-align:right;">
+
+rule
+</th>
+
+<th style="text-align:right;">
+
+n_per_group
+</th>
+
+<th style="text-align:right;">
+
+0
+</th>
+
+<th style="text-align:right;">
+
+0.5
+</th>
+
+<th style="text-align:right;">
+
+1
+</th>
+
+<th style="text-align:right;">
+
+1.5
+</th>
+
+<th style="text-align:right;">
+
+2
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+50
+</td>
+
+<td style="text-align:right;">
+
+0.013
+</td>
+
+<td style="text-align:right;">
+
+0.118
+</td>
+
+<td style="text-align:right;">
+
+0.389
+</td>
+
+<td style="text-align:right;">
+
+1.451
+</td>
+
+<td style="text-align:right;">
+
+3.065
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+100
+</td>
+
+<td style="text-align:right;">
+
+0.020
+</td>
+
+<td style="text-align:right;">
+
+0.666
+</td>
+
+<td style="text-align:right;">
+
+1.810
+</td>
+
+<td style="text-align:right;">
+
+1.239
+</td>
+
+<td style="text-align:right;">
+
+2.771
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+250
+</td>
+
+<td style="text-align:right;">
+
+0.014
+</td>
+
+<td style="text-align:right;">
+
+5.790
+</td>
+
+<td style="text-align:right;">
+
+9.695
+</td>
+
+<td style="text-align:right;">
+
+6.359
+</td>
+
+<td style="text-align:right;">
+
+4.175
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+500
+</td>
+
+<td style="text-align:right;">
+
+0.018
+</td>
+
+<td style="text-align:right;">
+
+15.428
+</td>
+
+<td style="text-align:right;">
+
+19.310
+</td>
+
+<td style="text-align:right;">
+
+9.579
+</td>
+
+<td style="text-align:right;">
+
+9.046
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+750
+</td>
+
+<td style="text-align:right;">
+
+0.055
+</td>
+
+<td style="text-align:right;">
+
+23.029
+</td>
+
+<td style="text-align:right;">
+
+24.443
+</td>
+
+<td style="text-align:right;">
+
+8.425
+</td>
+
+<td style="text-align:right;">
+
+22.562
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+1000
+</td>
+
+<td style="text-align:right;">
+
+0.013
+</td>
+
+<td style="text-align:right;">
+
+30.187
+</td>
+
+<td style="text-align:right;">
+
+25.979
+</td>
+
+<td style="text-align:right;">
+
+10.756
+</td>
+
+<td style="text-align:right;">
+
+40.195
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+![](figures/03_find_eps_rule/expl_eps_rule_heat_n_squared-1.png)<!-- -->
 
 ## $\varepsilon$ rule: Logarithmic growth in t
 
@@ -215,7 +529,11 @@ eps_log_t <- function(obs_stats = NULL, sampsize = NULL, A = 4000, B = 1.5, ...)
 
 ![](figures/03_find_eps_rule/expl_eps_rule_rule_log_t-1.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_t_pp-1.png)<!-- -->
 
 This rule performs well for n = 100 with the chosen values for $A$ and
 $B$, but we need a generally applicable rule.
@@ -318,18 +636,318 @@ eps_log_saturation <- function(obs_stats,
 
 ![](figures/03_find_eps_rule/expl_eps_rule_rule_log_saturation-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_rule_log_saturation-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_rule_log_saturation-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_rule_log_saturation-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_rule_log_saturation-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_rule_log_saturation-6.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_pp-1.png)<!-- -->
 
 The approach still under-estimates the p-values for moderate effect
 sizes. That means, we would have to increase the epsilon there, but keep
 it for high effect sizes. We run the log rule again, but with a higher
 $k_{factor}$, which influences the curvature of the epsilon function.
 
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+
+<caption>
+
+Mean absolute log10 error for epsilon rule: log_sat
+</caption>
+
+<thead>
+
+<tr>
+
+<th style="text-align:right;">
+
+rule
+</th>
+
+<th style="text-align:right;">
+
+n_per_group
+</th>
+
+<th style="text-align:right;">
+
+0
+</th>
+
+<th style="text-align:right;">
+
+0.5
+</th>
+
+<th style="text-align:right;">
+
+1
+</th>
+
+<th style="text-align:right;">
+
+1.5
+</th>
+
+<th style="text-align:right;">
+
+2
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+50
+</td>
+
+<td style="text-align:right;">
+
+0.013
+</td>
+
+<td style="text-align:right;">
+
+0.100
+</td>
+
+<td style="text-align:right;">
+
+0.354
+</td>
+
+<td style="text-align:right;">
+
+0.861
+</td>
+
+<td style="text-align:right;">
+
+1.296
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+100
+</td>
+
+<td style="text-align:right;">
+
+0.020
+</td>
+
+<td style="text-align:right;">
+
+0.299
+</td>
+
+<td style="text-align:right;">
+
+0.753
+</td>
+
+<td style="text-align:right;">
+
+1.116
+</td>
+
+<td style="text-align:right;">
+
+1.804
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+250
+</td>
+
+<td style="text-align:right;">
+
+0.014
+</td>
+
+<td style="text-align:right;">
+
+2.374
+</td>
+
+<td style="text-align:right;">
+
+3.195
+</td>
+
+<td style="text-align:right;">
+
+2.945
+</td>
+
+<td style="text-align:right;">
+
+5.924
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+500
+</td>
+
+<td style="text-align:right;">
+
+0.018
+</td>
+
+<td style="text-align:right;">
+
+6.518
+</td>
+
+<td style="text-align:right;">
+
+4.414
+</td>
+
+<td style="text-align:right;">
+
+8.940
+</td>
+
+<td style="text-align:right;">
+
+24.180
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+750
+</td>
+
+<td style="text-align:right;">
+
+0.032
+</td>
+
+<td style="text-align:right;">
+
+9.722
+</td>
+
+<td style="text-align:right;">
+
+4.919
+</td>
+
+<td style="text-align:right;">
+
+21.485
+</td>
+
+<td style="text-align:right;">
+
+49.443
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat
+</td>
+
+<td style="text-align:right;">
+
+1000
+</td>
+
+<td style="text-align:right;">
+
+0.013
+</td>
+
+<td style="text-align:right;">
+
+12.639
+</td>
+
+<td style="text-align:right;">
+
+5.295
+</td>
+
+<td style="text-align:right;">
+
+37.326
+</td>
+
+<td style="text-align:right;">
+
+78.270
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+![](figures/03_find_eps_rule/expl_eps_rule_heat_log_saturation-1.png)<!-- -->
+
 ## Rerun LS rule with high $k_{factor}$
 
 ![](figures/03_find_eps_rule/expl_eps_rule_rule_log_t_kf_10000-1.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_kf10000_pp-1.png)<!-- -->
 
 Almost nothing has changed with the higher k-factor. We need a rule that
 shifts epsilon more extremely for moderate test statistics. With the
@@ -416,9 +1034,307 @@ eps_log_saturation_lift <- function(obs_stats,
 }
 ```
 
-![](figures/03_find_eps_rule/expl_eps_rule_rule_log_sat_lift-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_rule_log_sat_lift-2.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_rule_log_sat_lift-1.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_pp-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_eps_rules-1.png)<!-- -->
+
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+
+<caption>
+
+Mean absolute log10 error for epsilon rule: log_sat_lift
+</caption>
+
+<thead>
+
+<tr>
+
+<th style="text-align:right;">
+
+rule
+</th>
+
+<th style="text-align:right;">
+
+n_per_group
+</th>
+
+<th style="text-align:right;">
+
+0
+</th>
+
+<th style="text-align:right;">
+
+0.5
+</th>
+
+<th style="text-align:right;">
+
+1
+</th>
+
+<th style="text-align:right;">
+
+1.5
+</th>
+
+<th style="text-align:right;">
+
+2
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift
+</td>
+
+<td style="text-align:right;">
+
+50
+</td>
+
+<td style="text-align:right;">
+
+0.013
+</td>
+
+<td style="text-align:right;">
+
+0.143
+</td>
+
+<td style="text-align:right;">
+
+0.640
+</td>
+
+<td style="text-align:right;">
+
+1.159
+</td>
+
+<td style="text-align:right;">
+
+1.409
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift
+</td>
+
+<td style="text-align:right;">
+
+100
+</td>
+
+<td style="text-align:right;">
+
+0.019
+</td>
+
+<td style="text-align:right;">
+
+0.310
+</td>
+
+<td style="text-align:right;">
+
+1.281
+</td>
+
+<td style="text-align:right;">
+
+1.579
+</td>
+
+<td style="text-align:right;">
+
+1.901
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift
+</td>
+
+<td style="text-align:right;">
+
+250
+</td>
+
+<td style="text-align:right;">
+
+0.015
+</td>
+
+<td style="text-align:right;">
+
+1.089
+</td>
+
+<td style="text-align:right;">
+
+4.191
+</td>
+
+<td style="text-align:right;">
+
+4.829
+</td>
+
+<td style="text-align:right;">
+
+6.081
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift
+</td>
+
+<td style="text-align:right;">
+
+500
+</td>
+
+<td style="text-align:right;">
+
+0.017
+</td>
+
+<td style="text-align:right;">
+
+3.104
+</td>
+
+<td style="text-align:right;">
+
+11.563
+</td>
+
+<td style="text-align:right;">
+
+15.186
+</td>
+
+<td style="text-align:right;">
+
+24.320
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift
+</td>
+
+<td style="text-align:right;">
+
+750
+</td>
+
+<td style="text-align:right;">
+
+0.017
+</td>
+
+<td style="text-align:right;">
+
+5.834
+</td>
+
+<td style="text-align:right;">
+
+23.414
+</td>
+
+<td style="text-align:right;">
+
+33.470
+</td>
+
+<td style="text-align:right;">
+
+49.680
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift
+</td>
+
+<td style="text-align:right;">
+
+1000
+</td>
+
+<td style="text-align:right;">
+
+0.012
+</td>
+
+<td style="text-align:right;">
+
+9.106
+</td>
+
+<td style="text-align:right;">
+
+35.645
+</td>
+
+<td style="text-align:right;">
+
+52.917
+</td>
+
+<td style="text-align:right;">
+
+78.434
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+![](figures/03_find_eps_rule/expl_eps_rule_heat_lls-1.png)<!-- -->
 
 ## Why not Wendland’s $C^0$-function?
 
@@ -552,7 +1468,11 @@ We will briefly check if we see the same results as before.
 
 ![](figures/03_find_eps_rule/expl_eps_rule_rule_log_sat_lift_simple-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_rule_log_sat_lift_simple-2.png)<!-- -->
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_simple_pp-1.png)<!-- -->
 
 ## LLS rule with an (optional) permutation-based cap
 
@@ -667,7 +1587,303 @@ statistics as cap is less conservative (smaller epsilon values) in our
 scenario and might therefore lead to a better approximation of the
 t-test p-values.
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_perm_pp-1.png)<!-- -->
+
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+
+<caption>
+
+Mean absolute log10 error for epsilon rule: log_sat_lift_perm
+</caption>
+
+<thead>
+
+<tr>
+
+<th style="text-align:right;">
+
+rule
+</th>
+
+<th style="text-align:right;">
+
+n_per_group
+</th>
+
+<th style="text-align:right;">
+
+0
+</th>
+
+<th style="text-align:right;">
+
+0.5
+</th>
+
+<th style="text-align:right;">
+
+1
+</th>
+
+<th style="text-align:right;">
+
+1.5
+</th>
+
+<th style="text-align:right;">
+
+2
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_perm
+</td>
+
+<td style="text-align:right;">
+
+50
+</td>
+
+<td style="text-align:right;">
+
+0.013
+</td>
+
+<td style="text-align:right;">
+
+0.121
+</td>
+
+<td style="text-align:right;">
+
+0.475
+</td>
+
+<td style="text-align:right;">
+
+0.973
+</td>
+
+<td style="text-align:right;">
+
+1.395
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_perm
+</td>
+
+<td style="text-align:right;">
+
+100
+</td>
+
+<td style="text-align:right;">
+
+0.019
+</td>
+
+<td style="text-align:right;">
+
+0.254
+</td>
+
+<td style="text-align:right;">
+
+0.753
+</td>
+
+<td style="text-align:right;">
+
+1.209
+</td>
+
+<td style="text-align:right;">
+
+1.913
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_perm
+</td>
+
+<td style="text-align:right;">
+
+250
+</td>
+
+<td style="text-align:right;">
+
+0.015
+</td>
+
+<td style="text-align:right;">
+
+0.843
+</td>
+
+<td style="text-align:right;">
+
+2.087
+</td>
+
+<td style="text-align:right;">
+
+3.168
+</td>
+
+<td style="text-align:right;">
+
+6.134
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_perm
+</td>
+
+<td style="text-align:right;">
+
+500
+</td>
+
+<td style="text-align:right;">
+
+0.017
+</td>
+
+<td style="text-align:right;">
+
+2.659
+</td>
+
+<td style="text-align:right;">
+
+6.988
+</td>
+
+<td style="text-align:right;">
+
+10.344
+</td>
+
+<td style="text-align:right;">
+
+24.484
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_perm
+</td>
+
+<td style="text-align:right;">
+
+750
+</td>
+
+<td style="text-align:right;">
+
+0.017
+</td>
+
+<td style="text-align:right;">
+
+5.214
+</td>
+
+<td style="text-align:right;">
+
+16.648
+</td>
+
+<td style="text-align:right;">
+
+24.093
+</td>
+
+<td style="text-align:right;">
+
+49.875
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_perm
+</td>
+
+<td style="text-align:right;">
+
+1000
+</td>
+
+<td style="text-align:right;">
+
+0.012
+</td>
+
+<td style="text-align:right;">
+
+8.307
+</td>
+
+<td style="text-align:right;">
+
+27.782
+</td>
+
+<td style="text-align:right;">
+
+41.047
+</td>
+
+<td style="text-align:right;">
+
+78.695
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+![](figures/03_find_eps_rule/expl_eps_rule_heat_lls_perm-1.png)<!-- -->
 
 Due to the smaller $\varepsilon$ values for mid-sized test statistics,
 this rule performs better than the rule based on $t_{max}$ as the
@@ -816,7 +2032,303 @@ with sd = 1), there is almost no difference in epsilon values between
 the standardized and non-standardized version. We will see a difference
 in a later study using the Wilcoxon test.
 
-![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std-1.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std-2.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std-3.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std-4.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std-5.png)<!-- -->![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std-6.png)<!-- -->
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std_3n-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_pvals_constr_log_sat_lift_std_pp-1.png)<!-- -->
+
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+
+<caption>
+
+Mean absolute log10 error for epsilon rule: log_sat_lift_std
+</caption>
+
+<thead>
+
+<tr>
+
+<th style="text-align:right;">
+
+rule
+</th>
+
+<th style="text-align:right;">
+
+n_per_group
+</th>
+
+<th style="text-align:right;">
+
+0
+</th>
+
+<th style="text-align:right;">
+
+0.5
+</th>
+
+<th style="text-align:right;">
+
+1
+</th>
+
+<th style="text-align:right;">
+
+1.5
+</th>
+
+<th style="text-align:right;">
+
+2
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_std
+</td>
+
+<td style="text-align:right;">
+
+50
+</td>
+
+<td style="text-align:right;">
+
+0.013
+</td>
+
+<td style="text-align:right;">
+
+0.123
+</td>
+
+<td style="text-align:right;">
+
+0.486
+</td>
+
+<td style="text-align:right;">
+
+0.999
+</td>
+
+<td style="text-align:right;">
+
+1.449
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_std
+</td>
+
+<td style="text-align:right;">
+
+100
+</td>
+
+<td style="text-align:right;">
+
+0.019
+</td>
+
+<td style="text-align:right;">
+
+0.257
+</td>
+
+<td style="text-align:right;">
+
+0.773
+</td>
+
+<td style="text-align:right;">
+
+1.272
+</td>
+
+<td style="text-align:right;">
+
+1.974
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_std
+</td>
+
+<td style="text-align:right;">
+
+250
+</td>
+
+<td style="text-align:right;">
+
+0.015
+</td>
+
+<td style="text-align:right;">
+
+0.844
+</td>
+
+<td style="text-align:right;">
+
+2.121
+</td>
+
+<td style="text-align:right;">
+
+3.237
+</td>
+
+<td style="text-align:right;">
+
+6.210
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_std
+</td>
+
+<td style="text-align:right;">
+
+500
+</td>
+
+<td style="text-align:right;">
+
+0.017
+</td>
+
+<td style="text-align:right;">
+
+2.657
+</td>
+
+<td style="text-align:right;">
+
+6.979
+</td>
+
+<td style="text-align:right;">
+
+10.325
+</td>
+
+<td style="text-align:right;">
+
+24.548
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_std
+</td>
+
+<td style="text-align:right;">
+
+750
+</td>
+
+<td style="text-align:right;">
+
+0.017
+</td>
+
+<td style="text-align:right;">
+
+5.218
+</td>
+
+<td style="text-align:right;">
+
+16.619
+</td>
+
+<td style="text-align:right;">
+
+24.046
+</td>
+
+<td style="text-align:right;">
+
+49.912
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:right;">
+
+log_sat_lift_std
+</td>
+
+<td style="text-align:right;">
+
+1000
+</td>
+
+<td style="text-align:right;">
+
+0.012
+</td>
+
+<td style="text-align:right;">
+
+8.292
+</td>
+
+<td style="text-align:right;">
+
+27.719
+</td>
+
+<td style="text-align:right;">
+
+41.042
+</td>
+
+<td style="text-align:right;">
+
+78.582
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+![](figures/03_find_eps_rule/expl_eps_rule_heat_slls-1.png)<!-- -->
 
 ## Constrained vs. unconstrained fit
 
@@ -847,6 +2359,8 @@ in a later study using the Wilcoxon test.
 ## Combined plot
 
 ![](figures/03_find_eps_rule/expl_eps_rule_eps_rules_combined-1.png)<!-- -->
+
+![](figures/03_find_eps_rule/expl_eps_rule_eps_rules_combined_six-1.png)<!-- -->
 
 ## Conclusion
 

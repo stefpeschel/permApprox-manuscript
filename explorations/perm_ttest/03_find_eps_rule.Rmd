@@ -6,6 +6,7 @@ output:
   html_document:
     toc: true
     toc_float: true
+always_allow_html: true
 params:
   name: "03_find_eps_rule" # change if you rename file
 ---
@@ -269,7 +270,7 @@ ggplot(df_long, aes(x = value)) +
 
 ```
 
-## Plot function
+## Plot function p vs t
 
 ```{r}
 # ---------- helper: step = 20→10→5 up to 100, then 50 beyond ----------
@@ -322,11 +323,11 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE,
   p <- ggplot(df, aes(x = obs_stats)) +
     geom_point(aes(y = p_ttest, shape = "t-test"),
                color = "black", size = 2, stroke = 0.5, alpha = 0.5) +
-    geom_point(aes(y = p_constr, shape = "constrained GPD", color = effect_size),
+    geom_point(aes(y = p_constr, shape = "approximated", color = effect_size),
                size = 1.6, alpha = 0.6) +
     scale_shape_manual(
       name = "P-value type:",
-      values = c("constrained GPD" = 16, "t-test" = 1)
+      values = c("approximated" = 16, "t-test" = 1)
     ) +
     scale_color_manual(
       name = "Effect size:",
@@ -334,8 +335,9 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE,
     ) +
     labs(
       title = ifelse(!is.null(title), title,
-                     paste0("n = ", sampsize, "; epsilon rule: ", eps_rule)),
-      x = expression(t[obs]),
+                     paste0("n = ", sampsize#, "; epsilon rule: ", eps_rule
+                            )),
+      x = expression(abs(t[obs])),
       y = expression(p)
     ) +
     theme_minimal() +
@@ -344,8 +346,12 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE,
       axis.title   = element_text(size = 15),
       plot.title   = element_text(size = 15),
       strip.text   = element_text(size = 15),
-      legend.title = element_text(size = 14),
-      legend.text  = element_text(size = 12)
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 16)
+    ) +
+    guides(
+      color = guide_legend(override.aes = list(size = 2.5)),
+      shape = guide_legend(override.aes = list(size = 2.5))
     )
 
   # range
@@ -484,6 +490,287 @@ run_permApprox <- function(rule_name, eps_fct, constraint = "support_at_obs",
   return(results_all)
 }
 ```
+
+## Helper functions to evaluate the results
+
+```{r}
+## ------------------------------------------------------------
+## Helpers to evaluate how well approximated p-values reproduce
+## the t-test p-values
+## ------------------------------------------------------------
+
+prepare_rule_eval <- function(results_df, rule_name) {
+  results_df %>%
+    filter(
+      is.finite(p_ttest),
+      is.finite(p_constr),
+      p_ttest > 0,
+      p_constr > 0
+    ) %>%
+    mutate(
+      rule = rule_name,
+      effect_size = factor(effect_size, levels = sort(unique(as.numeric(as.character(effect_size))))),
+      log10_p_ttest  = log10(p_ttest),
+      log10_p_constr = log10(p_constr),
+      log10_err      = log10_p_constr - log10_p_ttest,
+      abs_log10_err  = abs(log10_err),
+      sq_log10_err   = log10_err^2,
+      ratio          = p_constr / p_ttest
+    )
+}
+
+make_rule_summary <- function(eval_df) {
+  overall <- eval_df %>%
+    group_by(rule) %>%
+    summarise(
+      n_cases = n(),
+      mean_abs_log10_err = mean(abs_log10_err, na.rm = TRUE),
+      rmse_log10 = sqrt(mean(sq_log10_err, na.rm = TRUE)),
+      bias_log10 = mean(log10_err, na.rm = TRUE),
+      mean_ratio = mean(ratio, na.rm = TRUE),
+      median_ratio = median(ratio, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  by_setting <- eval_df %>%
+    group_by(rule, n_per_group, effect_size) %>%
+    summarise(
+      n_cases = n(),
+      mean_abs_log10_err = mean(abs_log10_err, na.rm = TRUE),
+      rmse_log10 = sqrt(mean(sq_log10_err, na.rm = TRUE)),
+      bias_log10 = mean(log10_err, na.rm = TRUE),
+      mean_ratio = mean(ratio, na.rm = TRUE),
+      median_ratio = median(ratio, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  list(
+    overall = overall,
+    by_setting = by_setting
+  )
+}
+
+make_wide_metric_table <- function(by_setting_df,
+                                   metric = "mean_abs_log10_err",
+                                   digits = 3) {
+  by_setting_df %>%
+    select(rule, n_per_group, effect_size, all_of(metric)) %>%
+    mutate(effect_size = as.character(effect_size)) %>%
+    pivot_wider(
+      names_from = effect_size,
+      values_from = all_of(metric)
+    ) %>%
+    arrange(rule, n_per_group) %>%
+    mutate(across(where(is.numeric) & !matches("^n_per_group$"), ~ round(.x, digits)))
+}
+
+print_metric_table <- function(wide_df, caption) {
+  wide_df %>%
+    kbl(caption = caption, align = "r") %>%
+    kable_styling(full_width = FALSE)
+}
+```
+
+## Plot function p-vs-p
+
+```{r}
+plot_pval_agreement_n <- function(df, sampsize,
+                                  xlim = NULL, ylim = NULL,
+                                  title = NULL,
+                                  min_ticks = 5,
+                                  breaks_incl = 1e-3,
+                                  x_breaks = NULL,
+                                  y_breaks = NULL,
+                                  x_labels = NULL,
+                                  y_labels = NULL) {
+  
+  df <- df %>%
+    dplyr::filter(
+      n_per_group == sampsize,
+      is.finite(p_ttest), is.finite(p_constr),
+      p_ttest > 0, p_constr > 0
+    ) %>%
+    dplyr::mutate(
+      effect_size = as.character(effect_size),
+      x_plot = -log10(p_ttest),
+      y_plot = -log10(p_constr)
+    )
+  
+  # compute breaks on original p-value scale, then transform to -log10 scale
+  if (is.null(x_breaks) || is.null(x_labels)) {
+    br_x <- .compute_log_breaks(
+      ymin = min(df$p_ttest, na.rm = TRUE),
+      ymax = max(df$p_ttest, na.rm = TRUE),
+      min_ticks = min_ticks,
+      breaks_incl = breaks_incl
+    )
+    if (is.null(x_breaks)) x_breaks <- br_x$breaks
+    if (is.null(x_labels)) x_labels <- br_x$labels
+  }
+  
+  if (is.null(y_breaks) || is.null(y_labels)) {
+    br_y <- .compute_log_breaks(
+      ymin = min(df$p_constr, na.rm = TRUE),
+      ymax = max(df$p_constr, na.rm = TRUE),
+      min_ticks = min_ticks,
+      breaks_incl = breaks_incl
+    )
+    if (is.null(y_breaks)) y_breaks <- br_y$breaks
+    if (is.null(y_labels)) y_labels <- br_y$labels
+  }
+  
+  # transform breaks to plotting scale
+  x_breaks_plot <- -log10(x_breaks)
+  y_breaks_plot <- -log10(y_breaks)
+  
+  p <- ggplot(df, aes(x = x_plot, y = y_plot, color = effect_size)) +
+    geom_point(size = 1.6, alpha = 0.6) +
+    geom_abline(slope = 1, intercept = 0, linetype = 2) +
+    scale_color_manual(
+      name = "Effect size:",
+      values = c("0"="gold","0.5"="#ffb347","1"="#ff8c00","1.5"="#e55b00","2"="red")
+    ) +
+    scale_x_continuous(
+      breaks = x_breaks_plot,
+      labels = x_labels,
+      minor_breaks = NULL
+    ) +
+    scale_y_continuous(
+      breaks = y_breaks_plot,
+      labels = y_labels,
+      minor_breaks = NULL
+    ) +
+    labs(
+      title = ifelse(!is.null(title), title, paste0("n = ", sampsize)),
+      x = expression(p[t-test]),
+      y = expression(hat(p)[approx])
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x  = element_text(size = 14, angle = 45, hjust = 1),
+      axis.text.y  = element_text(size = 14),
+      axis.title   = element_text(size = 15),
+      plot.title   = element_text(size = 15),
+      strip.text   = element_text(size = 15),
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 16)
+    ) +
+    guides(
+      color = guide_legend(override.aes = list(size = 2.5)),
+      shape = guide_legend(override.aes = list(size = 2.5))
+    )
+  
+  if (!is.null(xlim)) {
+    p <- p + coord_cartesian(xlim = -log10(rev(xlim)))
+  }
+  
+  if (!is.null(ylim)) {
+    p <- p + coord_cartesian(ylim = -log10(rev(ylim)))
+  }
+  
+  p
+}
+```
+
+## Plot heatmap function
+
+```{r}
+plot_metric_heatmap <- function(by_setting_df,
+                                metric = "mean_abs_log10_err",
+                                title = NULL,
+                                facet_rule = TRUE) {
+  
+  p <- ggplot(
+    by_setting_df,
+    aes(
+      x = factor(effect_size),
+      y = factor(n_per_group),
+      fill = .data[[metric]]
+    )
+  ) +
+    geom_tile() +
+    geom_text(aes(label = signif(.data[[metric]], 2)), size = 4) +
+    scale_fill_gradientn(
+      colours = c("white", "gold", "red")
+    ) +
+    labs(
+      title = title,
+      x = "Effect size",
+      y = "Sample size per group",
+      fill = "Mean abs\nlog10 error"
+    ) +
+    theme_minimal(base_size = 14)
+  
+  if (facet_rule && "rule" %in% names(by_setting_df)) {
+    p <- p + facet_wrap(~ rule)
+  }
+  
+  p
+}
+```
+
+## Plot epsilon rules
+
+```{r}
+plot_eps_rules_n <- function(n_val, B,
+                             rule_labels = c(
+                               eps_n2 = "power law in n",
+                               eps_log_sat = "log-saturation",
+                               eps_log_sat_lift = "lifted log-saturation"
+                             )) {
+  
+  obs_stats  <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
+  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_val, "_B", B, ".rds")))
+  
+  df_plot <- tibble(
+    t_obs = abs(obs_stats),
+    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
+    eps_log_sat = eps_log_saturation(
+      obs_stats,
+      perm_stats = perm_stats,
+      sampsize = n_val,
+      k_factor = 10000,
+      target_factor = 0.25
+    ),
+    eps_log_sat_lift = eps_log_saturation_lift(
+      obs_stats,
+      perm_stats = perm_stats,
+      sampsize = n_val
+    )
+  ) %>%
+    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
+    mutate(
+      rule = recode(rule, !!!rule_labels)
+    ) %>%
+    arrange(rule, t_obs)
+  
+  ggplot(df_plot, aes(x = t_obs, y = eps, color = rule)) +
+    geom_line(linewidth = 1.1, alpha = 0.8) +
+    scale_color_manual(
+      name = "Epsilon rule:",
+      values = c(
+        "power law in n" = "#1b9e77",
+        "log-saturation" = "#d95f02",
+        "lifted log-saturation" = "#7570b3"
+      )
+    ) +
+    labs(
+      title = paste0("n = ", n_val),
+      x = expression(abs(t[obs])),
+      y = expression(epsilon)
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.y  = element_text(size = 14),
+      axis.title   = element_text(size = 15),
+      plot.title   = element_text(size = 15),
+      strip.text   = element_text(size = 15),
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 16)
+    )
+}
+```
+
 
 ## Unconstrained GPD fit
 
@@ -651,7 +938,7 @@ for (n_val in n_per_group_vec) {
     ) +
     labs(
       title = paste0("Unconstrained permApprox vs. t-test (n = ", n_val, ")"),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(p)
     ) +
     theme_minimal() +
@@ -698,7 +985,7 @@ p <- tibble(
   geom_line(size = 1.2) +
   labs(
     title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(epsilon)
   ) +
   theme_minimal(base_size = 14)
@@ -709,12 +996,59 @@ print(p)
 results_all <- run_permApprox(rule_name = "factor01", eps_fct = eps_factor)
 ```
 
-```{r pvals_constr_factor01}
-for (n_val in n_per_group_vec) {
+
+```{r pvals_constr_factor01, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0.1"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: factor = 0.1") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_factor01_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "factor = 0.1")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0.1"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_factor01_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 ## $\varepsilon$ rule: Factor = 0.05
@@ -738,7 +1072,7 @@ p <- tibble(
   geom_line(size = 1.2) +
   labs(
     title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(epsilon)
   ) +
   theme_minimal(base_size = 14)
@@ -749,12 +1083,58 @@ print(p)
 results_all <- run_permApprox(rule_name = "factor005", eps_fct = eps_factor)
 ```
 
-```{r pvals_constr_factor005}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_factor005, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0.05"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: factor = 0.05") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_factor005_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val)
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0.05"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_factor005_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 While $\varepsilon_{fact}=0.1$ was the best choice for $n=100$, the epsilon rule $\varepsilon_{fact}=0.05$ would be the best choice for $n=250$. 
@@ -775,19 +1155,66 @@ eps_factor <- function(obs_stats = NULL, factor = 0, ...) {
 results_all <- run_permApprox(rule_name = "factor0", eps_fct = eps_factor)
 ```
 
-```{r pvals_constr_factor0}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_factor0, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: factor = 0") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_factor0_3n, fig.width=10, fig.height=6, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "eps = 0")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0"
+  ) +
+    theme(legend.position = "none")
+})
+
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+# collect one legend from one representative plot
+legend_plot <- plot_pvals(
+  df = results_all %>% filter(n_per_group == 50, gpd_fit == TRUE),
+  sampsize = 50,
+  eps_rule = "factor = 0"
+)
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 While $\varepsilon_{fact}=0.1$ was the best choice for $n=100$, the epsilon rule $\varepsilon_{fact}=0.05$ would be the best choice for $n=250$. 
 
 The simulations show that the optimal epsilon factor is clearly dependent on the sample size $n$. 
 
-## $\varepsilon$ rule: Factor = 0.1 (constraint on max test statistic)
+## $\varepsilon$ rule: Factor = 0.1 (max test statistic)
 
 To see how well the approach of applying the constraint only on the maximum observed test statistic, we will test this now with $\varepsilon_{fact}=0.1$.
 
@@ -800,13 +1227,59 @@ results_all <- run_permApprox(rule_name = "factor01_max", eps_fct = eps_factor,
                               constraint = "support_at_max")
 ```
 
-```{r pvals_constr_factor01_max}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_factor01_max, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0.1 (on max test statistic)"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: factor = 0.1 (on max test statistic)") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_factor01_max_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, 
-                  eps_rule = "factor = 0.1 (on max test statistic)")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "factor = 0.1 (on max test statistic)"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_factor01_max_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 Applying the contraint to the maximum test statistic only is far too conservative for larger sample sizes.
@@ -861,17 +1334,92 @@ print(p)
 results_all <- run_permApprox(rule_name = "n_squared", eps_fct = eps_n_power)
 ```
 
-```{r pvals_constr_n_squared}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_n_squared, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "1 / n²"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: 1 / n²") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_n_squared_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "power law in n")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "1 / n²"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_n_squared_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 An epsilon rule dependent on $n$ leads to much better p-values approximations than the factor rule. However, while the approximated p-values are close to the t-test p-values for large effect sizes, the p-values are generally too small for a moderate effect size. In other words: the trend seems to be too linear. 
 
 A logarithmic dependence on $t_{obs}$ might be more sufficient than a rule that is linear in $t_{obs}$.
+
+
+```{r}
+eval_df <- prepare_rule_eval(results_all, rule_name = "log_sat")
+
+summ_list <- make_rule_summary(eval_df)
+
+# Mean absolute log10 error table
+tab_abs_log10_mae <- make_wide_metric_table(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  digits = 3
+)
+
+print_metric_table(
+  tab_abs_log10_mae,
+  caption = "Mean absolute log10 error for epsilon rule: log_sat"
+)
+```
+
+```{r heat_n_squared, fig.width=7, fig.height=5, dpi=200}
+plot_metric_heatmap(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  title = "Performance heatmap: 1 / n²",
+  facet_rule = FALSE
+)
+```
 
 
 ## $\varepsilon$ rule: Logarithmic growth in t
@@ -922,13 +1470,60 @@ print(p)
 results_all <- run_permApprox(rule_name = "log_t", eps_fct = eps_log_t)
 ```
 
-```{r pvals_constr_log_t}
-for (n_val in n_per_group_vec) {
+
+```{r pvals_constr_log_t, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "logarithmic growth in t"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: logarithmic growth in t") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_t_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, 
-                  eps_rule = "logarithmic growth in t")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "logarithmic growth in t"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_log_t_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 This rule performs well for n = 100 with the chosen values for $A$ and $B$, but we need a generally applicable rule.
@@ -1035,7 +1630,7 @@ for (n_val in n_per_group_vec) {
     geom_line(size = 1.2, alpha = 0.7) +
     labs(
       title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(epsilon)
     ) +
     theme_minimal(base_size = 14)
@@ -1047,16 +1642,89 @@ for (n_val in n_per_group_vec) {
 results_all <- run_permApprox(rule_name = "log_sat", eps_fct = eps_log_saturation)
 ```
 
-```{r pvals_constr_log_sat}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_log_sat, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "log-saturation with n-dependent plateau"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: log-saturation with n-dependent plateau") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_sat_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, 
-                  eps_rule = "log-saturation with n-dependent plateau")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "log-saturation with n-dependent plateau"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_log_sat_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 The approach still under-estimates the p-values for moderate effect sizes. That means, we would have to increase the epsilon there, but keep it for high effect sizes. We run the log rule again, but with a higher $k_{factor}$, which influences the curvature of the epsilon function.
+
+```{r}
+eval_df <- prepare_rule_eval(results_all, rule_name = "log_sat")
+
+summ_list <- make_rule_summary(eval_df)
+
+# Mean absolute log10 error table
+tab_abs_log10_mae <- make_wide_metric_table(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  digits = 3
+)
+
+print_metric_table(
+  tab_abs_log10_mae,
+  caption = "Mean absolute log10 error for epsilon rule: log_sat"
+)
+```
+
+```{r heat_log_saturation,fig.width=7, fig.height=5, dpi=200}
+plot_metric_heatmap(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  title = "Performance heatmap: log_sat",
+  facet_rule = FALSE
+)
+```
 
 ## Rerun LS rule with high $k_{factor}$
 
@@ -1084,7 +1752,7 @@ p <- tibble(
   geom_line(size = 1.2, alpha = 0.7) +
   labs(
     title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-    x = expression(t[obs]),
+    x = expression(abs(t[obs])),
     y = expression(epsilon)
   ) +
   theme_minimal(base_size = 14)
@@ -1102,13 +1770,59 @@ eps_fct <- function(obs_stats, perm_stats, sampsize, k_factor = 10000, ...){
 results_all <- run_permApprox(rule_name = "log_sat_kf_10000", eps_fct = eps_fct)
 ```
 
-```{r pvals_constr_log_sat_kf10000}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_log_sat_kf10000, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "log-saturation with high k_factor"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: log-saturation with high k_factor") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_sat_kf10000_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, 
-                  eps_rule = "log-saturation with high k_factor")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "log-saturation with high k_factor"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_log_sat_kf10000_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 Almost nothing has changed with the higher k-factor. We need a rule that shifts epsilon more extremely for moderate test statistics. With the next rule, the epsilon function has a bump/lift for small test statistics. 
@@ -1183,42 +1897,115 @@ eps_log_saturation_lift <- function(obs_stats,
 }
 ```
 
+```{r rule_log_sat_lift, fig.width=10, fig.height=4, dpi=200}
+n_show <- c(50, 100, 500)
 
-```{r rule_log_sat_lift}
-for (n_val in n_per_group_vec[1:2]) {
-  obs_stats <- readRDS(path_target(paste0("obs_t_stats_n", n_val, "_B", B, ".rds")))
-  perm_stats <- readRDS(path_target(paste0("perm_t_stats_n", n_per_group, "_B", B, ".rds")))
-  
-  p <- tibble(
-    t_obs = abs(obs_stats),
-    eps_n2 = eps_n_power(obs_stats, sampsize = n_val),
-    eps_log_sat = eps_log_saturation(obs_stats, perm_stats = perm_stats, sampsize = n_val,
-                                k_factor = 10000, target_factor = 0.25),
-    eps_log_sat_lift = eps_log_saturation_lift(obs_stats, perm_stats = perm_stats, sampsize = n_val)
-  ) %>%
-    pivot_longer(-t_obs, names_to = "rule", values_to = "eps") %>%
-    ggplot(aes(t_obs, eps, color = rule)) +
-    geom_line(size = 1.2, alpha = 0.7) +
-    labs(
-      title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-      x = expression(t[obs]),
-      y = expression(epsilon)
-    ) +
-    theme_minimal(base_size = 14)
-  print(p)
-}
+plots_eps <- lapply(n_show, function(n_val) {
+  plot_eps_rules_n(n_val = n_val, B = B)
+})
+
+wrap_plots(plotlist = plots_eps, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule shapes for selected sample sizes") &
+  theme(legend.position = "bottom")
 ```
+
 
 ```{r run_permApprox_constr_log_sat_lift}
 results_all <- run_permApprox(rule_name = "log_sat_lift", eps_fct = eps_log_saturation_lift)
 ```
 
-```{r pvals_constr_log_sat_lift}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_log_sat_lift, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "lifted log-saturation"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: lifted log-saturation") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_sat_lift_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "lifted log-saturation")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "lifted log-saturation"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_log_sat_lift_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_sat_lift_eps_rules, fig.width=10, fig.height=3, dpi=200}
+p_eps <- wrap_plots(plotlist = plots_eps, ncol = 3) +
+  plot_layout(guides = "collect") &
+    theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+p_eps
+```
+
+```{r}
+eval_df <- prepare_rule_eval(results_all, rule_name = "log_sat_lift")
+
+summ_list <- make_rule_summary(eval_df)
+
+# Mean absolute log10 error table
+tab_abs_log10_mae <- make_wide_metric_table(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  digits = 3
+)
+
+print_metric_table(
+  tab_abs_log10_mae,
+  caption = "Mean absolute log10 error for epsilon rule: log_sat_lift"
+)
+```
+
+```{r heat_lls,fig.width=7, fig.height=5, dpi=200}
+plot_metric_heatmap(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  title = "Performance heatmap: log_sat_lift",
+  facet_rule = FALSE
+)
 ```
 
 ## Why not Wendland's $C^0$-function?
@@ -1322,7 +2109,7 @@ for (n_val in n_per_group_vec[1:2]) {
     geom_line(size = 1.2, alpha = 0.7) +
     labs(
       title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(epsilon)
     ) +
     theme_minimal(base_size = 14)
@@ -1436,7 +2223,7 @@ for (n_val in n_per_group_vec[1:2]) {
     geom_line(size = 1.2, alpha = 0.7) +
     labs(
       title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(epsilon)
     ) +
     theme_minimal(base_size = 14)
@@ -1450,12 +2237,60 @@ results_all <- run_permApprox(rule_name = "log_sat_lift_simple",
                               eps_fct = eps_log_saturation_lift)
 ```
 
-```{r pvals_constr_log_sat_lift_simple}
-for (n_val in n_per_group_vec) {
+
+```{r pvals_constr_log_sat_lift_simple, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "lifted log-saturation (simplified)"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: lifted log-saturation (simplified)") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_sat_lift_simple_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, eps_rule = "lifted log-saturation (simplified)")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "lifted log-saturation (simplified)"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_log_sat_lift_simple_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 ```
 
 ## LLS rule with an (optional) permutation-based cap
@@ -1578,7 +2413,7 @@ for (n_val in n_per_group_vec) {
       geom_line(size = 1.2, alpha = 0.7) +
       labs(
       title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(epsilon)
     ) +
     theme_minimal(base_size = 14)
@@ -1593,13 +2428,86 @@ results_all <- run_permApprox(rule_name = "log_sat_lift_perm",
                               eps_fct = eps_log_saturation_lift_cap)
 ```
 
-```{r pvals_constr_log_sat_lift_perm}
-for (n_val in n_per_group_vec) {
+```{r pvals_constr_log_sat_lift_perm, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "lifted log-saturation (perm based)"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: lifted log-saturation (perm based)") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_sat_lift_perm_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, 
-                  eps_rule = "lifted log-saturation (perm based)")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "lifted log-saturation (perm based)"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_log_sat_lift_perm_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r}
+eval_df <- prepare_rule_eval(results_all, rule_name = "log_sat_lift_perm")
+
+summ_list <- make_rule_summary(eval_df)
+
+# Mean absolute log10 error table
+tab_abs_log10_mae <- make_wide_metric_table(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  digits = 3
+)
+
+print_metric_table(
+  tab_abs_log10_mae,
+  caption = "Mean absolute log10 error for epsilon rule: log_sat_lift_perm"
+)
+```
+
+```{r heat_lls_perm,fig.width=7, fig.height=5, dpi=200}
+plot_metric_heatmap(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  title = "Performance heatmap: log_sat_lift_perm",
+  facet_rule = FALSE
+)
 ```
 
 Due to the smaller $\varepsilon$ values for mid-sized test statistics, this rule performs better than the rule based on $t_{max}$ as the approximations are closer to the t-test p-values. On the other hand, it is less conservative  
@@ -1754,7 +2662,7 @@ for (n_val in n_per_group_vec[1:2]) {
     geom_line(size = 1.2, alpha = 0.7) +
     labs(
       title = paste0("Epsilon scaling comparison (n = ", n_val, ")"),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(epsilon)
     ) +
     theme_minimal(base_size = 14)
@@ -1769,13 +2677,87 @@ results_all <- run_permApprox(rule_name = "log_sat_lift_std",
                               eps_fct = eps_log_saturation_lift_std)
 ```
 
-```{r pvals_constr_log_sat_lift_std}
-for (n_val in n_per_group_vec) {
+
+```{r pvals_constr_log_sat_lift_std, fig.width=10, fig.height=5, dpi=200}
+plot_list <- lapply(n_per_group_vec, function(n_val) {
+  df_n <- results_all %>% 
+    filter(n_per_group == n_val, gpd_fit == TRUE)
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "standardized lifted log-saturation (SLLS)"
+  ) +
+    theme(legend.position = "none")
+})
+
+wrap_plots(plotlist = plot_list, ncol = 3, guides = "collect") +
+  plot_annotation(title = "Epsilon rule: standardized lifted log-saturation (SLLS)") &
+  theme(legend.position = "bottom")
+```
+
+```{r pvals_constr_log_sat_lift_std_3n, fig.width=10, fig.height=3.2, dpi=200}
+n_show <- c(50, 100, 500)
+
+# top row: p vs t
+plots_pt <- lapply(n_show, function(n_val) {
   df_n <- results_all %>% filter(n_per_group == n_val, gpd_fit == TRUE)
-  p <- plot_pvals(df = df_n, sampsize = n_val, 
-                  eps_rule = "standardized lifted log-saturation (SLLS)")
-  print(p)
-}
+  
+  plot_pvals(
+    df = df_n,
+    sampsize = n_val,
+    eps_rule = "standardized lifted log-saturation (SLLS)"
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+```{r pvals_constr_log_sat_lift_std_pp, fig.width=10, fig.height=6, dpi=200}
+# bottom row: p vs p
+plots_pp <- lapply(n_show, function(n_val) {
+  plot_pval_agreement_n(
+    df = results_all %>% filter(gpd_fit == TRUE),
+    sampsize = n_val
+  ) +
+    theme(legend.position = "none")
+})
+
+((plots_pt[[1]] | plots_pt[[2]] | plots_pt[[3]]) /
+ (plots_pp[[1]] | plots_pp[[2]] | plots_pp[[3]])) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r}
+eval_df <- prepare_rule_eval(results_all, rule_name = "log_sat_lift_std")
+
+summ_list <- make_rule_summary(eval_df)
+
+# Mean absolute log10 error table
+tab_abs_log10_mae <- make_wide_metric_table(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  digits = 3
+)
+
+print_metric_table(
+  tab_abs_log10_mae,
+  caption = "Mean absolute log10 error for epsilon rule: log_sat_lift_std"
+)
+```
+
+```{r heat_slls,fig.width=7, fig.height=5, dpi=200}
+plot_metric_heatmap(
+  summ_list$by_setting,
+  metric = "mean_abs_log10_err",
+  title = "Performance heatmap: log_sat_lift_std",
+  facet_rule = FALSE
+)
 ```
 
 ## Constrained vs. unconstrained fit
@@ -1865,7 +2847,7 @@ plot_pvals_three <- function(df, sampsize, log_scale = TRUE) {
     ) +
     ggplot2::labs(
       title = paste0("n = ", sampsize),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(p)
     ) +
     ggplot2::theme_minimal() +
@@ -1912,6 +2894,7 @@ for (n_val in n_per_group_vec) {
 ```{r}
 results_fact0  <- run_permApprox(rule_name = "factor0", eps_fct = eps_factor)
 results_fact01 <- run_permApprox(rule_name = "factor01", eps_fct = eps_factor)
+results_n2     <- run_permApprox(rule_name = "n_squared", eps_fct = eps_n_power)
 results_ls     <- run_permApprox(rule_name = "log_sat", 
                                  eps_fct = eps_log_saturation)
 results_slls   <- run_permApprox(rule_name = "log_sat_lift_std", 
@@ -1941,6 +2924,47 @@ p_slls <- results_slls %>% dplyr::filter(n_per_group == sampsize) %>%
 
 ```
 
+```{r eps_rules_combined_six, fig.width=10, fig.height=8, dpi=200}
+sampsize <- 250
+
+p_fact0 <- results_fact0  %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "ε = 0") +
+  theme(legend.title = element_text(size = 16),
+        legend.text  = element_text(size = 16))
+
+p_fact01 <- results_fact01 %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "ε-factor = 0.1") +
+  theme(legend.title = element_text(size = 16),
+        legend.text  = element_text(size = 16))
+
+p_n2_100 <- results_n2 %>% dplyr::filter(n_per_group == 100) %>%
+  plot_pvals(sampsize = sampsize, title = "Power-law in n; n = 100") +
+  theme(legend.title = element_text(size = 16),
+        legend.text  = element_text(size = 16))
+
+p_n2_250 <- results_n2 %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "Power-law in n; n = 250") +
+  theme(legend.title = element_text(size = 16),
+        legend.text  = element_text(size = 16))
+
+p_ls <- results_ls %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "Log-saturation") +
+  theme(legend.title = element_text(size = 16),
+        legend.text  = element_text(size = 16))
+
+p_slls <- results_slls %>% dplyr::filter(n_per_group == sampsize) %>%
+  plot_pvals(sampsize = sampsize, title = "Std. lifted log-saturation (SLLS)") +
+  theme(legend.title = element_text(size = 16),
+        legend.text  = element_text(size = 16))
+
+# All four plots
+(p_fact0 | p_fact01) /
+  (p_n2_100 | p_n2_250) /
+  (p_ls    | p_slls) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+```
 
 ## Conclusion
 
