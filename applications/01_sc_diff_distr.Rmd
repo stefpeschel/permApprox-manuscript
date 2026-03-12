@@ -987,6 +987,96 @@ render_sig_table_kable <- function(tbl, caption = NULL) {
 }
 ```
 
+### Simple p-value plots
+
+```{r}
+plot_pval_vs_stat <- function(df,
+                              title = "",
+                              p_col = "pval",
+                              stat_col = "stat",
+                              alpha = 0.6,
+                              point_size = 1.4,
+                              add_p05 = TRUE,
+                              ybreaks = c(1e-2, 1e-25, 1e-50, 1e-75, 1e-100, 
+                                          1e-150, 1e-200),
+                              ylabels = c("1e-2", "1e-25", "1e-50", "1e-75", 
+                                          "1e-100", "1e-150", "1e-200")) {
+
+  # Count zeros / non-finite for transparency in the caption
+  n_all <- nrow(df)
+  n_zero <- sum(df[[p_col]] == 0, na.rm = TRUE)
+  n_na <- sum(is.na(df[[p_col]]) | is.na(df[[stat_col]]), na.rm = TRUE)
+
+  df_plot <- df %>%
+    dplyr::mutate(
+      p_for_plot = dplyr::if_else(is.na(.data[[p_col]]) | .data[[p_col]] <= 0,
+                                  NA_real_, .data[[p_col]])
+    )
+  
+  ggplot(df_plot, aes(x = .data[[stat_col]], y = p_for_plot)) +
+    geom_point(alpha = alpha, size = point_size, na.rm = TRUE) +
+    {if (add_p05) geom_hline(yintercept = 0.01, linetype = 2) } +
+    scale_y_log10(
+      breaks = ybreaks,
+      labels = ylabels
+    ) +
+    labs(
+      title = title,
+      x = expression(d[W]^2),
+      y = "p-value"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text = element_text(size = 12),
+      axis.title = element_text(size = 14),
+      plot.title = element_text(size = 14),
+      plot.subtitle = element_text(size = 10)
+    )
+}
+
+# Subset: only B=1000 and the three methods you want
+df_statplot_1k <- df_pvals_global %>%
+  dplyr::filter(
+    B == 1000L,
+    method_key %in% c("empirical_1000", "waddR_1000", "permApprox_constrained_1000")
+  )
+
+p_emp <- plot_pval_vs_stat(
+  df_statplot_1k %>% dplyr::filter(method_key == "empirical_1000"),
+  title = "Empirical p-values"
+)  + coord_cartesian(ylim = c(1, 1e-200))
+
+p_waddr <- plot_pval_vs_stat(
+  df_statplot_1k %>% dplyr::filter(method_key == "waddR_1000"),
+  title = "waddR p-values "
+)  + coord_cartesian(ylim = c(1, 1e-200))
+
+p_constr <- plot_pval_vs_stat(
+  df_statplot_1k %>% dplyr::filter(method_key == "permApprox_constrained_1000"),
+  title = "permApprox p-values"
+)  + coord_cartesian(ylim = c(1, 1e-200))
+```
+
+```{r pval_vs_stat_1k_emp_permApprox, fig.width=8, fig.height=4.2, dpi = 200}
+(p_emp |  p_constr) +
+  patchwork::plot_layout(guides = "collect")
+```
+
+```{r pval_vs_stat_1k_emp_waddR_permApprox, fig.width=12, fig.height=4.2, dpi = 200}
+(p_emp | p_waddr |  p_constr) +
+  patchwork::plot_layout(guides = "collect")
+```
+
+```{r pval_vs_stat_1k_emp, fig.width=5, fig.height=4.2, dpi = 200}
+p_emp <- plot_pval_vs_stat(
+  df_statplot_1k %>% dplyr::filter(method_key == "empirical_1000"),
+  title = "Empirical p-values",
+  ybreaks = c(1e-2, 1e-5, 1e-10),
+  ylabels = c("1e-2", "1e-5", "1e-10")
+)  + coord_cartesian(ylim = c(1, 1e-10))
+
+p_emp
+```
 
 ### P-values (waddR vs. permApprox)
 
