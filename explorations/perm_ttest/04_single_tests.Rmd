@@ -150,7 +150,7 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE) {
     ) +
     labs(
       title = paste0( "t-test vs. constrained GPD fit (n = ", sampsize, ")"),
-      x = expression(t[obs]),
+      x = expression(abs(t[obs])),
       y = expression(p)
     ) +
     theme_minimal() +

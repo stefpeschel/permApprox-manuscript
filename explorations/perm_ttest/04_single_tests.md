@@ -1,10 +1,6 @@
 Two-sample t-test - Test epsilon rule for single tests
 ================
-Compiled at 2026-02-02 19:07:56 UTC
-
-``` r
-here::i_am(paste0(params$name, ".Rmd"), uuid = "5e646f9e-bea7-4678-8776-a33608cb3fad")
-```
+Compiled at 2026-02-06 16:46:39 UTC
 
 In this script we evaluate the performance of the **Standardized Lifted
 Log-Saturation (SLLS) rule** in the **single-test setting**. Here, each
