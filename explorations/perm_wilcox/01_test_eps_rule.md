@@ -1,11 +1,7 @@
 Wilcoxon (Mann–Whitney U) on exponential data - Test the SLLS epsilon
 rule
 ================
-Compiled at 2026-02-02 19:09:55 UTC
-
-``` r
-here::i_am(paste0(params$name, ".Rmd"), uuid = "efcad4fd-ecce-4206-b899-b1726dff38ea")
-```
+Compiled at 2026-03-09 09:48:20 UTC
 
 In this script we evaluate our **standardized lifted log-saturation
 (SLLS)** ε-rule with the **Wilcoxon rank-sum / Mann–Whitney test**,

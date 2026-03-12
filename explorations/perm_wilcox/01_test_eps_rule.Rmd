@@ -306,13 +306,13 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE,
   df <- dplyr::mutate(df, effect_size = as.character(effect_size))
 
   p <- ggplot(df, aes(x = obs_stats)) +
-    geom_point(aes(y = p_wilcox, shape = "Mann-Whitney U"),
+    geom_point(aes(y = p_wilcox, shape = "Wilcoxon"),
                color = "black", size = 2, stroke = 0.5, alpha = 0.5) +
-    geom_point(aes(y = p_constr, shape = "Constrained GPD", color = effect_size),
+    geom_point(aes(y = p_constr, shape = "approximated", color = effect_size),
                size = 1.6, alpha = 0.6) +
     scale_shape_manual(
       name = "P-value type:",
-      values = c("Constrained GPD" = 16, "Mann-Whitney U" = 1)
+      values = c("approximated" = 16, "Wilcoxon" = 1)
     ) +
     scale_color_manual(
       name = "Effect size:",
@@ -330,8 +330,12 @@ plot_pvals <- function(df, sampsize, ylim = NULL, log_scale = TRUE,
       axis.title   = element_text(size = 15),
       plot.title   = element_text(size = 15),
       strip.text   = element_text(size = 15),
-      legend.title = element_text(size = 14),
-      legend.text  = element_text(size = 12)
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 16)
+    )  +
+    guides(
+      color = guide_legend(override.aes = list(size = 2.5)),
+      shape = guide_legend(override.aes = list(size = 2.5))
     )
 
   # range
@@ -580,12 +584,12 @@ for (n_val in sort(unique(results_all$n_per_group))) {
     )
 
   p <- ggplot(df_n, aes(x = obs_stats)) +
-    geom_point(aes(y = p_wilcox_plot, shape = "Mann-Whitney U"),
+    geom_point(aes(y = p_wilcox_plot, shape = "Wilcoxon"),
                color = "black", size = 2, stroke = 0.5, alpha = 0.5) +
     geom_point(aes(y = p_unconstr_plot, shape = "Unconstrained GPD", color = effect_size),
                size = 1.6, alpha = 0.6) +
     scale_shape_manual(name = "p-value type",
-                       values = c("Unconstrained GPD" = 16, "Mann-Whitney U" = 1)) +
+                       values = c("Unconstrained GPD" = 16, "Wilcoxon" = 1)) +
     scale_color_manual(name = "Effect size",
                        values = c("0"="gold",
                                   "0.5"="#ffb347",
@@ -1022,13 +1026,18 @@ results_slls <- run_permApprox(rule_name = "SLLS", eps_fct = eps_factor)
 sampsize <- 100
 
 p_lls <- results_lls  %>% dplyr::filter(n_per_group == sampsize) %>%
-  plot_pvals(sampsize = sampsize, title = "Lifted log-saturation (LLS)",
+  plot_pvals(sampsize = sampsize, title = "Lifted log-saturation",
              ylim = c(1e-45, 1))
 
 p_slls <- results_slls %>% dplyr::filter(n_per_group == sampsize) %>%
   plot_pvals(sampsize = sampsize, 
-             title = "Standardized lifted log-saturation (SLLS)",
-             ylim = c(1e-45, 1))
+             title = "Standardized lifted log-saturation",
+             ylim = c(1e-45, 1)) +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y  = element_blank(),
+    axis.ticks.y = element_blank()
+  )
 
 
 # All four plots
