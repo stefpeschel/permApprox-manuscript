@@ -476,7 +476,7 @@ theme_params <- list(
   
   # helper: two-line plotmath label with conditional bold/asterisk
   .make_label_expr <- function(n_perm, nex, pex) {
-    perc_chr <- sub("\\.?0+$", "", format(round(100 * pex, 1), trim = TRUE))
+    perc_chr <- sub("\\.?00+$", "", format(round(100 * pex, 1), trim = TRUE))
     
     if (n_perm == 500 && !is.na(nex) && nex == 250) {
       # Bold TOP line (absolute), with literal * → treat number as TEXT

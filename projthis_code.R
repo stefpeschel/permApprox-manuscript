@@ -1,4 +1,18 @@
 library(projthis)
+library(rmarkdown)
+library(rprojroot)
+
+# -------------------------------------------------------------------------
+# Create projthis workflow and files
+# -------------------------------------------------------------------------
+
+# Create new workflow folder structure
+#proj_use_workflow("folder/subfolder")
+
+# Create new Rmd file
+#proj_workflow_use_rmd("file_name", path_proj = "./applications")
+#proj_workflow_use_rmd("file_name", path_proj = "./explorations/threshold_selection")
+#proj_workflow_use_rmd("file_name", path_proj = "./simulations/perm_ttest")
 
 # -------------------------------------------------------------------------
 # Helper for rendering Rmd files
