@@ -1,0 +1,83 @@
+---
+title: "Build reduced data set"
+date: "Compiled at `r format(Sys.time(), '%Y-%m-%d %H:%M:%S', tz = 'UTC')` UTC"
+output: github_document
+params:
+  name: "00_build_pasture_data" # change if you rename file
+---
+
+```{r here, message=FALSE}
+here::i_am(paste0(params$name, ".Rmd"), uuid = "78b66e9f-b0b1-4206-8f3d-e2c578a062bf")
+```
+
+In this script, we load the original PASTURE data (not published) and build the reduced data set, which is the basis for all PASTURE-related analyses conducted in this project. 
+
+```{r packages}
+library(conflicted)
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(tibble)
+library(kableExtra)
+library(pheatmap)
+library(ggrepel)
+library(patchwork)
+```
+
+```{r directories}
+# create or *empty* the target directory, used to write this file's data: 
+#projthis::proj_create_dir_target(params$name, clean = TRUE)
+
+# function to get path to target directory: path_target("sample.csv")
+path_target <- projthis::proj_path_target(params$name)
+
+# function to get path to previous data: path_source("00-import", "sample.csv")
+path_source <- projthis::proj_path_source(params$name)
+```
+
+## Load data & set parameters
+
+```{r load_data}
+phylo_genus <- readRDS(path_source("PASTURE_data", paste0("bact_2m_genus.rds")))
+
+phylo_genus
+```
+
+## Select variables of interest
+
+We keep only the IDs and the variable on duration of exclusive breast feeding.
+The sample IDs are not the original ones, but randomly generated numbers. 
+
+```{r}
+keep_vars  <- c("SampleID", "idx", "breast_excl_cat1")
+
+sample_data(phylo_genus) <- sample_data(phylo_genus) |>
+  as("data.frame") |>
+  select(all_of(keep_vars))
+
+# Extract sampdata if needed downstream
+sampdata <- sample_data(phylo_genus) |> as("data.frame")
+head(sampdata)
+```
+
+### Genus level
+
+```{r}
+phylo_genus
+```
+
+
+```{r}
+# Save data
+saveRDS(phylo_genus, path_target("bact_2m_genus.rds"))
+```
+
+## Files written
+
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```

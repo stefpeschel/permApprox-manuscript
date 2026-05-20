@@ -81,7 +81,7 @@ path_source <- projthis::proj_path_source(params$name)
 ## Load data & set parameters
 
 ```{r load_data}
-bact_phylo <- readRDS(path_source("PASTURE_data", paste0("bact_2m_genus.rds")))
+bact_phylo <- readRDS(path_source("00_build_pasture_data", paste0("bact_2m_genus.rds")))
 sampdata    <- sample_data(bact_phylo) %>% as("data.frame")
 bact_phylo
 ```
@@ -3594,5 +3594,11 @@ kableExtra::save_kable(tab_adj_latex_out, path_target("top_effects_adj_table.tex
 ```
 
 
+## Files written
 
+These files have been written to the target directory, ```r paste0("data/", params$name)```:
+
+```{r list-files-target}
+projthis::proj_dir_info(path_target())
+```
 

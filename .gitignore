@@ -6,4 +6,8 @@
 .Rhistory
 .Rprofile
 **/01_data_gen/
-applications/data/
+applications/data/PASTURE_data
+applications/data/01_sc_diff_distr
+applications/data/02_micro_diff_abund
+applications/data/03_micro_diff_abund_runtime
+.positai

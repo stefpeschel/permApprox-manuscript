@@ -24,6 +24,8 @@ This repository follows the project structure promoted by the [projthis](https:/
 ├── renv.lock                     → Lock file for renv environment
 │
 ├── applications/                 → Real-world applications using permApprox
+│   ├── 00_build_pasture_data
+│   │   → Build reduced version of the PASTURE data set
 │   ├── 01_sc_diff_distr
 │   │   → Diff. distribution analysis with scRNA-seq data
 │   ├── 02_micro_diff_abund

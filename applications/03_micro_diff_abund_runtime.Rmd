@@ -92,7 +92,7 @@ path_source <- projthis::proj_path_source(params$name)
 ```
 
 ```{r load_data}
-bact_phylo <- readRDS(path_source("PASTURE_data", "bact_2m_genus.rds"))
+bact_phylo <- readRDS(path_source("00_build_pasture_data", "bact_2m_genus.rds"))
 sampdata   <- sample_data(bact_phylo) %>% as("data.frame")
 
 ## Rename "24_Enterobacteriaceae(F)"
